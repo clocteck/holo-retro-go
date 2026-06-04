@@ -9,6 +9,7 @@
 当前默认移植目标：
 
 - 产物：`build/retrogo.so`
+- 仓库内预编译产物：`prebuilt/retrogo.so`
 - 模块加载路径：`/sd/modules/retrogo.so`
 - ROM 根目录：`/sd/roms`
 
@@ -45,6 +46,12 @@ CONFIG_ELF_DYNAMIC_LOAD_SHARED_OBJECT=y
 
 ```text
 build/retrogo.so
+```
+
+仓库中也保留了一份当前编译好的模块：
+
+```text
+prebuilt/retrogo.so
 ```
 
 ## 实现说明
