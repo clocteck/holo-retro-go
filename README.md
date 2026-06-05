@@ -1,6 +1,6 @@
 # Holo Retro-Go
 
-这是一个把 [retro-go](https://github.com/ducalex/retro-go) 移植到 Clocteck Holocubic / cubic Lua 固件动态模块环境的项目。它不是从零重写模拟器，而是在 Retro-Go 源码基础上增加 Holocubic 宿主 ABI、ESP-ELFLoader 模块入口和少量适配层，最终构建为可由 Lua 加载的 `retrogo.so`。
+这是一个把 [retro-go](https://github.com/ducalex/retro-go) 移植到 Clocteck Holocubic / cubic Lua 固件动态模块环境的项目。它是在 Retro-Go 源码基础上增加 Holocubic 宿主 ABI、ESP-ELFLoader 模块入口和少量适配层，最终构建为可由 Lua 加载的 `retrogo.so`。
 
 ## 项目用途
 
@@ -18,13 +18,13 @@
 
 ## 编译流程
 
-需要先准备 ESP-IDF，并确保目标固件对应的 `module_abi.h` 可用。仓库内已带一份当前 ABI，也可以通过 `CUBICLUA_ROOT` 或 `MODULE_ABI_DIR` 指向固件源码里的 ABI 目录。
+需要先准备 ESP-IDF，并确保目标固件对应的 `module_abi.h` 可用 (现在只能用于clocteck holocubic产品)。仓库内已带一份当前 ABI。
 
 PowerShell 示例：
 
 ```powershell
-Set-Location "E:\cubicsrc\开源APP\holo-retro-go"
-$env:CUBICLUA_ROOT="E:\cubicsrc\cubic_lua\cubic_arduino\cubic-develop"
+# 在本仓库根目录执行
+$env:CUBICLUA_ROOT="..\cubic_lua\cubic_arduino\cubic-develop"
 idf.py set-target esp32s3
 idf.py menuconfig
 idf.py build
@@ -33,7 +33,7 @@ idf.py build
 不使用 `CUBICLUA_ROOT` 时可以直接传入 ABI 目录：
 
 ```powershell
-idf.py "-DMODULE_ABI_DIR=E:\cubicsrc\cubic_lua\cubic_arduino\cubic-develop\src\dynmod" build
+idf.py "-DMODULE_ABI_DIR=..\cubic_lua\cubic_arduino\cubic-develop\src\dynmod" build
 ```
 
 需要确认 ESP-ELFLoader 的 shared object 动态加载选项已启用：
