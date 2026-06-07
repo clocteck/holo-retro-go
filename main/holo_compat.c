@@ -328,6 +328,33 @@ char *strdup(const char *s)
     return copy;
 }
 
+int strncasecmp(const char *a, const char *b, size_t n)
+{
+    if (a == b || n == 0) {
+        return 0;
+    }
+    if (!a) {
+        return -1;
+    }
+    if (!b) {
+        return 1;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char ca = (unsigned char)a[i];
+        unsigned char cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') {
+            ca = (unsigned char)(ca + ('a' - 'A'));
+        }
+        if (cb >= 'A' && cb <= 'Z') {
+            cb = (unsigned char)(cb + ('a' - 'A'));
+        }
+        if (ca != cb || ca == 0 || cb == 0) {
+            return (int)ca - (int)cb;
+        }
+    }
+    return 0;
+}
+
 void *malloc(size_t size)
 {
     const module_host_api_v1 *host = holo_port_host();

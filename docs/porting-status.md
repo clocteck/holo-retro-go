@@ -9,8 +9,8 @@ Default compiled cores:
 - SMS/GG/COL: `smsplus`
 - PCE: `pce-go`
 - GW: `gw-emulator`
-
-Lynx and SNES are intentionally left out of the first default build.
+- Lynx: `handy`
+- SNES: `snes9x`
 
 Official Retro-Go launcher sources are included in the module build:
 

@@ -17,7 +17,13 @@ endif()
 set(RETRO_CORE_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/retro-core/main/main.c"
     "${RG_UPSTREAM_DIR}/retro-core/main/main_launcher.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_gbc.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_gw.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_lynx.cpp"
     "${RG_UPSTREAM_DIR}/retro-core/main/main_nes.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_pce.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_sms.c"
+    "${RG_UPSTREAM_DIR}/retro-core/main/main_snes.c"
 )
 
 set(LAUNCHER_MAIN_SRCS
@@ -35,6 +41,7 @@ idf_component_register(
         "holo_catalog.c"
         "holo_port.c"
         "holo_compat.c"
+        "cxx_compat.c"
         "optional_core_stubs.c"
         ${RETRO_CORE_MAIN_SRCS}
         ${LAUNCHER_MAIN_SRCS}
@@ -44,10 +51,26 @@ idf_component_register(
         "${RG_UPSTREAM_DIR}/launcher/main"
         "${RG_UPSTREAM_DIR}/retro-core/main"
         "${RG_UPSTREAM_DIR}/components/retro-go"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gnuboy"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/cpus"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/gw_sys"
+        "${RG_UPSTREAM_DIR}/retro-core/components/handy"
         "${RG_UPSTREAM_DIR}/retro-core/components/nofrendo"
+        "${RG_UPSTREAM_DIR}/retro-core/components/pce-go"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/cpu"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/sound"
+        "${RG_UPSTREAM_DIR}/retro-core/components/snes9x"
     REQUIRES
         retro-go
+        gnuboy
+        gw-emulator
+        handy
         nofrendo
+        pce-go
+        smsplus
+        snes9x
 )
 
 set_source_files_properties("${RG_UPSTREAM_DIR}/retro-core/main/main.c"

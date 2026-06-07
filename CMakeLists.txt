@@ -10,6 +10,12 @@ set(COMPONENTS
     main
     retro-go
     nofrendo
+    gnuboy
+    pce-go
+    gw-emulator
+    handy
+    smsplus
+    snes9x
     espressif__elf_loader
     lwip
 )
@@ -55,12 +61,24 @@ execute_process(
     OUTPUT_VARIABLE RETROGO_LIBGCC
     OUTPUT_STRIP_TRAILING_WHITESPACE
 )
+execute_process(
+    COMMAND ${CMAKE_C_COMPILER} -print-file-name=libm.a
+    OUTPUT_VARIABLE RETROGO_LIBM
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
 
 set(ELF_LIBS
     "${CMAKE_BINARY_DIR}/esp-idf/main/libmain.a"
     "${CMAKE_BINARY_DIR}/esp-idf/retro-go/libretro-go.a"
     "${CMAKE_BINARY_DIR}/esp-idf/nofrendo/libnofrendo.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/gnuboy/libgnuboy.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/pce-go/libpce-go.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/gw-emulator/libgw-emulator.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/handy/libhandy.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/smsplus/libsmsplus.a"
+    "${CMAKE_BINARY_DIR}/esp-idf/snes9x/libsnes9x.a"
     "$ENV{IDF_PATH}/components/json/cJSON/cJSON.c"
+    "${RETROGO_LIBM}"
     "${RETROGO_LIBGCC}"
 )
 
