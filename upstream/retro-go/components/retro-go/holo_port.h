@@ -42,6 +42,8 @@ void holo_runtime_exit_now(void) __attribute__((noreturn));
 int holo_display_acquire(uint16_t width, uint16_t height);
 void holo_display_release(void);
 int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t height, const uint16_t *pixels);
+void *holo_dma_alloc(size_t size);
+void holo_dma_free(void *ptr);
 
 int holo_audio_begin(uint32_t sample_rate, uint16_t bits_per_sample, uint16_t channels);
 void holo_audio_end(void);

@@ -153,6 +153,8 @@ static inline void write_update(const rg_surface_t *update)
         }
 
         uint16_t *line_buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+        if (!line_buffer)
+            break;
         uint16_t *line_buffer_ptr = line_buffer;
 
         uint32_t checksum = 0xFFFFFFFF;
@@ -565,6 +567,8 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     for (size_t y = 0; y < height;)
     {
         uint16_t *lcd_buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+        if (!lcd_buffer)
+            break;
         size_t num_lines = RG_MIN(LCD_BUFFER_LENGTH / width, height - y);
 
         // Copy line by line because stride may not match width
@@ -608,6 +612,8 @@ void rg_display_clear_rect(int left, int top, int width, int height, uint16_t co
         while (pixels_remaining > 0)
         {
             uint16_t *buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+            if (!buffer)
+                break;
             int pixels = RG_MIN(pixels_remaining, LCD_BUFFER_LENGTH);
             for (size_t j = 0; j < pixels; ++j)
                 buffer[j] = color_be;

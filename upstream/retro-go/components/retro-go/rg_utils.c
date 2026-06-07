@@ -324,6 +324,9 @@ const char *rg_unique_string(const char *str)
 {
     static const unique_string_t **strings = NULL;
     static size_t strings_count = 0;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    static size_t strings_capacity = 0;
+#endif
 
     if (!str)
         return NULL;
@@ -338,10 +341,31 @@ const char *rg_unique_string(const char *str)
             return strings[i]->data;
     }
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    unique_string_t *obj = rg_alloc(sizeof(unique_string_t) + len + 1, MEM_SLOW | MEM_NOPANIC);
+    if (strings_count >= strings_capacity)
+    {
+        size_t next_capacity = strings_capacity ? strings_capacity * 2 : 32;
+        const unique_string_t **next = rg_alloc(next_capacity * sizeof(unique_string_t *), MEM_SLOW | MEM_NOPANIC);
+        if (next && strings_count)
+            memcpy(next, strings, strings_count * sizeof(unique_string_t *));
+        if (next)
+        {
+            free((void *)strings);
+            strings = next;
+            strings_capacity = next_capacity;
+        }
+    }
+    if (!strings || !obj)
+    {
+        free(obj);
+        RG_ASSERT(false, "alloc failed");
+    }
+#else
     unique_string_t *obj = malloc(sizeof(unique_string_t) + len + 1);
-
     strings = realloc(strings, (strings_count + 1) * sizeof(unique_string_t *));
     RG_ASSERT(strings && obj, "alloc failed");
+#endif
 
     memcpy(obj->data, str, len + 1);
     obj->length = len;

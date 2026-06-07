@@ -1004,6 +1004,13 @@ intptr_t rg_gui_dialog(const char *title, const rg_gui_option_t *options_const, 
             redraw = false;
         }
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        if (holo_runtime_stop_requested()) {
+            event = RG_DIALOG_CANCEL;
+            break;
+        }
+#endif
+
         rg_task_delay(20);
         rg_system_tick(0);
     }

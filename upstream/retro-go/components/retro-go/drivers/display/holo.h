@@ -1,6 +1,6 @@
 #include "holo_port.h"
 
-static uint16_t lcd_buffer[LCD_BUFFER_LENGTH];
+static uint16_t *lcd_buffer;
 static int s_holo_window_left;
 static int s_holo_window_top;
 static int s_holo_window_width;
@@ -9,6 +9,13 @@ static size_t s_holo_window_offset;
 
 static void lcd_init(void)
 {
+    uint16_t *dma_buffer = (uint16_t *)holo_dma_alloc(LCD_BUFFER_LENGTH * sizeof(uint16_t));
+    if (dma_buffer) {
+        lcd_buffer = dma_buffer;
+    } else {
+        lcd_buffer = NULL;
+        holo_port_log("[retrogo.so] display dma buffer alloc failed; display updates disabled");
+    }
     if (!holo_display_acquire(RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT)) {
         holo_port_log("[retrogo.so] display acquire failed");
     }
@@ -17,6 +24,10 @@ static void lcd_init(void)
 static void lcd_deinit(void)
 {
     holo_display_release();
+    if (lcd_buffer) {
+        holo_dma_free(lcd_buffer);
+    }
+    lcd_buffer = NULL;
 }
 
 static void lcd_set_rotation(int rotation)
@@ -41,6 +52,12 @@ static void lcd_set_window(int left, int top, int width, int height)
 static inline uint16_t *lcd_get_buffer(size_t length)
 {
     (void)length;
+    if (!lcd_buffer) {
+        lcd_buffer = (uint16_t *)holo_dma_alloc(LCD_BUFFER_LENGTH * sizeof(uint16_t));
+        if (!lcd_buffer) {
+            holo_port_log("[retrogo.so] display dma buffer unavailable");
+        }
+    }
     return lcd_buffer;
 }
 

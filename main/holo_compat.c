@@ -1005,6 +1005,15 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void)
     return NULL;
 }
 
+static uint32_t task_stack_caps_for_name(const char *name)
+{
+    if (name && (strcmp(name, "rg_input") == 0 || strcmp(name, "rg_sysmon") == 0 ||
+                 strcmp(name, "pce_sound") == 0)) {
+        return MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT;
+    }
+    return MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT;
+}
+
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry,
                                    const char *name,
                                    const uint32_t stack_depth,
@@ -1015,8 +1024,17 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry,
 {
     const module_host_api_v1 *host = holo_port_host();
     void *task = NULL;
+    const char *task_name = name ? name : "retrogo";
+    if (host && host->task.create_ex &&
+        host->task.create_ex(task_name, entry, arg, stack_depth, priority, core_id,
+                             task_stack_caps_for_name(task_name), &task) == MODULE_OK) {
+        if (out_task) {
+            *out_task = (TaskHandle_t)task;
+        }
+        return pdPASS;
+    }
     if (host && host->task.create &&
-        host->task.create(name ? name : "retrogo", entry, arg, stack_depth, priority, core_id, &task) == MODULE_OK) {
+        host->task.create(task_name, entry, arg, stack_depth, priority, core_id, &task) == MODULE_OK) {
         if (out_task) {
             *out_task = (TaskHandle_t)task;
         }
@@ -1225,6 +1243,8 @@ void abort(void)
 {
     holo_port_log("[retrogo.so] abort");
     holo_runtime_request_stop();
+    holo_audio_end();
+    holo_display_release();
     for (;;) {
         vTaskDelay(1000);
     }

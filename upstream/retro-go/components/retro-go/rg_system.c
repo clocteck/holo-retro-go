@@ -29,7 +29,11 @@
 #endif
 
 #define RG_STRUCT_MAGIC 0x12345678
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define RG_LOGBUF_SIZE 512
+#else
 #define RG_LOGBUF_SIZE 2048
+#endif
 typedef struct
 {
     uint32_t magicWord;
@@ -85,8 +89,12 @@ static struct
 } *profile;
 #endif
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static panic_trace_t *panicTrace;
+#else
 // The trace will survive a software reset
 static RTC_NOINIT_ATTR panic_trace_t panicTrace;
+#endif
 // static RTC_NOINIT_ATTR boot_config_t bootConfig;
 static RTC_NOINIT_ATTR time_t rtcValue;
 static bool panicTraceCleared = false;
@@ -112,6 +120,20 @@ static const char *SETTING_INDICATOR_MASK = "Indicators";
 #define logbuf_puts(buf, str) for (const char *ptr = str; *ptr; ptr++) logbuf_putc(buf, *ptr);
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+static panic_trace_t *panic_trace_get(void)
+{
+    if (!panicTrace)
+        panicTrace = calloc(1, sizeof(*panicTrace));
+    return panicTrace;
+}
+#else
+static panic_trace_t *panic_trace_get(void)
+{
+    return &panicTrace;
+}
+#endif
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
 static void apply_holo_launch(void)
 {
     holo_launch_t launch;
@@ -134,22 +156,29 @@ static void apply_holo_launch(void)
 
 static inline void begin_panic_trace(const char *context, const char *message)
 {
-    panicTrace.magicWord = RG_STRUCT_MAGIC;
-    panicTrace.statistics = statistics;
-    strncpy(panicTrace.configNs, app.configNs ?: "(none)", sizeof(panicTrace.configNs) - 1);
-    strncpy(panicTrace.message, message ?: "(none)", sizeof(panicTrace.message) - 1);
-    strncpy(panicTrace.context, context ?: "(none)", sizeof(panicTrace.context) - 1);
-    panicTrace.configNs[sizeof(panicTrace.configNs) - 1] = 0;
-    panicTrace.message[sizeof(panicTrace.message) - 1] = 0;
-    panicTrace.context[sizeof(panicTrace.context) - 1] = 0;
-    logbuf_puts(&panicTrace, "\n\n*** PANIC TRACE: ***\n\n");
+    panic_trace_t *trace = panic_trace_get();
+    if (!trace)
+        return;
+
+    trace->magicWord = RG_STRUCT_MAGIC;
+    trace->statistics = statistics;
+    strncpy(trace->configNs, app.configNs ?: "(none)", sizeof(trace->configNs) - 1);
+    strncpy(trace->message, message ?: "(none)", sizeof(trace->message) - 1);
+    strncpy(trace->context, context ?: "(none)", sizeof(trace->context) - 1);
+    trace->configNs[sizeof(trace->configNs) - 1] = 0;
+    trace->message[sizeof(trace->message) - 1] = 0;
+    trace->context[sizeof(trace->context) - 1] = 0;
+    logbuf_puts(trace, "\n\n*** PANIC TRACE: ***\n\n");
 }
 
 IRAM_ATTR void esp_panic_putchar_hook(char c)
 {
-    if (panicTrace.magicWord != RG_STRUCT_MAGIC)
+    panic_trace_t *trace = panic_trace_get();
+    if (!trace)
+        return;
+    if (trace->magicWord != RG_STRUCT_MAGIC)
         begin_panic_trace("esp_panic", NULL);
-    logbuf_putc(&panicTrace, c);
+    logbuf_putc(trace, c);
 }
 
 static bool update_boot_config(const char *partition, const char *name, const char *args, uint32_t flags)
@@ -530,11 +559,12 @@ rg_app_t *rg_system_init(int sampleRate, const rg_handlers_t *handlers, void *_u
     {
         RG_LOGE("Recoverying from panic!\n");
         char message[400] = "Application crashed";
-        if (panicTrace.magicWord == RG_STRUCT_MAGIC)
+        panic_trace_t *trace = panic_trace_get();
+        if (trace && trace->magicWord == RG_STRUCT_MAGIC)
         {
             RG_LOGI("Panic log found, saving to sdcard...\n");
-            if (panicTrace.message[0] && strcmp(panicTrace.message, "(none)") != 0)
-                strcpy(message, panicTrace.message);
+            if (trace->message[0] && strcmp(trace->message, "(none)") != 0)
+                strcpy(message, trace->message);
             if (rg_system_save_trace(RG_STORAGE_ROOT "/crash.log", 1))
                 strcat(message, "\nLog saved to SD Card.");
         }
@@ -542,7 +572,9 @@ rg_app_t *rg_system_init(int sampleRate, const rg_handlers_t *handlers, void *_u
         rg_gui_alert("System Panic!", message);
         rg_system_exit();
     }
-    memset(&panicTrace, 0, sizeof(panicTrace));
+    panic_trace_t *trace = panic_trace_get();
+    if (trace)
+        memset(trace, 0, sizeof(*trace));
     panicTraceCleared = true;
 
     update_memory_statistics();
@@ -1043,11 +1075,12 @@ void rg_system_panic(const char *context, const char *message)
 {
     // Call begin_panic_trace first, it will normalize context and message for us
     begin_panic_trace(context, message);
+    panic_trace_t *trace = panic_trace_get();
     // Avoid using printf functions in case we're crashing because of a busted stack
     fputs("\n*** RG_PANIC() CALLED IN '", stdout);
-    fputs(panicTrace.context, stdout);
+    fputs(trace ? trace->context : (context ?: "(none)"), stdout);
     fputs("' ***\n*** ", stdout);
-    fputs(panicTrace.message, stdout);
+    fputs(trace ? trace->message : (message ?: "(none)"), stdout);
     fputs(" ***\n\n", stdout);
     abort();
 }
@@ -1078,7 +1111,9 @@ void rg_system_vlog(int level, const char *context, const char *format, va_list 
 
     if (panicTraceCleared)
     {
-        logbuf_puts(&panicTrace, buffer);
+        panic_trace_t *trace = panic_trace_get();
+        if (trace)
+            logbuf_puts(trace, buffer);
     }
 
     if (level <= app.logLevel)
@@ -1113,6 +1148,7 @@ bool rg_system_save_trace(const char *filename, bool panic_trace)
 {
     if (!filename)
         filename = RG_STORAGE_ROOT "/trace.txt";
+    panic_trace_t *trace = panic_trace ? panic_trace_get() : NULL;
 
     RG_LOGI("Saving debug trace to '%s'...\n", filename);
     FILE *fp = fopen(filename, "w");
@@ -1122,7 +1158,7 @@ bool rg_system_save_trace(const char *filename, bool panic_trace)
         return false;
     }
 
-    rg_stats_t *stats = panic_trace ? &panicTrace.statistics : &statistics;
+    rg_stats_t *stats = trace ? &trace->statistics : &statistics;
     fprintf(fp, "Application: %s (%s)\n", app.name, app.configNs);
     fprintf(fp, "Version: %s\n", app.version);
     fprintf(fp, "Build date: %s\n", app.buildDate);
@@ -1132,18 +1168,18 @@ bool rg_system_save_trace(const char *filename, bool panic_trace)
     fprintf(fp, "Free block: %d + %d\n", stats->freeBlockInt, stats->freeBlockExt);
     fprintf(fp, "Stack HWM: %d\n", stats->freeStackMain);
     fprintf(fp, "Uptime: %ds (%d ticks)\n", stats->uptime, stats->ticks);
-    if (panic_trace && panicTrace.configNs[0])
-        fprintf(fp, "Panic configNs: %.16s\n", panicTrace.configNs);
-    if (panic_trace && panicTrace.message[0])
-        fprintf(fp, "Panic message: %.256s\n", panicTrace.message);
-    if (panic_trace && panicTrace.context[0])
-        fprintf(fp, "Panic context: %.256s\n", panicTrace.context);
+    if (trace && trace->configNs[0])
+        fprintf(fp, "Panic configNs: %.16s\n", trace->configNs);
+    if (trace && trace->message[0])
+        fprintf(fp, "Panic message: %.256s\n", trace->message);
+    if (trace && trace->context[0])
+        fprintf(fp, "Panic context: %.256s\n", trace->context);
     fputs("\nLog output:\n", fp);
-    for (size_t i = 0; i < RG_LOGBUF_SIZE; i++)
+    for (size_t i = 0; trace && i < RG_LOGBUF_SIZE; i++)
     {
-        size_t index = (panicTrace.cursor + i) % RG_LOGBUF_SIZE;
-        if (panicTrace.console[index])
-            fputc(panicTrace.console[index], fp);
+        size_t index = (trace->cursor + i) % RG_LOGBUF_SIZE;
+        if (trace->console[index])
+            fputc(trace->console[index], fp);
     }
     fputs("\n\nEnd of trace\n\n", fp);
     fclose(fp);

@@ -80,6 +80,7 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 #define MODULE_PROC_TASK_REMOVE_V1 0x00080002u
 #define MODULE_PROC_TASK_YIELD_V1 0x00080003u
 #define MODULE_PROC_TASK_DELAY_V1 0x00080004u
+#define MODULE_PROC_TASK_CREATE_EX_V1 0x00080005u
 
 #define MODULE_PROC_LUA_GETTOP_V1 0x00090001u
 #define MODULE_PROC_LUA_SETTOP_V1 0x00090002u
@@ -406,6 +407,9 @@ typedef struct module_task_api_t {
     void (*remove)(void *task);
     void (*yield)(void);
     void (*delay)(uint32_t ms);
+    int32_t (*create_ex)(const char *name, void (*entry)(void *), void *arg,
+                         uint32_t stack_bytes, uint32_t priority, int32_t core,
+                         uint32_t heap_caps, void **out_task);
 } module_task_api_t;
 
 typedef struct module_lua_api_t {
@@ -467,7 +471,12 @@ typedef struct module_host_api_v1 {
 } module_host_api_v1;
 
 typedef const module_manifest_t *(*module_query_v1_fn)(void);
+typedef int32_t (*module_host_resolve_v1_fn)(void *resolve_ctx, uint32_t proc_id, void **out_proc);
 typedef int32_t (*module_create_v1_fn)(const module_host_api_v1 *host,
+                                       const module_open_info_t *info,
+                                       void **out_instance);
+typedef int32_t (*module_create_v2_fn)(module_host_resolve_v1_fn resolve,
+                                       void *resolve_ctx,
                                        const module_open_info_t *info,
                                        void **out_instance);
 typedef int32_t (*module_luaopen_v1_fn)(void *instance, lua_State *L);

@@ -196,6 +196,8 @@ void holo_runtime_exit_now(void)
         *s_runtime_task = 0;
     }
     holo_runtime_unbind_task();
+    holo_audio_end();
+    holo_display_release();
     if (s_host && s_host->task.remove) {
         s_host->task.remove(0);
     }
@@ -247,6 +249,21 @@ int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t heigh
     }
 
     return s_host->display.pushImageDMA(s_display_surface, x, y, width, height, pixels) == MODULE_OK;
+}
+
+void *holo_dma_alloc(size_t size)
+{
+    if (!s_host || !s_host->heap.malloc || size == 0) {
+        return NULL;
+    }
+    return s_host->heap.malloc(size, MODULE_HEAP_INTERNAL | MODULE_HEAP_DMA | MODULE_HEAP_8BIT);
+}
+
+void holo_dma_free(void *ptr)
+{
+    if (ptr && s_host && s_host->heap.free) {
+        s_host->heap.free(ptr);
+    }
 }
 
 int holo_audio_begin(uint32_t sample_rate, uint16_t bits_per_sample, uint16_t channels)
