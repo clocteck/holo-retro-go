@@ -171,7 +171,10 @@ static inline void begin_panic_trace(const char *context, const char *message)
     logbuf_puts(trace, "\n\n*** PANIC TRACE: ***\n\n");
 }
 
-IRAM_ATTR void esp_panic_putchar_hook(char c)
+#ifndef RG_TARGET_HOLO_DYNMOD
+IRAM_ATTR
+#endif
+void esp_panic_putchar_hook(char c)
 {
     panic_trace_t *trace = panic_trace_get();
     if (!trace)

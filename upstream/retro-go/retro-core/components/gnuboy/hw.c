@@ -89,7 +89,7 @@ static void rtc_tick()
  * The interrupt fires (added to R_IF) when the line transitions from 0 to 1.
  * It does not refire if the line was already high.
  */
-void gb_hw_interrupt(byte i, int level)
+IRAM_ATTR void gb_hw_interrupt(byte i, int level)
 {
 	if (level == 0)
 	{

@@ -293,7 +293,10 @@ static inline int exec_cb(void)
 	Might emulate up to cycles+(11) time units (longest op takes 12
 	cycles in single-speed mode)
 */
-IRAM_ATTR int gb_cpu_emulate(int cycles)
+#ifndef RG_TARGET_HOLO_DYNMOD
+IRAM_ATTR
+#endif
+int gb_cpu_emulate(int cycles)
 {
 	int clen, temp;
 	int remaining = cycles;

@@ -6,7 +6,11 @@ if(RG_ENABLE_NETPLAY)
     list(APPEND COMPONENT_ADD_INCLUDEDIRS "libs/netplay")
 endif()
 
-if((IDF_VERSION_MAJOR EQUAL 5) AND (IDF_VERSION_MINOR GREATER 2)) # esp-idf 5.3+
+if(RG_BUILD_TARGET STREQUAL "RG_TARGET_HOLO_DYNMOD")
+    # Holocubic: display/input/audio/storage all go through host API.
+    # Only keep json (cJSON config), nvs_flash (settings), esp_timer, esp_psram.
+    set(COMPONENT_REQUIRES "json nvs_flash esp_timer esp_psram")
+elseif((IDF_VERSION_MAJOR EQUAL 5) AND (IDF_VERSION_MINOR GREATER 2)) # esp-idf 5.3+
     set(COMPONENT_REQUIRES "spi_flash fatfs app_update json nvs_flash esp_adc esp_timer esp_psram esp_driver_ledc driver")
 elseif(IDF_VERSION_MAJOR EQUAL 5) # esp-idf 5.0 - 5.2
     set(COMPONENT_REQUIRES "spi_flash fatfs app_update json nvs_flash esp_adc esp_timer esp_psram")

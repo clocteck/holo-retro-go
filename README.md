@@ -69,3 +69,4 @@ prebuilt/retrogo.so
 ## License
 
 本项目作为 Retro-Go 移植项目按 GPLv2 开源，见 [LICENSE](LICENSE)。`upstream/retro-go` 内的上游源码和第三方组件保留各自原始版权声明和许可证说明。
+ 

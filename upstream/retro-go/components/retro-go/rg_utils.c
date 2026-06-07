@@ -39,7 +39,7 @@ char *rg_json_fixup(char *json)
             RG_LOGW("Found trailing comma at pos %d", (int)(ptr - json));
             *prev = ' ';
         }
-        if (*ptr != '\t' && *ptr != '\n'  && *ptr != '\r' && *ptr != ' ')
+        if (*ptr != '\t' && *ptr != '\n' && *ptr != '\r' && *ptr != ' ')
             prev = ptr;
     }
 
@@ -259,10 +259,10 @@ uint32_t rg_crc32(uint32_t crc, const uint8_t *buf, size_t len)
 /**
  * This function is the SuperFastHash from:
  *  http://www.azillionmonkeys.com/qed/hash.html
-*/
+ */
 IRAM_ATTR uint32_t rg_hash(const char *data, size_t len)
 {
-    #define get16bits(d) (*((const uint16_t *)(d)))
+#define get16bits(d) (*((const uint16_t *)(d)))
 
     if (len <= 0 || data == NULL)
         return 0;
@@ -309,7 +309,7 @@ IRAM_ATTR uint32_t rg_hash(const char *data, size_t len)
     hash ^= hash << 25;
     hash += hash >> 6;
 
-    #undef get16bits
+#undef get16bits
     return hash;
 }
 
@@ -461,8 +461,8 @@ void *rg_alloc(size_t size, uint32_t caps)
         // Loosen the caps and try again
         if ((ptr = heap_caps_calloc(1, size, esp_caps & ~(MALLOC_CAP_SPIRAM | MALLOC_CAP_INTERNAL))))
         {
-            RG_LOGW("SIZE=%d, CAPS=%s, PTR=%p << CAPS not fully met! (available: %d)\n",
-                    (int)size, caps_list, ptr, (int)available);
+            RG_LOGW("SIZE=%d, CAPS=%s, PTR=%p << CAPS not fully met! (available: %d)\n", (int)size, caps_list, ptr,
+                    (int)available);
             return ptr;
         }
     }
