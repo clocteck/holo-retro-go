@@ -24,7 +24,6 @@ static void rtc_latch(byte b)
 	cart.rtc.latch = b & 1;
 }
 
-
 static void rtc_write(byte b)
 {
 	switch (cart.rtc.sel & 0xf)
@@ -48,12 +47,11 @@ static void rtc_write(byte b)
 	case 0xC: // Flags (days upper 1 bit, carry, stop)
 		cart.rtc.regs[4] = b;
 		cart.rtc.flags = b;
-		cart.rtc.d = ((cart.rtc.d & 0xff) | ((b&1)<<9)) % 365;
+		cart.rtc.d = ((cart.rtc.d & 0xff) | ((b & 1) << 9)) % 365;
 		break;
 	}
 	cart.rtc.dirty = 1;
 }
-
 
 static void rtc_tick()
 {
@@ -83,7 +81,6 @@ static void rtc_tick()
 	}
 }
 
-
 /*
  * gb_hw_interrupt changes the virtual interrupt line(s) defined by i
  * The interrupt fires (added to R_IF) when the line transitions from 0 to 1.
@@ -109,7 +106,6 @@ IRAM_ATTR void gb_hw_interrupt(byte i, int level)
 	}
 }
 
-
 /*
  * hw_dma performs plain old memory-to-oam dma, the original dmg
  * dma. Although on the hardware it takes a good deal of time, the cpu
@@ -123,11 +119,10 @@ static void hw_dma(unsigned b)
 		hw.oam[i] = readb(a);
 }
 
-
 static void hw_hdma(byte c)
 {
 	/* Begin or cancel HDMA */
-	if ((hw.hdma|c) & 0x80)
+	if ((hw.hdma | c) & 0x80)
 	{
 		hw.hdma = c;
 		R_HDMA5 = c & 0x7f;
@@ -184,8 +179,10 @@ static inline void pad_refresh()
 	byte oldp1 = R_P1;
 	R_P1 &= 0x30;
 	R_P1 |= 0xc0;
-	if (!(R_P1 & 0x10)) R_P1 |= (hw.pad & 0x0F);
-	if (!(R_P1 & 0x20)) R_P1 |= (hw.pad >> 4);
+	if (!(R_P1 & 0x10))
+		R_P1 |= (hw.pad & 0x0F);
+	if (!(R_P1 & 0x20))
+		R_P1 |= (hw.pad >> 4);
 	R_P1 ^= 0x0F;
 	if (oldp1 & ~R_P1 & 0x0F)
 	{
@@ -193,7 +190,6 @@ static inline void pad_refresh()
 		gb_hw_interrupt(IF_PAD, 0);
 	}
 }
-
 
 /*
  * gb_hw_setpad updates the state of one or more buttons on the pad and calls
@@ -204,7 +200,6 @@ void gb_hw_setpad(int new_pad)
 	hw.pad = new_pad & 0xFF;
 	pad_refresh();
 }
-
 
 bool gb_hw_init(void)
 {
@@ -223,7 +218,6 @@ bool gb_hw_init(void)
 
 	return true;
 }
-
 
 void gb_hw_reset(bool hard)
 {
@@ -260,7 +254,6 @@ void gb_hw_reset(bool hard)
 	gb_hw_updatemap();
 }
 
-
 /*
  * gb_hw_vblank is called once per frame at vblank and should take care
  * of things like rtc/sound/serial advance, emulation throttling, etc.
@@ -271,7 +264,6 @@ void gb_hw_vblank(void)
 	rtc_tick();
 	gb_sound_emulate();
 }
-
 
 /*
  * In order to make reads and writes efficient, we keep tables
@@ -333,7 +325,6 @@ void gb_hw_updatemap(void)
 	hw.rmap[0xF] = hw.wmap[0xF] = NULL;
 }
 
-
 /*
  * Memory bank controllers typically intercept write attempts to
  * 0000-7FFF, using the address and byte written as instructions to
@@ -355,14 +346,15 @@ static inline void mbc_write(unsigned a, byte b)
 			cart.enableram = ((b & 0x0F) == 0x0A);
 			break;
 		case 0x2000:
-			if ((b & 0x1F) == 0) b = 0x01;
+			if ((b & 0x1F) == 0)
+				b = 0x01;
 			cart.rombank = (cart.rombank & 0x60) | (b & 0x1F);
 			break;
 		case 0x4000:
 			if (cart.bankmode)
 				cart.rambank = b & 0x03;
 			else
-				cart.rombank = (cart.rombank & 0x1F) | ((int)(b&3)<<5);
+				cart.rombank = (cart.rombank & 0x1F) | ((int)(b & 3) << 5);
 			break;
 		case 0x6000:
 			cart.bankmode = b & 0x1;
@@ -436,14 +428,15 @@ static inline void mbc_write(unsigned a, byte b)
 			cart.enableram = ((b & 0x0F) == 0x0A);
 			break;
 		case 0x2000:
-			if ((b & 0x1F) == 0) b = 0x01;
+			if ((b & 0x1F) == 0)
+				b = 0x01;
 			cart.rombank = (cart.rombank & 0x60) | (b & 0x1F);
 			break;
 		case 0x4000:
 			if (cart.bankmode)
 				cart.rambank = b & 0x03 & (cart.ramsize - 1);
 			else
-				cart.rombank = (cart.rombank & 0x1F) | ((int)(b&3)<<5);
+				cart.rombank = (cart.rombank & 0x1F) | ((int)(b & 3) << 5);
 			break;
 		case 0x6000:
 			cart.bankmode = b & 0x1;
@@ -456,7 +449,6 @@ static inline void mbc_write(unsigned a, byte b)
 
 	gb_hw_updatemap();
 }
-
 
 /*
  * gb_hw_write is the basic write function. Although it should only be
@@ -477,7 +469,7 @@ void gb_hw_write(unsigned a, byte b)
 		break;
 
 	case 0x8000: // Video RAM
-		hw.vbanks[R_VBK&1][a & 0x1FFF] = b;
+		hw.vbanks[R_VBK & 1][a & 0x1FFF] = b;
 		break;
 
 	case 0xA000: // Save RAM or RTC
@@ -514,7 +506,8 @@ void gb_hw_write(unsigned a, byte b)
 		// Video: 0xFE00 - 0xFE9F
 		else if ((a & 0xFF00) == 0xFE00)
 		{
-			if (a < 0xFEA0) hw.oam[a & 0xFF] = b;
+			if (a < 0xFEA0)
+				hw.oam[a & 0xFF] = b;
 		}
 		// Sound: 0xFF10 - 0xFF3F
 		else if (a >= 0xFF10 && a <= 0xFF3F)
@@ -627,7 +620,8 @@ void gb_hw_write(unsigned a, byte b)
 					hw.pal[R_BCPS & 0x3F] = b;
 					gb_lcd_pal_dirty();
 					R_BCPD = b;
-					if (R_BCPS & 0x80) R_BCPS = (R_BCPS+1) & 0xBF;
+					if (R_BCPS & 0x80)
+						R_BCPS = (R_BCPS + 1) & 0xBF;
 					break;
 				case RI_OCPS:
 					R_OCPS = b & 0xBF;
@@ -637,7 +631,8 @@ void gb_hw_write(unsigned a, byte b)
 					hw.pal[64 + (R_OCPS & 0x3F)] = b;
 					gb_lcd_pal_dirty();
 					R_OCPD = b;
-					if (R_OCPS & 0x80) R_OCPS = (R_OCPS+1) & 0xBF;
+					if (R_OCPS & 0x80)
+						R_OCPS = (R_OCPS + 1) & 0xBF;
 					break;
 				case RI_SVBK:
 					REG(r) = b | 0xF8;
@@ -648,7 +643,6 @@ void gb_hw_write(unsigned a, byte b)
 		}
 	}
 }
-
 
 /*
  * gb_hw_read is the basic read function...not useful for much anymore
@@ -679,7 +673,7 @@ byte gb_hw_read(unsigned a)
 		return cart.rombanks[cart.rombank][a & 0x3FFF];
 
 	case 0x8000: // Video RAM
-		return hw.vbanks[R_VBK&1][a & 0x1FFF];
+		return hw.vbanks[R_VBK & 1][a & 0x1FFF];
 
 	case 0xA000: // Cart RAM or RTC
 		if (!cart.enableram)
@@ -719,10 +713,10 @@ byte gb_hw_read(unsigned a)
 		// else
 		// {
 
-			// We should check that the reg is valid, otherwise return 0xFF.
-			// However invalid address should already contain 0xFF (unless incorrectly overwritten)
-			// So, for speed, we'll assume that this is correct and always return REG(a)
-			return REG(a & 0xFF);
+		// We should check that the reg is valid, otherwise return 0xFF.
+		// However invalid address should already contain 0xFF (unless incorrectly overwritten)
+		// So, for speed, we'll assume that this is correct and always return REG(a)
+		return REG(a & 0xFF);
 		// }
 	}
 	return 0xFF;
