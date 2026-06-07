@@ -546,13 +546,13 @@ static int l_start(lua_State *L)
     create_log(host, "[retrogo.so] start task.create");
     if (host->task.create_ex)
     {
-        if (host->task.create_ex("retrogo", retrogo_task_entry, inst, 24u * 1024u, 3u, 1,
+        if (host->task.create_ex("retrogo", retrogo_task_entry, inst, 10u * 1024u, 3u, 1,
                                  MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
         {
             inst->task = NULL;
         }
     }
-    else if (host->task.create("retrogo", retrogo_task_entry, inst, 24u * 1024u, 3u, 1, &inst->task) != MODULE_OK)
+    else if (host->task.create("retrogo", retrogo_task_entry, inst, 10u * 1024u, 3u, 1, &inst->task) != MODULE_OK)
     {
         inst->task = NULL;
     }
