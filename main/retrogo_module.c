@@ -15,7 +15,8 @@ void retrogo_core_app_main(void);
 void rg_system_deinit_for_holo(void);
 #endif
 
-typedef struct retrogo_instance_t {
+typedef struct retrogo_instance_t
+{
     const module_host_api_v1 *host;
     void *task;
     volatile uint8_t running;
@@ -42,14 +43,17 @@ static const module_manifest_t s_manifest = {
 static void copy_text(char *dst, size_t dst_size, const char *src)
 {
     size_t i = 0;
-    if (!dst || dst_size == 0) {
+    if (!dst || dst_size == 0)
+    {
         return;
     }
-    if (!src) {
+    if (!src)
+    {
         dst[0] = '\0';
         return;
     }
-    while (i + 1 < dst_size && src[i]) {
+    while (i + 1 < dst_size && src[i])
+    {
         dst[i] = src[i];
         ++i;
     }
@@ -61,22 +65,27 @@ static int host_abi_is_compatible(const module_host_api_v1 *host)
     const uint32_t module_major = MODULE_ABI_VERSION & 0xFFFF0000u;
     const size_t need_lua = offsetof(module_host_api_v1, lua) + sizeof(host->lua);
     const size_t need_heap = offsetof(module_host_api_v1, heap) + sizeof(host->heap);
-    if (!host) {
+    if (!host)
+    {
         return 0;
     }
-    if ((host->abi_version & 0xFFFF0000u) != module_major) {
+    if ((host->abi_version & 0xFFFF0000u) != module_major)
+    {
         return 0;
     }
-    if (host->abi_version < RETROGO_MIN_HOST_ABI) {
+    if (host->abi_version < RETROGO_MIN_HOST_ABI)
+    {
         return 0;
     }
-    if (host->size < need_lua || host->size < need_heap) {
+    if (host->size < need_lua || host->size < need_heap)
+    {
         return 0;
     }
     if (host->heap.size < sizeof(host->heap) ||
         !host->heap.malloc || !host->heap.calloc ||
         !host->heap.free || !host->heap.free_size ||
-        !host->heap.largest_free_block) {
+        !host->heap.largest_free_block)
+    {
         return 0;
     }
     return host->task.create &&
@@ -91,7 +100,8 @@ static int host_abi_is_compatible(const module_host_api_v1 *host)
 
 static int push_error(lua_State *L, const module_host_api_v1 *host, const char *err)
 {
-    if (!host) {
+    if (!host)
+    {
         return 0;
     }
     host->lua.pushnil(L);
@@ -130,7 +140,8 @@ static void set_closure_field(lua_State *L,
 
 static void create_log(const module_host_api_v1 *host, const char *text)
 {
-    if (host && host->serial.println) {
+    if (host && host->serial.println)
+    {
         host->serial.println(text);
     }
 }
@@ -142,41 +153,48 @@ static int32_t resolve_required_proc(module_host_resolve_v1_fn resolve,
 {
     int32_t err;
 
-    if (!resolve || !out_proc) {
+    if (!resolve || !out_proc)
+    {
         return MODULE_ERR_INVALID_ARG;
     }
 
     *out_proc = NULL;
     err = resolve(resolve_ctx, proc_id, out_proc);
-    if (err != MODULE_OK) {
+    if (err != MODULE_OK)
+    {
         return err;
     }
     return *out_proc ? MODULE_OK : MODULE_ERR_UNSUPPORTED;
 }
 
-#define RESOLVE_REQUIRED(proc_id, slot)                                      \
-    do {                                                                     \
-        void *proc = NULL;                                                   \
+#define RESOLVE_REQUIRED(proc_id, slot)                                              \
+    do                                                                               \
+    {                                                                                \
+        void *proc = NULL;                                                           \
         int32_t err = resolve_required_proc(resolve, resolve_ctx, (proc_id), &proc); \
-        if (err != MODULE_OK) {                                              \
-            return err;                                                      \
-        }                                                                    \
-        (slot) = (__typeof__(slot))proc;                                     \
+        if (err != MODULE_OK)                                                        \
+        {                                                                            \
+            return err;                                                              \
+        }                                                                            \
+        (slot) = (__typeof__(slot))proc;                                             \
     } while (0)
 
-#define RESOLVE_OPTIONAL(proc_id, slot)                                      \
-    do {                                                                     \
-        void *proc = NULL;                                                   \
-        if (resolve_required_proc(resolve, resolve_ctx, (proc_id), &proc) == MODULE_OK) { \
-            (slot) = (__typeof__(slot))proc;                                 \
-        }                                                                    \
+#define RESOLVE_OPTIONAL(proc_id, slot)                                                 \
+    do                                                                                  \
+    {                                                                                   \
+        void *proc = NULL;                                                              \
+        if (resolve_required_proc(resolve, resolve_ctx, (proc_id), &proc) == MODULE_OK) \
+        {                                                                               \
+            (slot) = (__typeof__(slot))proc;                                            \
+        }                                                                               \
     } while (0)
 
 static int32_t resolve_host_api(module_host_resolve_v1_fn resolve,
                                 void *resolve_ctx,
                                 module_host_api_v1 *out)
 {
-    if (!out) {
+    if (!out)
+    {
         return MODULE_ERR_INVALID_ARG;
     }
 
@@ -316,7 +334,8 @@ static void set_gamepad_constants(lua_State *L, const module_host_api_v1 *host)
 
 static retrogo_instance_t *instance_from_lua(lua_State *L)
 {
-    if (!s_host || !s_host->lua.touserdata || !s_host->lua.upvalue_index) {
+    if (!s_host || !s_host->lua.touserdata || !s_host->lua.upvalue_index)
+    {
         return NULL;
     }
     return (retrogo_instance_t *)s_host->lua.touserdata(L, s_host->lua.upvalue_index(1));
@@ -332,7 +351,8 @@ static int read_table_string(lua_State *L,
     int top = host->lua.gettop(L);
     int found = 0;
     host->lua.getfield(L, table_index, key);
-    if (host->lua.isstring(L, -1)) {
+    if (host->lua.isstring(L, -1))
+    {
         copy_text(out, out_size, host->lua.tostring(L, -1));
         found = 1;
     }
@@ -349,7 +369,8 @@ static int read_table_integer(lua_State *L,
     int top = host->lua.gettop(L);
     int found = 0;
     host->lua.getfield(L, table_index, key);
-    if (host->lua.isnumber(L, -1)) {
+    if (host->lua.isnumber(L, -1))
+    {
         *out = host->lua.tointeger(L, -1);
         found = 1;
     }
@@ -365,7 +386,8 @@ static int l_catalog_info(lua_State *L)
     size_t dirs = 0;
     size_t files = 0;
 
-    if (!host) {
+    if (!host)
+    {
         return 0;
     }
     holo_catalog_info(&entries, &dirs, &files);
@@ -385,41 +407,56 @@ static int l_set_catalog(lua_State *L)
     size_t len = 0;
     int top;
 
-    if (!host) {
+    if (!host)
+    {
         return 0;
     }
     create_log(host, "[retrogo.so] set_catalog enter");
 
-    if (host->lua.isstring(L, 1)) {
-        if (host->lua.tolstring) {
+    if (host->lua.isstring(L, 1))
+    {
+        if (host->lua.tolstring)
+        {
             blob = host->lua.tolstring(L, 1, &len);
-        } else {
+        }
+        else
+        {
             blob = host->lua.tostring(L, 1);
             len = blob ? strlen(blob) : 0;
         }
-    } else if (host->lua.istable(L, 1)) {
+    }
+    else if (host->lua.istable(L, 1))
+    {
         top = host->lua.gettop(L);
         host->lua.getfield(L, 1, "blob");
-        if (host->lua.isstring(L, -1)) {
-            if (host->lua.tolstring) {
+        if (host->lua.isstring(L, -1))
+        {
+            if (host->lua.tolstring)
+            {
                 blob = host->lua.tolstring(L, -1, &len);
-            } else {
+            }
+            else
+            {
                 blob = host->lua.tostring(L, -1);
                 len = blob ? strlen(blob) : 0;
             }
         }
         host->lua.settop(L, top);
-    } else if (host->lua.isnil(L, 1)) {
+    }
+    else if (host->lua.isnil(L, 1))
+    {
         holo_catalog_clear();
         host->lua.pushboolean(L, 1);
         return 1;
     }
 
-    if (!blob) {
+    if (!blob)
+    {
         create_log(host, "[retrogo.so] set_catalog bad arg");
         return push_error(L, host, "retrogo.set_catalog: expected catalog blob or {blob=...}");
     }
-    if (!holo_catalog_load_blob(blob, len)) {
+    if (!holo_catalog_load_blob(blob, len))
+    {
         create_log(host, "[retrogo.so] set_catalog oom");
         return push_error(L, host, "retrogo.set_catalog: out of memory");
     }
@@ -431,7 +468,8 @@ static int l_set_catalog(lua_State *L)
 static void retrogo_task_entry(void *arg)
 {
     retrogo_instance_t *inst = (retrogo_instance_t *)arg;
-    if (!inst) {
+    if (!inst)
+    {
         return;
     }
     inst->running = 1;
@@ -448,11 +486,14 @@ static void retrogo_task_entry(void *arg)
     holo_display_release();
     holo_port_log("[retrogo.so] display release");
     holo_port_log("[retrogo.so] retro-go task stop");
-    if (inst->host && inst->host->task.remove) {
+    if (inst->host && inst->host->task.remove)
+    {
         inst->host->task.remove(NULL);
     }
-    for (;;) {
-        if (inst->host && inst->host->task.delay) {
+    for (;;)
+    {
+        if (inst->host && inst->host->task.delay)
+        {
             inst->host->task.delay(1000);
         }
     }
@@ -466,24 +507,30 @@ static int l_start(lua_State *L)
     char rom[MODULE_PATH_MAX] = "";
     int64_t flags = 0;
 
-    if (!inst || !host) {
+    if (!inst || !host)
+    {
         return push_error(L, host, "retrogo.start: instance missing");
     }
     create_log(host, "[retrogo.so] start enter");
-    if (inst->running || inst->task) {
+    if (inst->running || inst->task)
+    {
         create_log(host, "[retrogo.so] start already running");
         return push_error(L, host, "retro-go is already running");
     }
 
-    if (host->lua.gettop(L) >= 1 && host->lua.istable(L, 1)) {
+    if (host->lua.gettop(L) >= 1 && host->lua.istable(L, 1))
+    {
         (void)read_table_string(L, host, 1, "app", app, sizeof(app));
         (void)read_table_string(L, host, 1, "system", app, sizeof(app));
         (void)read_table_string(L, host, 1, "rom", rom, sizeof(rom));
         (void)read_table_string(L, host, 1, "path", rom, sizeof(rom));
         (void)read_table_integer(L, host, 1, "flags", &flags);
-    } else if (host->lua.gettop(L) >= 1 && host->lua.isstring(L, 1)) {
+    }
+    else if (host->lua.gettop(L) >= 1 && host->lua.isstring(L, 1))
+    {
         copy_text(app, sizeof(app), host->lua.tostring(L, 1));
-        if (host->lua.gettop(L) >= 2 && host->lua.isstring(L, 2)) {
+        if (host->lua.gettop(L) >= 2 && host->lua.isstring(L, 2))
+        {
             copy_text(rom, sizeof(rom), host->lua.tostring(L, 2));
         }
     }
@@ -491,20 +538,26 @@ static int l_start(lua_State *L)
     holo_launch_set(app, rom, (uint32_t)flags);
     inst->stop_requested = 0;
 
-    if (!host->task.create) {
+    if (!host->task.create)
+    {
         create_log(host, "[retrogo.so] start no task api");
         return push_error(L, host, "host task API is missing");
     }
     create_log(host, "[retrogo.so] start task.create");
-    if (host->task.create_ex) {
+    if (host->task.create_ex)
+    {
         if (host->task.create_ex("retrogo", retrogo_task_entry, inst, 20u * 1024u, 3u, 1,
-                                 MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK) {
+                                 MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
+        {
             inst->task = NULL;
         }
-    } else if (host->task.create("retrogo", retrogo_task_entry, inst, 20u * 1024u, 3u, 1, &inst->task) != MODULE_OK) {
+    }
+    else if (host->task.create("retrogo", retrogo_task_entry, inst, 20u * 1024u, 3u, 1, &inst->task) != MODULE_OK)
+    {
         inst->task = NULL;
     }
-    if (!inst->task) {
+    if (!inst->task)
+    {
         create_log(host, "[retrogo.so] start task.create failed");
         return push_error(L, host, "failed to create retro-go task");
     }
@@ -519,7 +572,8 @@ static int l_stop(lua_State *L)
     retrogo_instance_t *inst = instance_from_lua(L);
     const module_host_api_v1 *host = inst ? inst->host : s_host;
 
-    if (!inst || !host) {
+    if (!inst || !host)
+    {
         return push_error(L, host, "retrogo.stop: instance missing");
     }
     inst->stop_requested = 1;
@@ -534,11 +588,13 @@ static int l_set_input_mask(lua_State *L)
     const module_host_api_v1 *host = inst ? inst->host : s_host;
     int64_t mask;
 
-    if (!host) {
+    if (!host)
+    {
         return 0;
     }
     mask = host->lua.checkinteger(L, 1);
-    if (mask < 0) {
+    if (mask < 0)
+    {
         mask = 0;
     }
     holo_input_set_mask((uint32_t)mask);
@@ -552,7 +608,8 @@ static int l_info(lua_State *L)
     const module_host_api_v1 *host = inst ? inst->host : s_host;
     holo_launch_t launch;
 
-    if (!inst || !host) {
+    if (!inst || !host)
+    {
         return push_error(L, host, "retrogo.info: instance missing");
     }
 
@@ -582,12 +639,14 @@ RETROGO_MODULE_EXPORT int32_t module_create_v1(const module_host_api_v1 *host,
     retrogo_instance_t *inst;
 
     create_log(host, "[retrogo.so] create enter");
-    if (!out_instance || !host) {
+    if (!out_instance || !host)
+    {
         return MODULE_ERR_INVALID_ARG;
     }
     *out_instance = NULL;
     create_log(host, "[retrogo.so] create validate");
-    if (!host_abi_is_compatible(host)) {
+    if (!host_abi_is_compatible(host))
+    {
         return MODULE_ERR_VERSION;
     }
 
@@ -612,7 +671,8 @@ RETROGO_MODULE_EXPORT int32_t module_create_v2(module_host_resolve_v1_fn resolve
                                                void **out_instance)
 {
     int32_t err = resolve_host_api(resolve, resolve_ctx, &s_resolved_host);
-    if (err != MODULE_OK) {
+    if (err != MODULE_OK)
+    {
         return err;
     }
     return module_create_v1(&s_resolved_host, info, out_instance);
@@ -623,7 +683,8 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
     retrogo_instance_t *inst = (retrogo_instance_t *)instance;
     const module_host_api_v1 *host = inst ? inst->host : s_host;
 
-    if (!inst || !host || !L) {
+    if (!inst || !host || !L)
+    {
         return MODULE_ERR_INVALID_ARG;
     }
 
@@ -647,25 +708,32 @@ RETROGO_MODULE_EXPORT void module_destroy_v1(void *instance)
     retrogo_instance_t *inst = (retrogo_instance_t *)instance;
     const module_host_api_v1 *host = inst ? inst->host : s_host;
 
-    if (!inst || !host) {
+    if (!inst || !host)
+    {
         return;
     }
     holo_runtime_request_stop();
-    for (int i = 0; inst->running && i < 100; ++i) {
-        if (host->task.delay) {
+    for (int i = 0; inst->running && i < 100; ++i)
+    {
+        if (host->task.delay)
+        {
             host->task.delay(10);
-        } else if (host->time.delay) {
+        }
+        else if (host->time.delay)
+        {
             host->time.delay(10);
         }
     }
     holo_catalog_clear();
     holo_port_log("[retrogo.so] destroy");
-    if (inst->running) {
+    if (inst->running)
+    {
         holo_port_log("[retrogo.so] destroy deferred; task still running, force release display");
         holo_display_release();
         return;
     }
-    if (inst != &s_static_instance && host->heap.free) {
+    if (inst != &s_static_instance && host->heap.free)
+    {
         host->heap.free(inst);
     }
 }
