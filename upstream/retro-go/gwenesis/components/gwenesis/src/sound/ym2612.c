@@ -678,6 +678,7 @@ static INT32  m2,c1,c2;   /* Phase Modulation input for operators 2,3,4 */
 static INT32  mem;        /* one sample delay memory */
 static INT32  out_fm[8];  /* outputs of working channels */
 static UINT32 bitmask;    /* working channels output bitmasking (DAC quantization) */
+static bool ym2612_lite_mode;
 
 /* mirror of all OPN registers */
 #define OPNREGS_SIZE 512
@@ -716,6 +717,11 @@ void gwenesis_ym2612_deinit_fast_ram(void)
   sin_tab = NULL;
   ym2612_tables_initialized = 0;
 #endif
+}
+
+void ym2612_set_lite_mode(bool enabled)
+{
+  ym2612_lite_mode = enabled;
 }
 
 INLINE void FM_KEYON(FM_CH *CH , int s )
@@ -1612,6 +1618,63 @@ INLINE void chan_calc(FM_CH *CH, int num)
   } while (--num);
 }
 
+INLINE void chan_advance_phase(FM_CH *CH, int num)
+{
+  do
+  {
+    if(CH->pms)
+    {
+      if ((ym2612.OPN.ST.mode & 0xC0) && (CH == &ym2612.CH[2]))
+      {
+        update_phase_lfo_slot(&CH->SLOT[SLOT1], CH->pms, ym2612.OPN.SL3.block_fnum[1]);
+        update_phase_lfo_slot(&CH->SLOT[SLOT2], CH->pms, ym2612.OPN.SL3.block_fnum[2]);
+        update_phase_lfo_slot(&CH->SLOT[SLOT3], CH->pms, ym2612.OPN.SL3.block_fnum[0]);
+        update_phase_lfo_slot(&CH->SLOT[SLOT4], CH->pms, CH->block_fnum);
+      }
+      else
+      {
+        update_phase_lfo_channel(CH);
+      }
+    }
+    else
+    {
+      CH->SLOT[SLOT1].phase += CH->SLOT[SLOT1].Incr;
+      CH->SLOT[SLOT2].phase += CH->SLOT[SLOT2].Incr;
+      CH->SLOT[SLOT3].phase += CH->SLOT[SLOT3].Incr;
+      CH->SLOT[SLOT4].phase += CH->SLOT[SLOT4].Incr;
+    }
+    CH++;
+  } while (--num);
+}
+
+static inline void GWENESIS_HOT YM2612AdvanceLiteSkippedSample(int num_channels)
+{
+  update_ssg_eg_channels(&ym2612.CH[0]);
+  chan_advance_phase(&ym2612.CH[0], num_channels);
+
+  advance_lfo();
+
+  ym2612.OPN.eg_timer++;
+  if (ym2612.OPN.eg_timer >= 3)
+  {
+    ym2612.OPN.eg_timer = 0;
+    ym2612.OPN.eg_cnt++;
+    advance_eg_channels(&ym2612.CH[0], ym2612.OPN.eg_cnt);
+  }
+
+  ym2612.OPN.SL3.key_csm <<= 1;
+  INTERNAL_TIMER_A();
+
+  if (ym2612.OPN.SL3.key_csm & 2)
+  {
+    FM_KEYOFF_CSM(&ym2612.CH[2],SLOT1);
+    FM_KEYOFF_CSM(&ym2612.CH[2],SLOT2);
+    FM_KEYOFF_CSM(&ym2612.CH[2],SLOT3);
+    FM_KEYOFF_CSM(&ym2612.CH[2],SLOT4);
+    ym2612.OPN.SL3.key_csm = 0;
+  }
+}
+
 /* write a OPN mode register 0x20-0x2f */
 INLINE void OPNWriteMode(int r, int v)
 {
@@ -2198,6 +2261,13 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
       FM_KEYOFF_CSM(&ym2612.CH[2],SLOT3);
       FM_KEYOFF_CSM(&ym2612.CH[2],SLOT4);
       ym2612.OPN.SL3.key_csm = 0;
+    }
+
+    if (ym2612_lite_mode && (i + 1) < length)
+    {
+      *buffer++ = lt;
+      i++;
+      YM2612AdvanceLiteSkippedSample(ym2612.dacen ? 5 : 6);
     }
   }
 

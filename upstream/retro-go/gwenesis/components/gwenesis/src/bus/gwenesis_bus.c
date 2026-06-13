@@ -671,7 +671,8 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
 {
-      //  if ((address &  0xFF0000 ) == 0xFF0000) return FETCH8RAM(address);
+    if ((address & 0xFF0000) == 0xFF0000)
+        return FETCH8RAM(address);
     return gwenesis_bus_read_memory_8(address);
 }
 
@@ -683,7 +684,8 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
 {
-     //   if ((address &  0xFF0000 ) == 0xFF0000) return FETCH16RAM(address);
+    if ((address & 0xFF0000) == 0xFF0000)
+        return FETCH16RAM(address);
     return gwenesis_bus_read_memory_16(address);
 }
 
@@ -695,8 +697,10 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
 {
-  //  if ((address &  0xFF0000 ) == 0xFF0000) return FETCH32RAM(address);
-    return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
+  if ((address & 0xFF0000) == 0xFF0000 && ((address + 2) & 0xFF0000) == 0xFF0000) {
+    return (FETCH16RAM(address) << 16) | FETCH16RAM(address + 2);
+  }
+  return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
 }
 
 /******************************************************************************
@@ -706,10 +710,10 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
  *
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
-  // if ((address & 0xFF0000) == 0xFF0000) {
-  //   WRITE8RAM(address, value);
-  //   return;
-  // }
+  if ((address & 0xFF0000) == 0xFF0000) {
+    WRITE8RAM(address, value);
+    return;
+  }
   gwenesis_bus_write_memory_8(address, value);
   return;
 }
@@ -721,10 +725,10 @@ void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) 
  *
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
-  // if ((address & 0xFF0000) == 0xFF0000) {
-  //   WRITE16RAM(address, value);
-  //   return;
-  // }
+  if ((address & 0xFF0000) == 0xFF0000) {
+    WRITE16RAM(address, value);
+    return;
+  }
   gwenesis_bus_write_memory_16(address, value);
   return;
 }
@@ -736,10 +740,11 @@ void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value)
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
 
-  // if ((address & 0xFF0000) == 0xFF0000) {
-  //   WRITE32RAM(address, value);
-  //   return;
-  // }
+  if ((address & 0xFF0000) == 0xFF0000 && ((address + 2) & 0xFF0000) == 0xFF0000) {
+    WRITE16RAM(address, (value >> 16) & 0xffff);
+    WRITE16RAM(address + 2, value & 0xffff);
+    return;
+  }
   gwenesis_bus_write_memory_16(address, (value >> 16) & 0xffff);
   gwenesis_bus_write_memory_16(address + 2, (value)&0xffff);
 

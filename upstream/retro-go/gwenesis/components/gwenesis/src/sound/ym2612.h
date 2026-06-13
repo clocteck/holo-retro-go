@@ -29,6 +29,7 @@ extern void YM2612Init(void);
 extern void YM2612Config(unsigned char dac_bits); //,unsigned int AUDIO_FREQ_DIVISOR);
 extern void YM2612ResetChip(void);
 //extern void YM2612Update(int16_t *buffer, int length);
+extern void ym2612_set_lite_mode(bool enabled);
 extern void YM2612Write(unsigned int a, unsigned int v, int target);
 extern void ym2612_run(int target);
 extern unsigned int YM2612Read(int target);

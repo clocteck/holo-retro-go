@@ -130,6 +130,61 @@ static inline void write_update(const rg_surface_t *update)
     const uint16_t *palette = update->palette;
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+    if ((format == RG_PIXEL_PAL565_LE || format == RG_PIXEL_PAL565_BE) &&
+        palette &&
+        !filter_x && !filter_y &&
+        draw_left >= 0 && draw_top >= 0 &&
+        draw_left + draw_width <= display.screen.width &&
+        draw_top + draw_height <= display.screen.height &&
+        draw_width == update->width && draw_height == update->height)
+    {
+        const int lines_per_buffer = LCD_BUFFER_LENGTH / draw_width;
+        const bool swap_palette = (format == RG_PIXEL_PAL565_BE);
+
+        lcd_set_window(display.screen.margins.left + draw_left,
+                       display.screen.margins.top + draw_top,
+                       draw_width, draw_height);
+        for (int y = 0; y < draw_height;)
+        {
+            uint16_t *line_buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+            if (!line_buffer)
+                break;
+
+            int lines_to_copy = RG_MIN(lines_per_buffer, draw_height - y);
+            for (int i = 0; i < lines_to_copy; ++i)
+            {
+                const uint8_t *src = (const uint8_t *)data + ((y + i) * stride);
+                uint16_t *dst = line_buffer + (i * draw_width);
+                uint32_t *dst32 = (uint32_t *)dst;
+                int x = 0;
+
+                for (; x + 1 < draw_width; x += 2)
+                {
+                    uint32_t p0 = palette[src[x]];
+                    uint32_t p1 = palette[src[x + 1]];
+                    if (swap_palette)
+                    {
+                        p0 = ((p0 << 8) | (p0 >> 8)) & 0xFFFF;
+                        p1 = ((p1 << 8) | (p1 >> 8)) & 0xFFFF;
+                    }
+                    *dst32++ = p0 | (p1 << 16);
+                }
+                if (x < draw_width)
+                {
+                    uint16_t p = palette[src[x]];
+                    dst[x] = swap_palette ? ((p << 8) | (p >> 8)) : p;
+                }
+            }
+
+            lcd_send_buffer(line_buffer, draw_width * lines_to_copy);
+            y += lines_to_copy;
+        }
+
+        counters.fullFrames++;
+        counters.busyTime += rg_system_timer() - time_start;
+        return;
+    }
+
     if (format == RG_PIXEL_565_LE &&
         !filter_x && !filter_y &&
         draw_left >= 0 && draw_top >= 0 &&

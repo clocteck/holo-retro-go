@@ -18,6 +18,7 @@ __license__ = "GPLv3"
 */
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <assert.h>
 #include "Z80.h"
 #include "z80inst.h"
@@ -38,6 +39,7 @@ static int reset = 0;
 static int reset_once = 0;
 int zclk = 0;
 static int initialized = 0;
+static bool z80_emulation_enabled = true;
 
 unsigned char *Z80_RAM;
 #if defined(RETRO_GO)
@@ -85,6 +87,16 @@ void z80_start() {
     zclk=0;
 }
 
+void z80_set_enabled(bool enabled)
+{
+    z80_emulation_enabled = enabled;
+    if (!enabled)
+    {
+        cpu.IRequest = INT_NONE;
+        zclk = 0;
+    }
+}
+
 void z80_pulse_reset() {
   ResetZ80(&cpu);
 }
@@ -94,6 +106,10 @@ void GWENESIS_HOT z80_run(int target) {
 
   // we are in advance,nothind to do
 current_timeslice = 0;
+  if (!z80_emulation_enabled) {
+    zclk = target;
+    return;
+  }
   if (zclk >= target) {
  // z80_log("z80_skip time","%1d%1d%1d||zclk=%d,tgt=%d",reset_once,bus_ack,reset, zclk, target);
     return;
@@ -193,6 +209,7 @@ unsigned int GWENESIS_HOT z80_read_ctrl(unsigned int address) {
 
 void GWENESIS_HOT z80_irq_line(unsigned int value)
 {
+    if (!z80_emulation_enabled) return;
     if (reset_once == 0) return;
 
     if (value)

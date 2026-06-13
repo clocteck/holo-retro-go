@@ -71,10 +71,6 @@ unsigned char *screen, *scaled_screen;
 // Define screen buffers for embedded 565 format
 static uint8_t *screen_buffer_line=0;
 static uint8_t *screen_buffer=0;
-#if defined(RG_TARGET_HOLO_DYNMOD)
-static uint16_t *screen_buffer_line_565=0;
-static uint16_t *screen_buffer_565=0;
-#endif
 
     // Overflow is the maximum size we can draw outside to avoid
     // wasting time and code in clipping. The maximum object is a 4x4 sprite,
@@ -89,6 +85,26 @@ static uint8_t *sprite_buffer;
 #else
 static uint8_t render_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
+#endif
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+enum {
+  VDP_SPRITE_VISIBLE_LINES = 240,
+  VDP_SPRITE_LINE_MAX = 20,
+  VDP_TILE_ROW_CACHE_ENTRIES = 512,
+};
+
+typedef struct {
+  uint32_t pattern;
+  uint8_t pixels[8];
+  uint8_t flip;
+  uint8_t valid;
+  uint8_t pad[2];
+} vdp_tile_row_cache_entry_t;
+
+static uint8_t *sprite_line_count;
+static uint8_t *sprite_line_table;
+static vdp_tile_row_cache_entry_t *tile_row_cache;
 #endif
 
 // Define VIDEO MODE
@@ -124,6 +140,17 @@ bool gwenesis_vdp_gfx_init_fast_ram(void)
         render_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
     if (!sprite_buffer)
         sprite_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!sprite_line_count)
+        sprite_line_count = rg_alloc(VDP_SPRITE_VISIBLE_LINES, MEM_FAST);
+    if (!sprite_line_table)
+        sprite_line_table = rg_alloc(VDP_SPRITE_VISIBLE_LINES * VDP_SPRITE_LINE_MAX, MEM_FAST);
+    if (!tile_row_cache)
+        tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST);
+    if (tile_row_cache)
+        memset(tile_row_cache, 0, sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES);
+    return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
+#endif
 #endif
     return render_buffer && sprite_buffer;
 }
@@ -133,8 +160,18 @@ void gwenesis_vdp_gfx_deinit_fast_ram(void)
 #if defined(RETRO_GO)
     free(render_buffer);
     free(sprite_buffer);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    free(sprite_line_count);
+    free(sprite_line_table);
+    free(tile_row_cache);
+#endif
     render_buffer = NULL;
     sprite_buffer = NULL;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    sprite_line_count = NULL;
+    sprite_line_table = NULL;
+    tile_row_cache = NULL;
+#endif
 #endif
 }
 
@@ -171,12 +208,8 @@ void gwenesis_vdp_set_buffers(unsigned char *screen_buffer, unsigned char *scale
 //embedded
 void gwenesis_vdp_set_buffer(unsigned short *ptr_screen_buffer)
 {
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    screen_buffer_line_565 = ptr_screen_buffer;
-    screen_buffer_565 = ptr_screen_buffer;
-#endif
-    screen_buffer_line = ptr_screen_buffer;
-    screen_buffer = ptr_screen_buffer;
+    screen_buffer_line = (uint8_t *)ptr_screen_buffer;
+    screen_buffer = (uint8_t *)ptr_screen_buffer;
 }
 
 /******************************************************************************
@@ -200,10 +233,66 @@ void gwenesis_vdp_set_buffer(unsigned short *ptr_screen_buffer)
  #define PIX6(P) ( ((P) & 0xF0000000 ) >>  28 )
  #define PIX7(P) ( ((P) & 0x0F000000 ) >>  24 )
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static inline __attribute__((always_inline))
+const uint8_t *vdp_tile_row_pixels(uint32_t pattern, bool flip)
+{
+  const uint32_t hash = pattern ^ (pattern >> 11) ^ (pattern >> 21) ^ (flip ? 0x1ffU : 0U);
+  vdp_tile_row_cache_entry_t *entry = &tile_row_cache[hash & (VDP_TILE_ROW_CACHE_ENTRIES - 1)];
+
+  if (!entry->valid || entry->pattern != pattern || entry->flip != (uint8_t)flip)
+  {
+    entry->pattern = pattern;
+    entry->flip = (uint8_t)flip;
+    entry->valid = 1;
+
+    if (flip)
+    {
+      entry->pixels[0] = PIX7(pattern);
+      entry->pixels[1] = PIX6(pattern);
+      entry->pixels[2] = PIX5(pattern);
+      entry->pixels[3] = PIX4(pattern);
+      entry->pixels[4] = PIX3(pattern);
+      entry->pixels[5] = PIX2(pattern);
+      entry->pixels[6] = PIX1(pattern);
+      entry->pixels[7] = PIX0(pattern);
+    }
+    else
+    {
+      entry->pixels[0] = PIX0(pattern);
+      entry->pixels[1] = PIX1(pattern);
+      entry->pixels[2] = PIX2(pattern);
+      entry->pixels[3] = PIX3(pattern);
+      entry->pixels[4] = PIX4(pattern);
+      entry->pixels[5] = PIX5(pattern);
+      entry->pixels[6] = PIX6(pattern);
+      entry->pixels[7] = PIX7(pattern);
+    }
+  }
+
+  return entry->pixels;
+}
+#endif
+
 static inline __attribute__((always_inline))
 void draw_pattern_nofliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, false);
+  uint8_t px;
+
+  if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
+  if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
+  if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
+  if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
+  if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
+  if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
+  if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
+  if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
+  return;
+#endif
 
   /*  not transparent pixel to write AND not already a sprite*/
   if (((PIX0(p))) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | (PIX0(p));
@@ -221,6 +310,21 @@ void draw_pattern_fliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, true);
+  uint8_t px;
+
+  if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
+  if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
+  if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
+  if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
+  if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
+  if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
+  if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
+  if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
+  return;
+#endif
+
   /*  not transparent pixel to write AND not already a sprite*/
   if (((PIX7(p))) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | (PIX7(p));
   if (((PIX6(p))) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | (PIX6(p));
@@ -237,6 +341,32 @@ static inline __attribute__((always_inline))
 void draw_pattern_nofliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return; 
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, false);
+  uint8_t px;
+
+  if (attrs & PIXATTR_HIPRI) {
+    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
+    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
+    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
+    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
+    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
+    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
+    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
+    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
+  } else {
+    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE_HIPRI) == 0)) scr[0] = attrs | px;
+    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE_HIPRI) == 0)) scr[1] = attrs | px;
+    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE_HIPRI) == 0)) scr[2] = attrs | px;
+    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE_HIPRI) == 0)) scr[3] = attrs | px;
+    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE_HIPRI) == 0)) scr[4] = attrs | px;
+    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE_HIPRI) == 0)) scr[5] = attrs | px;
+    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE_HIPRI) == 0)) scr[6] = attrs | px;
+    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE_HIPRI) == 0)) scr[7] = attrs | px;
+  }
+  return;
+#endif
 
   /* High priority */
   if (attrs & PIXATTR_HIPRI) {
@@ -272,6 +402,32 @@ static inline __attribute__((always_inline))
 void draw_pattern_fliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, true);
+  uint8_t px;
+
+  if (attrs & PIXATTR_HIPRI) {
+    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
+    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
+    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
+    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
+    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
+    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
+    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
+    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
+  } else {
+    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE_HIPRI) == 0)) scr[0] = attrs | px;
+    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE_HIPRI) == 0)) scr[1] = attrs | px;
+    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE_HIPRI) == 0)) scr[2] = attrs | px;
+    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE_HIPRI) == 0)) scr[3] = attrs | px;
+    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE_HIPRI) == 0)) scr[4] = attrs | px;
+    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE_HIPRI) == 0)) scr[5] = attrs | px;
+    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE_HIPRI) == 0)) scr[6] = attrs | px;
+    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE_HIPRI) == 0)) scr[7] = attrs | px;
+  }
+  return;
+#endif
 
   /* High priority */
   if (attrs & PIXATTR_HIPRI) {
@@ -332,6 +488,21 @@ draw_pattern_nofliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, false);
+  uint8_t px;
+
+  scr[0] = (px = pix[0]) ? attrs | px : back;
+  scr[1] = (px = pix[1]) ? attrs | px : back;
+  scr[2] = (px = pix[2]) ? attrs | px : back;
+  scr[3] = (px = pix[3]) ? attrs | px : back;
+  scr[4] = (px = pix[4]) ? attrs | px : back;
+  scr[5] = (px = pix[5]) ? attrs | px : back;
+  scr[6] = (px = pix[6]) ? attrs | px : back;
+  scr[7] = (px = pix[7]) ? attrs | px : back;
+  return;
+#endif
+
   scr[0] = PIX0(p) ? attrs | (PIX0(p)) : back;
   scr[1] = PIX1(p) ? attrs | (PIX1(p)) : back;
   scr[2] = PIX2(p) ? attrs | (PIX2(p)) : back;
@@ -360,6 +531,21 @@ draw_pattern_fliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, true);
+  uint8_t px;
+
+  scr[0] = (px = pix[0]) ? attrs | px : back;
+  scr[1] = (px = pix[1]) ? attrs | px : back;
+  scr[2] = (px = pix[2]) ? attrs | px : back;
+  scr[3] = (px = pix[3]) ? attrs | px : back;
+  scr[4] = (px = pix[4]) ? attrs | px : back;
+  scr[5] = (px = pix[5]) ? attrs | px : back;
+  scr[6] = (px = pix[6]) ? attrs | px : back;
+  scr[7] = (px = pix[7]) ? attrs | px : back;
+  return;
+#endif
+
   scr[0] = PIX7(p) ? attrs | (PIX7(p)) : back;
   scr[1] = PIX6(p) ? attrs | (PIX6(p)) : back;
   scr[2] = PIX5(p) ? attrs | (PIX5(p)) : back;
@@ -376,6 +562,32 @@ static inline __attribute__((always_inline)) void
 draw_pattern_nofliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
   if (p == 0) return;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  const uint8_t *pix = vdp_tile_row_pixels(p, false);
+  uint8_t px;
+
+  if (attrs & PIXATTR_HIPRI) {
+    if ((px = pix[0])) scr[0] = attrs | px;
+    if ((px = pix[1])) scr[1] = attrs | px;
+    if ((px = pix[2])) scr[2] = attrs | px;
+    if ((px = pix[3])) scr[3] = attrs | px;
+    if ((px = pix[4])) scr[4] = attrs | px;
+    if ((px = pix[5])) scr[5] = attrs | px;
+    if ((px = pix[6])) scr[6] = attrs | px;
+    if ((px = pix[7])) scr[7] = attrs | px;
+  } else {
+    if ((px = pix[0]) && ((scr[0] & PIXATTR_HIPRI) == 0)) scr[0] = attrs | px;
+    if ((px = pix[1]) && ((scr[1] & PIXATTR_HIPRI) == 0)) scr[1] = attrs | px;
+    if ((px = pix[2]) && ((scr[2] & PIXATTR_HIPRI) == 0)) scr[2] = attrs | px;
+    if ((px = pix[3]) && ((scr[3] & PIXATTR_HIPRI) == 0)) scr[3] = attrs | px;
+    if ((px = pix[4]) && ((scr[4] & PIXATTR_HIPRI) == 0)) scr[4] = attrs | px;
+    if ((px = pix[5]) && ((scr[5] & PIXATTR_HIPRI) == 0)) scr[5] = attrs | px;
+    if ((px = pix[6]) && ((scr[6] & PIXATTR_HIPRI) == 0)) scr[6] = attrs | px;
+    if ((px = pix[7]) && ((scr[7] & PIXATTR_HIPRI) == 0)) scr[7] = attrs | px;
+  }
+  return;
+#endif
 
   if (attrs & PIXATTR_HIPRI) {
 
@@ -406,6 +618,32 @@ static inline __attribute__((always_inline)) void
 draw_pattern_fliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
     if (p == 0) return;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    const uint8_t *pix = vdp_tile_row_pixels(p, true);
+    uint8_t px;
+
+    if (attrs & PIXATTR_HIPRI) {
+      if ((px = pix[0])) scr[0] = attrs | px;
+      if ((px = pix[1])) scr[1] = attrs | px;
+      if ((px = pix[2])) scr[2] = attrs | px;
+      if ((px = pix[3])) scr[3] = attrs | px;
+      if ((px = pix[4])) scr[4] = attrs | px;
+      if ((px = pix[5])) scr[5] = attrs | px;
+      if ((px = pix[6])) scr[6] = attrs | px;
+      if ((px = pix[7])) scr[7] = attrs | px;
+    } else {
+      if ((px = pix[0]) && ((scr[0] & PIXATTR_HIPRI) == 0)) scr[0] = attrs | px;
+      if ((px = pix[1]) && ((scr[1] & PIXATTR_HIPRI) == 0)) scr[1] = attrs | px;
+      if ((px = pix[2]) && ((scr[2] & PIXATTR_HIPRI) == 0)) scr[2] = attrs | px;
+      if ((px = pix[3]) && ((scr[3] & PIXATTR_HIPRI) == 0)) scr[3] = attrs | px;
+      if ((px = pix[4]) && ((scr[4] & PIXATTR_HIPRI) == 0)) scr[4] = attrs | px;
+      if ((px = pix[5]) && ((scr[5] & PIXATTR_HIPRI) == 0)) scr[5] = attrs | px;
+      if ((px = pix[6]) && ((scr[6] & PIXATTR_HIPRI) == 0)) scr[6] = attrs | px;
+      if ((px = pix[7]) && ((scr[7] & PIXATTR_HIPRI) == 0)) scr[7] = attrs | px;
+    }
+    return;
+#endif
 
     if (attrs & PIXATTR_HIPRI) {
 
@@ -752,6 +990,53 @@ void draw_line_aw(int line) {
  *
  ******************************************************************************/
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static void GWENESIS_HOT build_sprite_line_list(void)
+{
+  if (!sprite_line_count || !sprite_line_table)
+    return;
+
+  memset(sprite_line_count, 0, VDP_SPRITE_VISIBLE_LINES);
+
+  uint8_t *start_table = VRAM + REG5_SAT_ADDRESS;
+  uint8_t *cache_base = MODE_SHI ? start_table : SAT_CACHE;
+  const int sprite_table_size = (screen_width == 320) ? 80 : 64;
+  const int max_sprites_per_line = (screen_width == 320) ? 20 : 16;
+  int sidx = 0;
+
+  for (int i = 0; i < sprite_table_size && sidx < sprite_table_size; ++i)
+  {
+    uint8_t *cache = cache_base + sidx * 8;
+    int sy = (((cache[0] & 0x3) << 8) | cache[1]) - 128;
+    int sh = BITS(cache[2], 0, 2) + 1;
+    int link = BITS(cache[3], 0, 7);
+    int first = sy;
+    int last = sy + sh * 8;
+
+    if (first < 0)
+      first = 0;
+    if (last > screen_height)
+      last = screen_height;
+    if (last > VDP_SPRITE_VISIBLE_LINES)
+      last = VDP_SPRITE_VISIBLE_LINES;
+
+    for (int line = first; line < last; ++line)
+    {
+      uint8_t count = sprite_line_count[line];
+      if (count < max_sprites_per_line)
+      {
+        sprite_line_table[line * VDP_SPRITE_LINE_MAX + count] = (uint8_t)sidx;
+        sprite_line_count[line] = count + 1;
+      }
+    }
+
+    if (link == 0)
+      break;
+    sidx = link;
+  }
+}
+#endif
+
 //__attribute__((optimize("unroll-loops")))
 static inline __attribute__((always_inline)) 
 void draw_sprites_over_planes(int line)
@@ -774,6 +1059,79 @@ void draw_sprites_over_planes(int line)
 
     bool masking = false, one_sprite_nonzero = false; // overdraw = false;
     int sidx = 0, num_sprites = 0, num_pixels = 0;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if ((unsigned)line < VDP_SPRITE_VISIBLE_LINES)
+    {
+      const int line_count = sprite_line_count[line];
+      for (int i = 0; i < line_count; ++i)
+      {
+        sidx = sprite_line_table[line * VDP_SPRITE_LINE_MAX + i];
+        uint8_t *table = start_table + sidx * 8;
+        uint8_t *cache = SAT_CACHE + sidx * 8;
+
+        int sy = ((cache[0] & 0x3) << 8) | cache[1];
+        int sx = ((table[6] & 0x3) << 8) | table[7];
+        uint16_t name = (table[4] << 8) | table[5];
+        int sh = BITS(cache[2], 0, 2) + 1;
+        int isflipv = table[4] & 0x10;
+        int isfliph = table[4] & 0x8;
+        int sw = BITS(table[2], 2, 2) + 1;
+
+        sy -= 128;
+        if (sx == 0)
+        {
+          if (one_sprite_nonzero || (sprite_overflow == line - 1))
+            masking = true;
+        }
+        else
+          one_sprite_nonzero = true;
+
+        int row = (line - sy) >> 3;
+        int paty = (line - sy) & 7;
+        if (isflipv)
+          row = sh - row - 1;
+
+        sx -= 128;
+        if ((sx > (-sw * 8)) && (sx < screen_width) && !masking)
+        {
+          name += row;
+
+          if (isfliph)
+          {
+            name += sh * (sw - 1);
+            for (int p = 0; (p < sw) && (num_pixels < MAX_PIXELS_PER_LINE); p++)
+            {
+              draw_pattern_sprite_over_planes(scr + sx + p * 8, name, paty);
+              name -= sh;
+              num_pixels += 8;
+            }
+          }
+          else
+          {
+            for (int p = 0; (p < sw) && (num_pixels < MAX_PIXELS_PER_LINE); p++)
+            {
+              draw_pattern_sprite_over_planes(scr + sx + p * 8, name, paty);
+              name += sh;
+              num_pixels += 8;
+            }
+          }
+        }
+        else
+          num_pixels += sw * 8;
+
+        if (num_pixels >= MAX_PIXELS_PER_LINE)
+        {
+          sprite_overflow = line;
+          break;
+        }
+        if (++num_sprites >= MAX_SPRITES_PER_LINE)
+          break;
+      }
+      return;
+    }
+#endif
+
     for (int i = 0; (i < SPRITE_TABLE_SIZE) && sidx < (SPRITE_TABLE_SIZE); ++i)
     {
         uint8_t *table = start_table + sidx*8;
@@ -882,6 +1240,79 @@ void draw_sprites(int line)
 
   bool masking = false, one_sprite_nonzero = false; // overdraw = false;
   int sidx = 0, num_sprites = 0, num_pixels = 0;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  if ((unsigned)line < VDP_SPRITE_VISIBLE_LINES)
+  {
+    const int line_count = sprite_line_count[line];
+    for (int i = 0; i < line_count; ++i)
+    {
+      sidx = sprite_line_table[line * VDP_SPRITE_LINE_MAX + i];
+      uint8_t *table = start_table + sidx * 8;
+      uint8_t *cache = start_table + sidx * 8;
+
+      int sy = ((cache[0] & 0x3) << 8) | cache[1];
+      int sx = ((table[6] & 0x3) << 8) | table[7];
+      uint16_t name = (table[4] << 8) | table[5];
+      int sh = BITS(cache[2], 0, 2) + 1;
+      int isflipv = table[4] & 0x10;
+      int isfliph = table[4] & 0x8;
+      int sw = BITS(table[2], 2, 2) + 1;
+
+      sy -= 128;
+      if (sx == 0)
+      {
+        if (one_sprite_nonzero || sprite_overflow == line - 1)
+          masking = true;
+      }
+      else
+        one_sprite_nonzero = true;
+
+      int row = (line - sy) >> 3;
+      int paty = (line - sy) & 7;
+      if (isflipv)
+        row = sh - row - 1;
+
+      sx -= 128;
+      if (sx > -sw * 8 && sx < screen_width && !masking)
+      {
+        name += row;
+
+        if (isfliph)
+        {
+          name += sh * (sw - 1);
+          for (int p = 0; p < sw && num_pixels < MAX_PIXELS_PER_LINE; p++)
+          {
+            draw_pattern_sprite(scr + sx + p * 8, name, paty);
+            name -= sh;
+            num_pixels += 8;
+          }
+        }
+        else
+        {
+          for (int p = 0; p < sw && num_pixels < MAX_PIXELS_PER_LINE; p++)
+          {
+            draw_pattern_sprite(scr + sx + p * 8, name, paty);
+            name += sh;
+            num_pixels += 8;
+          }
+        }
+      }
+      else
+        num_pixels += sw * 8;
+
+      if (num_pixels >= MAX_PIXELS_PER_LINE)
+      {
+        sprite_overflow = line;
+        break;
+      }
+      if (++num_sprites >= MAX_SPRITES_PER_LINE)
+        break;
+    }
+    return;
+  }
+#endif
+
   for (int i = 0; i < SPRITE_TABLE_SIZE && sidx < SPRITE_TABLE_SIZE; ++i) {
     uint8_t *table = start_table + sidx * 8;
     uint8_t *cache = start_table + sidx * 8;
@@ -1020,6 +1451,10 @@ void GWENESIS_HOT gwenesis_vdp_render_config()
       // if (Window_lastcol != 0)
       //      window_is_bugged = 1;
     }
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    build_sprite_line_list();
+#endif
 }
 
 /******************************************************************************
@@ -1080,8 +1515,8 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 // Embedded RGB565
 #else
 #if defined(RG_TARGET_HOLO_DYNMOD)
-  screen_buffer_line_565 = &screen_buffer_565[(((240 - screen_height) / 2) + line) * 320 +
-                                               ((320 - screen_width) / 2)];
+  screen_buffer_line = &screen_buffer[(((240 - screen_height) / 2) + line) * 320 +
+                                      ((320 - screen_width) / 2)];
 #else
   screen_buffer_line = &screen_buffer[line * 320];
   /* clean up line screen not refreshed when mode is !H40 */
@@ -1169,41 +1604,6 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 
   #else
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
-  /* Mode Highlight/shadow is enabled */
-  if (MODE_SHI) {
-    for (int x = 0; x < screen_width; x++) {
-      uint8_t plane = pb[x];
-      uint8_t sprite = ps[x];
-      uint16_t rgb565;
-
-      if ((plane & 0xC0) < (sprite & 0xC0)) {
-        switch (sprite & 0x3F) {
-        case 0x3E:
-          rgb565 = 0x8410 | (CRAM565[plane] >> 1);
-          break;
-        case 0x3F:
-          rgb565 = CRAM565[plane] >> 1;
-          break;
-        default:
-          rgb565 = CRAM565[sprite];
-          break;
-        }
-      } else {
-        rgb565 = CRAM565[plane];
-      }
-      screen_buffer_line_565[x] = rgb565;
-    }
-
-    /* Normal mode */
-  } else {
-    uint32_t *video_out = (uint32_t *) &screen_buffer_line_565[0];
-
-    for (int x = 0; x < screen_width; x += 2) {
-      *video_out++ = CRAM565[pb[x]] | ((uint32_t)CRAM565[pb[x + 1]] << 16);
-    }
-  }
-#else
   /* Mode Highlight/shadow is enabled */
   if (MODE_SHI) {
     for (int x = 0; x < screen_width; x++) {
@@ -1246,7 +1646,6 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 #endif
   }
 
-#endif
   #endif
 }
 

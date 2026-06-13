@@ -695,6 +695,20 @@ local function retrogo_info()
   return nil
 end
 
+local function wait_retrogo_stopped(timeout_ms)
+  local deadline = now_ms() + (timeout_ms or 1000)
+  while now_ms() < deadline do
+    local info = retrogo_info()
+    if info and not info.running then
+      return true
+    end
+    if not sleep_ms(20) then
+      break
+    end
+  end
+  return false
+end
+
 local function start_retrogo(app_name, rom_path, flags)
   log("start call", app_name or "launcher", rom_path or "")
   local started, start_err = retrogo.start({
@@ -742,7 +756,7 @@ local function request_exit_to_home(reason)
     return retrogo.stop()
   end)
   log("retrogo.stop", tostring(stop_ok), tostring(stop_result), tostring(stop_err))
-  sleep_ms(120)
+  log("retrogo stopped", tostring(wait_retrogo_stopped(1500)))
   if app and app.exit then
     local ok, result, err = pcall(function()
       return app.exit()
