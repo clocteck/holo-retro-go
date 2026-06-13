@@ -74,6 +74,7 @@ int LoadState(const char *name);
 int SaveState(const char *name);
 void ResetPCE(bool);
 void RunPCE(void);
+void StopPCE(void);
 void ShutdownPCE();
 int InitPCE(int samplerate, bool stereo);
 int LoadCard(uint8_t *data, size_t size);

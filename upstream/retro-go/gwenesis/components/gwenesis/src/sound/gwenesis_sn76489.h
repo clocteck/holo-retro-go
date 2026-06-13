@@ -2,6 +2,8 @@
 #ifndef _GWENESIS_SN76489_H_
 #define _GWENESIS_SN76489_H_
 
+#include <stdbool.h>
+
 /*
     More testing is needed to find and confirm feedback patterns for
     SN76489 variants and compatible chips.
@@ -52,11 +54,13 @@ typedef struct
 
 } SN76489_Context;
 
-extern int16 gwenesis_sn76489_buffer[];
+extern int16 *gwenesis_sn76489_buffer;
 extern int sn76489_index;
 extern int sn76489_clock;
 
 /* Function prototypes */
+bool gwenesis_sn76489_init_fast_ram(void);
+void gwenesis_sn76489_deinit_fast_ram(void);
 void gwenesis_SN76489_Init( int PSGClockValue, int SamplingRate,int freq_divisor);
 void gwenesis_SN76489_Reset();
 void gwenesis_SN76489_start();

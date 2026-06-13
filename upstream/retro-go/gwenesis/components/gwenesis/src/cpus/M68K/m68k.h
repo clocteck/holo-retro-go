@@ -151,7 +151,7 @@
 
 // 16/32 bits acces to RAM/ROM
 
-#if GNW_TARGET_MARIO != 0 | GNW_TARGET_ZELDA != 0
+#if GNW_TARGET_MARIO != 0 | GNW_TARGET_ZELDA != 0 || defined(RETRO_GO)
 
 	extern unsigned char *ROM_DATA;
 	extern unsigned char *M68K_RAM;

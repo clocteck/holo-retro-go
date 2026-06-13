@@ -236,6 +236,18 @@ void holo_display_release(void)
     s_display_surface = NULL;
 }
 
+int holo_display_start_write(void)
+{
+    if (!s_display_surface) {
+        return 0;
+    }
+    if (!s_host || !s_host->display.startWrite) {
+        return 0;
+    }
+
+    return s_host->display.startWrite(s_display_surface) == MODULE_OK;
+}
+
 int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t height, const uint16_t *pixels)
 {
     if (!pixels || width == 0 || height == 0) {
@@ -249,6 +261,48 @@ int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t heigh
     }
 
     return s_host->display.pushImageDMA(s_display_surface, x, y, width, height, pixels) == MODULE_OK;
+}
+
+int holo_display_set_addr_window(int32_t x, int32_t y, int32_t width, int32_t height)
+{
+    if (width <= 0 || height <= 0) {
+        return 0;
+    }
+    if (!s_display_surface) {
+        return 0;
+    }
+    if (!s_host || !s_host->display.setAddrWindow) {
+        return 0;
+    }
+
+    return s_host->display.setAddrWindow(s_display_surface, x, y, width, height) == MODULE_OK;
+}
+
+int holo_display_push_pixels(const uint16_t *pixels, size_t len)
+{
+    if (!pixels || len == 0) {
+        return 0;
+    }
+    if (!s_display_surface) {
+        return 0;
+    }
+    if (!s_host || !s_host->display.pushPixelsDMA) {
+        return 0;
+    }
+
+    return s_host->display.pushPixelsDMA(s_display_surface, pixels, len) == MODULE_OK;
+}
+
+int holo_display_end_write(void)
+{
+    if (!s_display_surface) {
+        return 1;
+    }
+    if (!s_host || !s_host->display.endWrite) {
+        return 0;
+    }
+
+    return s_host->display.endWrite(s_display_surface) == MODULE_OK;
 }
 
 void *holo_dma_alloc(size_t size)

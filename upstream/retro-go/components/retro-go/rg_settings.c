@@ -81,10 +81,19 @@ static void update_value(const char *section, const char *key, cJSON *new_value)
 
 void rg_settings_init(bool _safe_mode)
 {
+    cJSON_Delete(config_root);
     config_root = cJSON_CreateObject();
     safe_mode = _safe_mode;
     json_root(NS_GLOBAL, 0);
     json_root(NS_BOOT, 0);
+}
+
+void rg_settings_deinit(void)
+{
+    rg_settings_commit();
+    cJSON_Delete(config_root);
+    config_root = NULL;
+    safe_mode = false;
 }
 
 void rg_settings_commit(void)

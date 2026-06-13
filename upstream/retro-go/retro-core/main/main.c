@@ -13,6 +13,12 @@ void app_main(void)
 
         RG_LOGI("configNs=%s", app->configNs);
 
+#if HOLO_RETRO_GWENESIS_ONLY
+        if (strcmp(app->configNs, "md") == 0)
+            gwenesis_main();
+        else
+            launcher_main();
+#else
         if (strcmp(app->configNs, "nes") == 0)
             nes_main();
         else if (strcmp(app->configNs, "gbc") == 0 || strcmp(app->configNs, "gb") == 0)
@@ -35,6 +41,7 @@ void app_main(void)
 #endif
         else
             launcher_main();
+#endif
 
         if (!holo_runtime_switch_requested())
             break;
@@ -63,6 +70,10 @@ void app_main(void)
         gw_main();
     else if (strcmp(app->configNs, "snes") == 0)
         snes_main();
+#if HOLO_RETRO_GWENESIS_ONLY
+    else if (strcmp(app->configNs, "md") == 0)
+        gwenesis_main();
+#endif
 #ifndef __TINYC__
     else if (strcmp(app->configNs, "lnx") == 0)
         lynx_main();

@@ -195,6 +195,22 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static void nes_cleanup(void)
+{
+    if (nes)
+    {
+        nes_shutdown();
+        nes = NULL;
+    }
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        rg_surface_free(updates[i]);
+        updates[i] = NULL;
+    }
+    currentUpdate = NULL;
+}
+
 void nes_main(void)
 {
     const rg_handlers_t handlers = {
@@ -271,10 +287,11 @@ void nes_main(void)
 
     while (true)
     {
-#if defined(RG_TARGET_HOLO_DYNMOD)
-        if (holo_runtime_switch_requested() || holo_runtime_stop_requested())
+        if (holo_should_exit())
+        {
+            nes_cleanup();
             return;
-#endif
+        }
         uint32_t joystick = rg_input_read_gamepad();
 
         if (joystick & (RG_KEY_MENU|RG_KEY_OPTION))
@@ -283,10 +300,11 @@ void nes_main(void)
                 rg_gui_game_menu();
             else
                 rg_gui_options_menu();
-#if defined(RG_TARGET_HOLO_DYNMOD)
-            if (holo_runtime_switch_requested() || holo_runtime_stop_requested())
+            if (holo_should_exit())
+            {
+                nes_cleanup();
                 return;
-#endif
+            }
         }
 
         int64_t startTime = rg_system_timer();
@@ -340,5 +358,6 @@ void nes_main(void)
         }
     }
 
+    nes_cleanup();
     RG_PANIC("Nofrendo died!");
 }

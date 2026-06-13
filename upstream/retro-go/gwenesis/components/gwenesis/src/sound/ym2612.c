@@ -132,13 +132,21 @@
   #pragma GCC optimize("Ofast")
 #endif
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
+
+#if defined(RETRO_GO)
+#include <rg_system.h>
+#endif
 
 #include "ym2612.h"
 #include "gwenesis_bus.h"
 #include "gwenesis_savestate.h"
+
+#define GWENESIS_HOT
 
 typedef uint32_t UINT32;
 typedef uint16_t UINT16;
@@ -211,7 +219,11 @@ static signed int tl_tab[TL_TAB_LEN];
 #define ENV_QUIET    (TL_TAB_LEN>>3)
 
 /* sin waveform table in 'decibel' scale */
+#if defined(RETRO_GO)
+static unsigned int *sin_tab;
+#else
 static unsigned int sin_tab[SIN_LEN] ;
+#endif
 
 /* sustain level table (3dB per step) */
 /* bit0, bit1, bit2, bit3, bit4, bit5, bit6 */
@@ -654,7 +666,12 @@ typedef struct
 } YM2612;
 
 /* emulated chip */
+#if defined(RETRO_GO)
+static YM2612 *ym2612_ptr;
+#define ym2612 (*ym2612_ptr)
+#else
 static YM2612 ym2612;
+#endif
 
 /* current chip state */
 static INT32  m2,c1,c2;   /* Phase Modulation input for operators 2,3,4 */
@@ -663,7 +680,43 @@ static INT32  out_fm[8];  /* outputs of working channels */
 static UINT32 bitmask;    /* working channels output bitmasking (DAC quantization) */
 
 /* mirror of all OPN registers */
-static uint8_t OPNREGS[512];
+#define OPNREGS_SIZE 512
+#if defined(RETRO_GO)
+static uint8_t *OPNREGS;
+#else
+static uint8_t OPNREGS[OPNREGS_SIZE];
+#endif
+
+static unsigned ym2612_tables_initialized;
+
+bool gwenesis_ym2612_init_fast_ram(void)
+{
+#if defined(RETRO_GO)
+  if (!ym2612_ptr)
+    ym2612_ptr = rg_alloc(sizeof(*ym2612_ptr), MEM_FAST);
+  if (!OPNREGS)
+    OPNREGS = rg_alloc(OPNREGS_SIZE, MEM_FAST);
+  if (!sin_tab)
+    sin_tab = rg_alloc(sizeof(*sin_tab) * SIN_LEN, MEM_FAST);
+
+  return ym2612_ptr && OPNREGS && sin_tab;
+#else
+  return true;
+#endif
+}
+
+void gwenesis_ym2612_deinit_fast_ram(void)
+{
+#if defined(RETRO_GO)
+  free(ym2612_ptr);
+  ym2612_ptr = NULL;
+  free(OPNREGS);
+  OPNREGS = NULL;
+  free(sin_tab);
+  sin_tab = NULL;
+  ym2612_tables_initialized = 0;
+#endif
+}
 
 INLINE void FM_KEYON(FM_CH *CH , int s )
 {
@@ -1958,13 +2011,13 @@ static void init_tables(void)
 
 /* initialize ym2612 emulator */
 void YM2612Init(void) {
-  static unsigned init_table_done = 0;
+  if (!gwenesis_ym2612_init_fast_ram())
+    return;
 
   memset(&ym2612, 0, sizeof(YM2612));
-  if (init_table_done == 0) {
-    init_tables();
-    init_table_done = 1;
-  }
+  memset(OPNREGS, 0, OPNREGS_SIZE);
+  init_tables();
+  ym2612_tables_initialized = 1;
 }
 
 /* reset OPN registers */
@@ -2013,7 +2066,7 @@ void YM2612ResetChip(void)
 
 /* YM2612 execution */
 /* Generate samples for ym2612 */
-static inline void YM2612Update(int16_t *buffer, int length)
+static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
 {
   int i;
   int lt;
@@ -2123,6 +2176,10 @@ static inline void YM2612Update(int16_t *buffer, int length)
     lt += out_fm[5];
    // rt += out_fm[5];
 
+    if (lt > 32767)
+      lt = 32767;
+    else if (lt < -32768)
+      lt = -32768;
     *buffer++ = lt;
 
     /* CSM mode: if CSM Key ON has occured, CSM Key OFF need to be sent       */
@@ -2148,7 +2205,11 @@ static inline void YM2612Update(int16_t *buffer, int length)
   INTERNAL_TIMER_B(length);
 }
 
-void ym2612_run( int target) {
+void GWENESIS_HOT ym2612_run( int target) {
+#if !GWENESIS_AUDIO_EMULATION
+  ym2612_clock = target;
+  return;
+#endif
 
   if ( ym2612_clock >= target) {
     return;
@@ -2168,8 +2229,14 @@ void ym2612_run( int target) {
 /* n = number  */
 /* a = address */
 /* v = value   */
-void YM2612Write(unsigned int a, unsigned int v,  int target)
+void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v,  int target)
 {
+#if !GWENESIS_AUDIO_EMULATION
+  (void)a;
+  (void)v;
+  ym2612_clock = target;
+  return;
+#endif
   ym_log(__FUNCTION__," %06x : %02x",a,v);
 
   //Sync
@@ -2220,8 +2287,12 @@ void YM2612Write(unsigned int a, unsigned int v,  int target)
   }
 }
 
-unsigned int YM2612Read(int target)
+unsigned int GWENESIS_HOT YM2612Read(int target)
 {
+#if !GWENESIS_AUDIO_EMULATION
+  ym2612_clock = target;
+  return 0;
+#endif
   // //Sync
   if (GWENESIS_AUDIO_ACCURATE == 1)
     ym2612_run(target);
@@ -2250,13 +2321,13 @@ void YM2612Config(unsigned char dac_bits) //,unsigned int AUDIO_FREQ_DIVISOR)
 
 void YM2612SaveRegs(uint8_t *regs)
 {
-  memcpy(regs, OPNREGS, sizeof(OPNREGS));
+  memcpy(regs, OPNREGS, OPNREGS_SIZE);
 }
 
 void YM2612LoadRegs(uint8_t *regs)
 {
   int i;
-  for (i=0;i<sizeof(OPNREGS);++i)
+  for (i=0;i<OPNREGS_SIZE;++i)
   {
     if (i <= 0x30)
       OPNWriteMode(i, *regs++);
@@ -2341,7 +2412,7 @@ void gwenesis_ym2612_save_state() {
   saveGwenesisStateSet(state, "mem", mem);
   saveGwenesisStateSetBuffer(state, "out_fm", out_fm, sizeof(out_fm));
   saveGwenesisStateSet(state, "bitmask", bitmask);
-  saveGwenesisStateSetBuffer(state, "OPNREGS", OPNREGS, sizeof(OPNREGS));
+  saveGwenesisStateSetBuffer(state, "OPNREGS", OPNREGS, OPNREGS_SIZE);
 }
 
 void gwenesis_ym2612_load_state() {
@@ -2353,5 +2424,5 @@ void gwenesis_ym2612_load_state() {
   mem = saveGwenesisStateGet(state, "mem");
   saveGwenesisStateGetBuffer(state, "out_fm", out_fm, sizeof(out_fm));
   bitmask = saveGwenesisStateGet(state, "bitmask");
-  saveGwenesisStateGetBuffer(state, "OPNREGS", OPNREGS, sizeof(OPNREGS));
+  saveGwenesisStateGetBuffer(state, "OPNREGS", OPNREGS, OPNREGS_SIZE);
 }

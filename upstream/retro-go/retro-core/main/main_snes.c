@@ -232,6 +232,14 @@ bool S9xInitDisplay(void)
 
 void S9xDeinitDisplay(void)
 {
+    free(GFX.SubScreen);
+    GFX.SubScreen = NULL;
+
+    free(GFX.ZBuffer);
+    GFX.ZBuffer = NULL;
+
+    free(GFX.SubZBuffer);
+    GFX.SubZBuffer = NULL;
 }
 
 uint32_t S9xReadJoypad(int32_t port)
@@ -290,6 +298,31 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t){0, _("Audio filter"), "-", RG_DIALOG_FLAG_NORMAL, &lowpass_filter_cb};
     *dest++ = (rg_gui_option_t){0, _("Controls"),     "-", RG_DIALOG_FLAG_NORMAL, &menu_keymap_cb};
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
+}
+
+static void snes_cleanup(void)
+{
+#ifdef USE_BLARGG_APU
+    S9xSetSamplesAvailableCallback(NULL);
+#endif
+    S9xDeinitGFX();
+    S9xDeinitAPU();
+    S9xDeinitMemory();
+    S9xDeinitDisplay();
+
+    free(audioBuffer);
+    audioBuffer = NULL;
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        if (updates[i])
+        {
+            updates[i]->height = SNES_HEIGHT_EXTENDED;
+            rg_surface_free(updates[i]);
+            updates[i] = NULL;
+        }
+    }
+    currentUpdate = NULL;
 }
 
 void snes_main(void)
@@ -372,6 +405,12 @@ void snes_main(void)
 
     while (1)
     {
+        if (holo_should_exit())
+        {
+            snes_cleanup();
+            return;
+        }
+
         uint32_t joystick = rg_input_read_gamepad();
 
         if (menuPressed && !(joystick & RG_KEY_MENU))
@@ -380,12 +419,22 @@ void snes_main(void)
             {
                 rg_task_delay(50);
                 rg_gui_game_menu();
+                if (holo_should_exit())
+                {
+                    snes_cleanup();
+                    return;
+                }
             }
             menuCancelled = false;
         }
         else if (joystick & RG_KEY_OPTION)
         {
             rg_gui_options_menu();
+            if (holo_should_exit())
+            {
+                snes_cleanup();
+                return;
+            }
         }
 
         menuPressed = joystick & RG_KEY_MENU;
@@ -439,4 +488,6 @@ void snes_main(void)
             skipFrames--;
         }
     }
+
+    snes_cleanup();
 }

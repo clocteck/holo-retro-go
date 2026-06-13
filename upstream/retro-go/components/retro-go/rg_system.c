@@ -349,7 +349,7 @@ static void system_monitor_task(void *arg)
                 app.frameskip--;
                 RG_LOGI("Reduced frameskip to %d", app.frameskip);
             }
-            else if (speed < 96.f && statistics.busyPercent > 85.f && app.frameskip < 5)
+            else if (speed < 96.f && statistics.busyPercent > 85.f && app.frameskip < app.maxFrameskip)
             {
                 app.frameskip++;
                 RG_LOGI("Raised frameskip to %d", app.frameskip);
@@ -487,6 +487,7 @@ rg_app_t *rg_system_init(int sampleRate, const rg_handlers_t *handlers, void *_u
         .tickRate = 60,
         .frameTime = 1000000 / 60,
         .frameskip = 1, // This can be overriden on a per-app basis if needed, do not set 0 here!
+        .maxFrameskip = 5,
         .overclock = 0,
         .tickTimeout = 3000000,
         .lowMemoryMode = false,
@@ -541,11 +542,15 @@ rg_app_t *rg_system_init(int sampleRate, const rg_handlers_t *handlers, void *_u
     }
 
     rg_settings_init(enterRecoveryMode || showCrashDialog);
-    app.configNs = rg_settings_get_string(NS_BOOT, SETTING_BOOT_NAME, app.configNs);
-    app.bootArgs = rg_settings_get_string(NS_BOOT, SETTING_BOOT_ARGS, app.bootArgs);
+    char *bootName = rg_settings_get_string(NS_BOOT, SETTING_BOOT_NAME, app.configNs);
+    char *bootArgs = rg_settings_get_string(NS_BOOT, SETTING_BOOT_ARGS, app.bootArgs);
+    app.configNs = bootName;
+    app.bootArgs = bootArgs;
     app.bootFlags = rg_settings_get_number(NS_BOOT, SETTING_BOOT_FLAGS, app.bootFlags);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     apply_holo_launch();
+    free(bootName);
+    free(bootArgs);
 #endif
     rg_display_init();
     rg_gui_init();
@@ -586,7 +591,9 @@ rg_app_t *rg_system_init(int sampleRate, const rg_handlers_t *handlers, void *_u
     rg_gui_draw_hourglass();
     rg_audio_init(sampleRate);
 
-    rg_system_set_timezone(rg_settings_get_string(NS_GLOBAL, SETTING_TIMEZONE, "EST+5"));
+    char *timezone = rg_settings_get_string(NS_GLOBAL, SETTING_TIMEZONE, "EST+5");
+    rg_system_set_timezone(timezone);
+    free(timezone);
     rg_system_load_time();
 
     // Do these last to not interfere with panic handling above
@@ -970,6 +977,7 @@ void rg_system_deinit_for_holo(void)
     rg_audio_deinit();
     rg_input_deinit();
     rg_display_deinit();
+    rg_gui_deinit();
 
     for (int retry = 0; retry < 250; ++retry)
     {
@@ -993,7 +1001,9 @@ void rg_system_deinit_for_holo(void)
             RG_LOGW("Dynmod cleanup: task '%s' still running.", tasks[i].name);
     }
 
+    rg_settings_deinit();
     rg_storage_deinit();
+    rg_unique_string_deinit();
     app.initialized = false;
 }
 #endif
@@ -1253,7 +1263,7 @@ void rg_system_set_app_speed(float speed)
     if (newSpeed == app.speed)
         return;
     // FIXME: We need to store the actual default frameskip so we can return to it...
-    app.frameskip = (newSpeed - 0.5f) * 3;
+    app.frameskip = RG_MIN(app.maxFrameskip, (int)((newSpeed - 0.5f) * 3));
     app.frameTime = 1000000.f / (app.tickRate * newSpeed);
     app.speed = newSpeed;
     // There's a bug in esp-idf v4.4.8 where many frequencies play at the wrong speed.

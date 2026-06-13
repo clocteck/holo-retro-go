@@ -21,6 +21,9 @@ __license__ = "GPLv3"
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
+#if defined(RETRO_GO)
+#include <rg_system.h>
+#endif
 
 #include "m68k.h"
 
@@ -32,11 +35,15 @@ __license__ = "GPLv3"
 #include "gwenesis_sn76489.h"
 #include "gwenesis_savestate.h"
 
+#define GWENESIS_HOT
+
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
 #endif
 
 #define BUS_DISABLE_LOGGING 1
+#define GWENESIS_M68K_RAM_MEM MEM_SLOW
+#define GWENESIS_Z80_RAM_MEM MEM_FAST
 
 #if !BUS_DISABLE_LOGGING
 #include <stdarg.h>
@@ -65,18 +72,50 @@ unsigned char *M68K_RAM=(void *)(uint32_t)(0); // 68K RAM
 #else
 
 unsigned char *ROM_DATA; // 68K Main Program (uncompressed)
+#if defined(RETRO_GO)
+unsigned char *M68K_RAM; // 68K RAM
+#else
 unsigned char M68K_RAM[MAX_RAM_SIZE];    // 68K RAM
+#endif
 #endif
 
 
 // Setup Z80 Memory
+#if defined(RETRO_GO)
+unsigned char *ZRAM; // Z80 RAM
+#else
 unsigned char ZRAM[MAX_Z80_RAM_SIZE]; // Z80 RAM
+#endif
 unsigned char TMSS[0x4];
 extern unsigned short gwenesis_vdp_status;
 
 // TMSS
 int tmss_state = 0;
 int tmss_count = 0;
+
+bool gwenesis_bus_init_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    if (!M68K_RAM)
+        M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM);
+    if (!ZRAM)
+        ZRAM = rg_alloc(MAX_Z80_RAM_SIZE, GWENESIS_Z80_RAM_MEM);
+    if (ZRAM)
+        z80_set_memory(ZRAM);
+#endif
+    return M68K_RAM != NULL && ZRAM != NULL;
+}
+
+void gwenesis_bus_deinit_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    z80_set_memory(NULL);
+    free(M68K_RAM);
+    free(ZRAM);
+    M68K_RAM = NULL;
+    ZRAM = NULL;
+#endif
+}
 
 /******************************************************************************
  *
@@ -89,6 +128,9 @@ int tmss_count = 0;
 
 void load_cartridge()
 {
+    if (!gwenesis_bus_init_fast_ram())
+        return;
+
     // Clear all volatile memory
     memset(M68K_RAM, 0, MAX_RAM_SIZE);
     memset(ZRAM, 0, MAX_Z80_RAM_SIZE);
@@ -105,6 +147,9 @@ void load_cartridge()
 
 void load_cartridge(unsigned char *buffer, size_t size)
 {
+    if (!gwenesis_bus_init_fast_ram())
+        return;
+
     // Clear all volatile memory
     memset(M68K_RAM, 0, MAX_RAM_SIZE);
     memset(ZRAM, 0, MAX_Z80_RAM_SIZE);
@@ -153,6 +198,12 @@ void load_cartridge(unsigned char *buffer, size_t size)
     set_region();
 }
 
+void unload_cartridge(void)
+{
+    free(ROM_DATA);
+    ROM_DATA = NULL;
+}
+
 #endif
 
 /******************************************************************************
@@ -169,8 +220,10 @@ void power_on() {
   // Initialize Z80 CPU
   z80_start();
   // Initialize YM2612 chip
+#if GWENESIS_AUDIO_EMULATION
   YM2612Init();
   YM2612Config(9);
+#endif
   // Initialize PSG SN76489 chip
   //CLOCK_NTSC      = 3579545,
   //CLOCK_PAL       = 3546895,
@@ -182,7 +235,9 @@ void power_on() {
 //     gwenesis_SN76489_Init(3579545, GWENESIS_AUDIO_BUFFER_LENGTH_NTSC*60,AUDIO_FREQ_DIVISOR);
 //   }
   
-  gwenesis_SN76489_Init(3579545, 888*60,AUDIO_FREQ_DIVISOR);
+  #if GWENESIS_AUDIO_EMULATION
+  gwenesis_SN76489_Init(3579545, GWENESIS_AUDIO_BUFFER_LENGTH_NTSC * 60, AUDIO_FREQ_DIVISOR);
+  #endif
 
 }
 
@@ -198,10 +253,14 @@ void reset_emulation() {
   // Send a reset pulse to Z80 M68K
   m68k_pulse_reset();
   // Send a reset pulse to YM2612 chip
+#if GWENESIS_AUDIO_EMULATION
   YM2612ResetChip();
+#endif
   // Send a reset pulse to SEGA 315-5313 chip
   gwenesis_vdp_reset();
+#if GWENESIS_AUDIO_EMULATION
   gwenesis_SN76489_Reset();
+#endif
 }
 
 /******************************************************************************
@@ -397,7 +456,7 @@ unsigned int gwenesis_bus_map_address(unsigned int address) {
  *   Write an value to memory mapped on specified address
  *
  ******************************************************************************/
-static inline unsigned int gwenesis_bus_read_memory_8(unsigned int address) {
+static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_8(unsigned int address) {
  bus_log(__FUNCTION__,"read8  %x", address);
 
   switch (gwenesis_bus_map_address(address)) {
@@ -443,7 +502,7 @@ static inline unsigned int gwenesis_bus_read_memory_8(unsigned int address) {
   return 0x00;
 }
 
-static inline unsigned int gwenesis_bus_read_memory_16(unsigned int address) {
+static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_16(unsigned int address) {
    bus_log(__FUNCTION__,"read16 %x", address);
    unsigned int ret_value;
 
@@ -497,7 +556,7 @@ static inline unsigned int gwenesis_bus_read_memory_16(unsigned int address) {
  *   Write an value to memory mapped on specified address
  *
  ******************************************************************************/
-static inline void gwenesis_bus_write_memory_8(unsigned int address,
+static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address,
                                               unsigned int value) {
   bus_log(__FUNCTION__,"write8  @%x:%x", address,value);
 
@@ -557,7 +616,7 @@ static inline void gwenesis_bus_write_memory_8(unsigned int address,
   return;
 }
 
-static inline void gwenesis_bus_write_memory_16(unsigned int address,
+static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int address,
                                                unsigned int value) {
   bus_log(__FUNCTION__,"write16  @%x:%x", address,value);
 
@@ -610,7 +669,7 @@ static inline void gwenesis_bus_write_memory_16(unsigned int address,
  *   Read an address from memory mapped and return value as byte
  *
  ******************************************************************************/
-unsigned int m68k_read_memory_8(unsigned int address)
+unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
 {
       //  if ((address &  0xFF0000 ) == 0xFF0000) return FETCH8RAM(address);
     return gwenesis_bus_read_memory_8(address);
@@ -622,7 +681,7 @@ unsigned int m68k_read_memory_8(unsigned int address)
  *   Read an address from memory mapped and return value as word
  *
  ******************************************************************************/
- unsigned int m68k_read_memory_16(unsigned int address)
+unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
 {
      //   if ((address &  0xFF0000 ) == 0xFF0000) return FETCH16RAM(address);
     return gwenesis_bus_read_memory_16(address);
@@ -634,7 +693,7 @@ unsigned int m68k_read_memory_8(unsigned int address)
  *   Read an address from memory mapped and return value as long
  *
  ******************************************************************************/
- unsigned int m68k_read_memory_32(unsigned int address)
+unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
 {
   //  if ((address &  0xFF0000 ) == 0xFF0000) return FETCH32RAM(address);
     return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
@@ -646,7 +705,7 @@ unsigned int m68k_read_memory_8(unsigned int address)
  *   Write an value as byte to memory mapped on specified address
  *
  ******************************************************************************/
-void m68k_write_memory_8(unsigned int address, unsigned int value) {
+void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
   // if ((address & 0xFF0000) == 0xFF0000) {
   //   WRITE8RAM(address, value);
   //   return;
@@ -661,7 +720,7 @@ void m68k_write_memory_8(unsigned int address, unsigned int value) {
  *   Write an value as word to memory mapped on specified address
  *
  ******************************************************************************/
-void m68k_write_memory_16(unsigned int address, unsigned int value) {
+void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
   // if ((address & 0xFF0000) == 0xFF0000) {
   //   WRITE16RAM(address, value);
   //   return;
@@ -675,7 +734,7 @@ void m68k_write_memory_16(unsigned int address, unsigned int value) {
  *   Write an value as word to memory mapped on specified address
  *
  ******************************************************************************/
-void m68k_write_memory_32(unsigned int address, unsigned int value) {
+void GWENESIS_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
 
   // if ((address & 0xFF0000) == 0xFF0000) {
   //   WRITE32RAM(address, value);

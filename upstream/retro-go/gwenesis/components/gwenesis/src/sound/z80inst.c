@@ -27,6 +27,8 @@ __license__ = "GPLv3"
 #include "gwenesis_sn76489.h"
 #include "gwenesis_savestate.h"
 
+#define GWENESIS_HOT
+
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
 #endif
@@ -38,6 +40,9 @@ int zclk = 0;
 static int initialized = 0;
 
 unsigned char *Z80_RAM;
+#if defined(RETRO_GO)
+extern unsigned char *ZRAM;
+#endif
 
 static Z80 cpu;
 
@@ -85,7 +90,7 @@ void z80_pulse_reset() {
 }
 static int current_timeslice = 0;
 
-void z80_run(int target) {
+void GWENESIS_HOT z80_run(int target) {
 
   // we are in advance,nothind to do
 current_timeslice = 0;
@@ -107,7 +112,7 @@ current_timeslice = 0;
   zclk = target - rem * Z80_FREQ_DIVISOR;
 }
 
-void z80_sync(void) {
+void GWENESIS_HOT z80_sync(void) {
   /*
   get M68K cycles 
   Execute cycles on z80 to sync with m68K
@@ -119,10 +124,19 @@ void z80_sync(void) {
 void z80_set_memory(unsigned char *buffer)
 {
     Z80_RAM = buffer;
-    initialized = 1;
+    initialized = buffer != NULL;
 }
 
-void z80_write_ctrl(unsigned int address, unsigned int value) {
+static inline unsigned char *z80_get_memory(void)
+{
+#if defined(RETRO_GO)
+    if (!Z80_RAM && ZRAM)
+        Z80_RAM = ZRAM;
+#endif
+    return Z80_RAM;
+}
+
+void GWENESIS_HOT z80_write_ctrl(unsigned int address, unsigned int value) {
   z80_sync();
 
   if (address == 0x1100) // BUSREQ
@@ -154,7 +168,7 @@ void z80_write_ctrl(unsigned int address, unsigned int value) {
   }
 }
 
-unsigned int z80_read_ctrl(unsigned int address) {
+unsigned int GWENESIS_HOT z80_read_ctrl(unsigned int address) {
 
   z80_sync();
 
@@ -177,7 +191,7 @@ unsigned int z80_read_ctrl(unsigned int address) {
   return 0xFF;
 }
 
-void z80_irq_line(unsigned int value)
+void GWENESIS_HOT z80_irq_line(unsigned int value)
 {
     if (reset_once == 0) return;
 
@@ -217,14 +231,14 @@ unsigned int zbankreg_mem_r8(unsigned int address)
     return Z80_BANK;
 }
 
-static inline void zbankreg_mem_w8(unsigned int value) {
+static inline void GWENESIS_HOT zbankreg_mem_w8(unsigned int value) {
   Z80_BANK >>= 1;
   Z80_BANK |= (value & 1) << 8;
   z80_log(__FUNCTION__,"Z80 bank points to: %06x", Z80_BANK << 15);
   return;
 }
 
-static inline unsigned int zbank_mem_r8(unsigned int address)
+static inline unsigned int GWENESIS_HOT zbank_mem_r8(unsigned int address)
 {
     address &= 0x7FFF;
     address |= (Z80_BANK << 15);
@@ -233,7 +247,7 @@ static inline unsigned int zbank_mem_r8(unsigned int address)
     return m68k_read_memory_8(address);
 }
 
-static inline void zbank_mem_w8(unsigned int address, unsigned int value) {
+static inline void GWENESIS_HOT zbank_mem_w8(unsigned int address, unsigned int value) {
   address &= 0x7FFF;
   address |= (Z80_BANK << 15);
 
@@ -264,10 +278,12 @@ word LoopZ80(register Z80 *R)
     return 0;
 }
 
-byte RdZ80(register word Addr) {
+byte GWENESIS_HOT RdZ80(register word Addr) {
+
+  unsigned char *ram = z80_get_memory();
 
   if (Addr < 0x4000)
-    return Z80_RAM[Addr & 0x1FFF];
+    return ram ? ram[Addr & 0x1FFF] : 0xFF;
 
   if (Addr < 0x6000)
     return YM2612Read(zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR));
@@ -284,11 +300,14 @@ byte RdZ80(register word Addr) {
 
 extern int system_clock;
 
-void WrZ80(register word Addr, register byte Value) {
+void GWENESIS_HOT WrZ80(register word Addr, register byte Value) {
+
+  unsigned char *ram = z80_get_memory();
 
   // ZRAM & mirror
   if (Addr < 0x4000) {
-    Z80_RAM[Addr&0x1FFF] = Value;
+    if (ram)
+      ram[Addr&0x1FFF] = Value;
     return;
   }
 

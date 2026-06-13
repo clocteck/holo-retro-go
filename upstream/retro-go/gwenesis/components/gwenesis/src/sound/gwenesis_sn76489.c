@@ -25,14 +25,20 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <signal.h>
 #include <stdio.h>
 #include <math.h>
 #include <limits.h>
+#if defined(RETRO_GO)
+#include <rg_system.h>
+#endif
 #include "gwenesis_bus.h"
 #include "gwenesis_sn76489.h"
 #include "gwenesis_savestate.h"
+
+#define GWENESIS_HOT
 
 #define NoiseInitialState   0x8000  /* Initial state of shift register */
 #define PSG_CUTOFF          0x6     /* Value below which PSG does not output */
@@ -69,10 +75,38 @@ static const int PSGVolumeValues[16] = {
     PSG_MAX_VOLUME_MAX/16,PSG_MAX_VOLUME_2dB/16,PSG_MAX_VOLUME_4dB/16,
     0};
 
+#if defined(RETRO_GO)
+static SN76489_Context *gwenesis_SN76489_ptr;
+#define gwenesis_SN76489 (*gwenesis_SN76489_ptr)
+#else
 static SN76489_Context gwenesis_SN76489;
+#endif
+
+bool gwenesis_sn76489_init_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    if (!gwenesis_SN76489_ptr)
+        gwenesis_SN76489_ptr = rg_alloc(sizeof(*gwenesis_SN76489_ptr), MEM_FAST);
+    return gwenesis_SN76489_ptr != NULL;
+#else
+    return true;
+#endif
+}
+
+void gwenesis_sn76489_deinit_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    free(gwenesis_SN76489_ptr);
+    gwenesis_SN76489_ptr = NULL;
+#endif
+}
 
 void gwenesis_SN76489_Init( int PSGClockValue, int SamplingRate,int freq_divisor)
 {
+    if (!gwenesis_sn76489_init_fast_ram())
+        return;
+
+    memset(&gwenesis_SN76489, 0, sizeof(gwenesis_SN76489));
     gwenesis_SN76489.dClock=(float)PSGClockValue/16/SamplingRate;
     gwenesis_SN76489.divisor = freq_divisor;
 
@@ -131,7 +165,7 @@ int gwenesis_SN76489_GetContextSize(void)
 {
     return sizeof(SN76489_Context);
 }
-static inline void gwenesis_SN76489_Update(INT16 *buffer, int length)
+static inline void GWENESIS_HOT gwenesis_SN76489_Update(INT16 *buffer, int length)
 {
     int i, j;
 
@@ -205,7 +239,11 @@ static inline void gwenesis_SN76489_Update(INT16 *buffer, int length)
 }
 /* SN76589 execution */
 extern int scan_line;
-void gwenesis_SN76489_run(int target) {
+void GWENESIS_HOT gwenesis_SN76489_run(int target) {
+#if !GWENESIS_AUDIO_EMULATION
+  sn76489_clock = target;
+  return;
+#endif
  
 if ( sn76489_clock >= target) return;
 
@@ -218,8 +256,13 @@ if ( sn76489_clock >= target) return;
     sn76489_index = sn76489_prev_index;
   }
 }
-void gwenesis_SN76489_Write(int data, int target)
+void GWENESIS_HOT gwenesis_SN76489_Write(int data, int target)
 {
+#if !GWENESIS_AUDIO_EMULATION
+  (void)data;
+  sn76489_clock = target;
+  return;
+#endif
   if (GWENESIS_AUDIO_ACCURATE == 1)
     gwenesis_SN76489_run(target);
 

@@ -157,6 +157,7 @@ void system_shutdown(void)
   vdp_shutdown();
   render_shutdown();
   sound_shutdown();
+  z80_exit();
 }
 
 void system_reset(void)

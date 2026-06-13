@@ -185,6 +185,25 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static void lynx_cleanup(void)
+{
+    delete lynx;
+    lynx = NULL;
+
+    delete[] gAudioBuffer;
+    gAudioBuffer = NULL;
+    gAudioBufferPointer = 0;
+    gAudioEnabled = 0;
+    gPrimaryFrameBuffer = NULL;
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        rg_surface_free(updates[i]);
+        updates[i] = NULL;
+    }
+    currentUpdate = NULL;
+}
+
 extern "C" void lynx_main(void)
 {
     const rg_handlers_t handlers = {
@@ -231,6 +250,12 @@ extern "C" void lynx_main(void)
     // Start emulation
     while (1)
     {
+        if (holo_should_exit())
+        {
+            lynx_cleanup();
+            return;
+        }
+
         uint32_t joystick = rg_input_read_gamepad();
 
         if (joystick & (RG_KEY_MENU|RG_KEY_OPTION))
@@ -239,6 +264,11 @@ extern "C" void lynx_main(void)
                 rg_gui_game_menu();
             else
                 rg_gui_options_menu();
+            if (holo_should_exit())
+            {
+                lynx_cleanup();
+                return;
+            }
         }
 
         int64_t startTime = rg_system_timer();
@@ -289,4 +319,6 @@ extern "C" void lynx_main(void)
         }
         gAudioBufferPointer = 0;
     }
+
+    lynx_cleanup();
 }

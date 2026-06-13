@@ -44,6 +44,7 @@ __license__ = "GPLv3"
 bool gw_system_config();
 void gw_system_start();
 void gw_system_reset();
+void gw_system_shutdown(void);
 
 // Run some clock cycles and refresh the display
 int gw_system_run(int clock_cycles);

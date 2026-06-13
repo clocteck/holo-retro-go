@@ -320,59 +320,71 @@ typedef struct
     char data[];
 } unique_string_t;
 
-const char *rg_unique_string(const char *str)
-{
-    static const unique_string_t **strings = NULL;
-    static size_t strings_count = 0;
+static const unique_string_t **unique_strings;
+static size_t unique_strings_count;
 #if defined(RG_TARGET_HOLO_DYNMOD)
-    static size_t strings_capacity = 0;
+static size_t unique_strings_capacity;
 #endif
 
+const char *rg_unique_string(const char *str)
+{
     if (!str)
         return NULL;
 
     size_t len = strlen(str);
 
-    for (int i = 0; i < strings_count; i++)
+    for (int i = 0; i < unique_strings_count; i++)
     {
-        if (strings[i]->length != len)
+        if (unique_strings[i]->length != len)
             continue;
-        if (memcmp(strings[i]->data, str, len + 1) == 0)
-            return strings[i]->data;
+        if (memcmp(unique_strings[i]->data, str, len + 1) == 0)
+            return unique_strings[i]->data;
     }
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
     unique_string_t *obj = rg_alloc(sizeof(unique_string_t) + len + 1, MEM_SLOW | MEM_NOPANIC);
-    if (strings_count >= strings_capacity)
+    if (unique_strings_count >= unique_strings_capacity)
     {
-        size_t next_capacity = strings_capacity ? strings_capacity * 2 : 32;
+        size_t next_capacity = unique_strings_capacity ? unique_strings_capacity * 2 : 32;
         const unique_string_t **next = rg_alloc(next_capacity * sizeof(unique_string_t *), MEM_SLOW | MEM_NOPANIC);
-        if (next && strings_count)
-            memcpy(next, strings, strings_count * sizeof(unique_string_t *));
+        if (next && unique_strings_count)
+            memcpy(next, unique_strings, unique_strings_count * sizeof(unique_string_t *));
         if (next)
         {
-            free((void *)strings);
-            strings = next;
-            strings_capacity = next_capacity;
+            free((void *)unique_strings);
+            unique_strings = next;
+            unique_strings_capacity = next_capacity;
         }
     }
-    if (!strings || !obj)
+    if (!unique_strings || !obj)
     {
         free(obj);
         RG_ASSERT(false, "alloc failed");
     }
 #else
     unique_string_t *obj = malloc(sizeof(unique_string_t) + len + 1);
-    strings = realloc(strings, (strings_count + 1) * sizeof(unique_string_t *));
-    RG_ASSERT(strings && obj, "alloc failed");
+    unique_strings = realloc(unique_strings, (unique_strings_count + 1) * sizeof(unique_string_t *));
+    RG_ASSERT(unique_strings && obj, "alloc failed");
 #endif
 
     memcpy(obj->data, str, len + 1);
     obj->length = len;
 
-    strings[strings_count++] = obj;
+    unique_strings[unique_strings_count++] = obj;
 
     return obj->data;
+}
+
+void rg_unique_string_deinit(void)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    for (size_t i = 0; i < unique_strings_count; ++i)
+        free((void *)unique_strings[i]);
+    free((void *)unique_strings);
+    unique_strings = NULL;
+    unique_strings_count = 0;
+    unique_strings_capacity = 0;
+#endif
 }
 
 typedef struct rg_bucket_s

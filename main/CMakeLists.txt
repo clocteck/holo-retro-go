@@ -14,17 +14,39 @@ if(NOT EXISTS "${MODULE_ABI_DIR}/module_abi.h")
     message(FATAL_ERROR "module_abi.h not found. Set -DMODULE_ABI_DIR=/path/to/src/dynmod or CUBICLUA_ROOT.")
 endif()
 
+set(HOLO_RETRO_PROFILE_FILE "${CMAKE_BINARY_DIR}/holo_retro_profile.cmake")
+if(EXISTS "${HOLO_RETRO_PROFILE_FILE}")
+    include("${HOLO_RETRO_PROFILE_FILE}")
+endif()
+
+if(NOT DEFINED HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    set(HOLO_RETRO_MAIN_PROFILE "retro-core")
+    set(HOLO_RETRO_MAIN_MODULE_NAME "retrogo")
+    set(HOLO_RETRO_MAIN_GWENESIS_ONLY 0)
+endif()
+
+message(STATUS "main component profile: ${HOLO_RETRO_MAIN_PROFILE}; gwenesis-only: ${HOLO_RETRO_MAIN_GWENESIS_ONLY}")
+
 set(RETRO_CORE_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/retro-core/main/main.c"
     "${RG_UPSTREAM_DIR}/retro-core/main/main_launcher.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_gbc.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_gw.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_lynx.cpp"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_nes.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_pce.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_sms.c"
-    "${RG_UPSTREAM_DIR}/retro-core/main/main_snes.c"
 )
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    list(APPEND RETRO_CORE_MAIN_SRCS
+        "${RG_UPSTREAM_DIR}/gwenesis/main/main.c"
+    )
+else()
+    list(APPEND RETRO_CORE_MAIN_SRCS
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_gbc.c"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_gw.c"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_lynx.cpp"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_nes.c"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_pce.c"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_sms.c"
+        "${RG_UPSTREAM_DIR}/retro-core/main/main_snes.c"
+    )
+endif()
 
 set(LAUNCHER_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/launcher/main/applications.c"
@@ -34,6 +56,26 @@ set(LAUNCHER_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/launcher/main/images.c"
     "${RG_UPSTREAM_DIR}/launcher/main/main.c"
 )
+
+set(MAIN_COMPONENT_REQUIRES
+    retro-go
+)
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    list(APPEND MAIN_COMPONENT_REQUIRES
+        gwenesis
+    )
+else()
+    list(APPEND MAIN_COMPONENT_REQUIRES
+        gnuboy
+        gw-emulator
+        handy
+        nofrendo
+        pce-go
+        smsplus
+        snes9x
+    )
+endif()
 
 idf_component_register(
     SRCS
@@ -62,32 +104,45 @@ idf_component_register(
         "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/cpu"
         "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/sound"
         "${RG_UPSTREAM_DIR}/retro-core/components/snes9x"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/bus"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/M68K"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/Z80"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/io"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/savestate"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/sound"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/vdp"
     REQUIRES
-        retro-go
-        gnuboy
-        gw-emulator
-        handy
-        nofrendo
-        pce-go
-        smsplus
-        snes9x
+        ${MAIN_COMPONENT_REQUIRES}
 )
 
 set_source_files_properties("${RG_UPSTREAM_DIR}/retro-core/main/main.c"
     PROPERTIES COMPILE_DEFINITIONS app_main=retrogo_core_app_main)
 set_source_files_properties("${RG_UPSTREAM_DIR}/launcher/main/main.c"
     PROPERTIES COMPILE_DEFINITIONS app_main=retrogo_launcher_app_main)
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    set_source_files_properties("${RG_UPSTREAM_DIR}/gwenesis/main/main.c"
+        PROPERTIES COMPILE_DEFINITIONS app_main=gwenesis_main)
+endif()
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    set(HOLO_RETRO_MAIN_OPTIMIZATION -O3)
+else()
+    set(HOLO_RETRO_MAIN_OPTIMIZATION -O2)
+endif()
 
 target_compile_options(${COMPONENT_LIB} PRIVATE
-    -O2
+    ${HOLO_RETRO_MAIN_OPTIMIZATION}
     -fPIC
     -fvisibility=hidden
     -fdata-sections
     -ffunction-sections
     -DRG_TARGET_HOLO_DYNMOD=1
     -DRETRO_GO=1
-    -DRG_PROJECT_APP="retrogo"
+    -DRG_PROJECT_APP="${HOLO_RETRO_MAIN_MODULE_NAME}"
     -DRG_PROJECT_VER="0.1.0"
     -DRG_BUILD_RELEASE=0
+    -DHOLO_RETRO_GWENESIS_ONLY=${HOLO_RETRO_MAIN_GWENESIS_ONLY}
     -Wno-error=format
+    -Wno-error=nonnull-compare
 )

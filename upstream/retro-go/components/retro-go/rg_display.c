@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 10) // In pixels
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 12) // In pixels
 
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;
@@ -128,6 +128,42 @@ static inline void write_update(const rg_surface_t *update)
     const int stride = update->stride;
     const void *data = update->data + update->offset + (crop_top * stride) + (crop_left * RG_PIXEL_GET_SIZE(format));
     const uint16_t *palette = update->palette;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (format == RG_PIXEL_565_LE &&
+        !filter_x && !filter_y &&
+        draw_left >= 0 && draw_top >= 0 &&
+        draw_left + draw_width <= display.screen.width &&
+        draw_top + draw_height <= display.screen.height &&
+        draw_width == update->width && draw_height == update->height)
+    {
+        const int lines_per_buffer = LCD_BUFFER_LENGTH / draw_width;
+
+        lcd_set_window(display.screen.margins.left + draw_left,
+                       display.screen.margins.top + draw_top,
+                       draw_width, draw_height);
+        for (int y = 0; y < draw_height;)
+        {
+            uint16_t *line_buffer = lcd_get_buffer(LCD_BUFFER_LENGTH);
+            if (!line_buffer)
+                break;
+
+            int lines_to_copy = RG_MIN(lines_per_buffer, draw_height - y);
+            for (int i = 0; i < lines_to_copy; ++i)
+            {
+                const uint8_t *src = (const uint8_t *)data + ((y + i) * stride);
+                memcpy(line_buffer + (i * draw_width), src, draw_width * sizeof(uint16_t));
+            }
+
+            lcd_send_buffer(line_buffer, draw_width * lines_to_copy);
+            y += lines_to_copy;
+        }
+
+        counters.fullFrames++;
+        counters.busyTime += rg_system_timer() - time_start;
+        return;
+    }
+#endif
 
     const bool partial_update = RG_SCREEN_PARTIAL_UPDATES;
 
@@ -532,7 +568,7 @@ void rg_display_submit(const rg_surface_t *update, uint32_t flags)
 bool rg_display_sync(bool block)
 {
     while (block && rg_task_messages_waiting(display_task_queue))
-        continue; // We should probably yield?
+        rg_task_delay(1);
     return !rg_task_messages_waiting(display_task_queue);
 }
 
@@ -646,9 +682,15 @@ void rg_display_clear(uint16_t color_le)
 
 void rg_display_deinit(void)
 {
-    rg_task_send(display_task_queue, &(rg_task_msg_t){.type = RG_TASK_MSG_STOP});
+    if (display_task_queue)
+        rg_task_send(display_task_queue, &(rg_task_msg_t){.type = RG_TASK_MSG_STOP});
     // lcd_set_backlight(0);
     lcd_deinit();
+    free(config.border_file);
+    config.border_file = NULL;
+    rg_surface_free(border);
+    border = NULL;
+    display_task_queue = NULL;
     RG_LOGI("Display terminated.\n");
 }
 

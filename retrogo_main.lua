@@ -1,9 +1,22 @@
 local APP = {
-  VERSION = "2026-06-04-retrogo-home-exit-v1",
-  MODULE_PATH = "/sd/modules/retrogo.so",
+  VERSION = "2026-06-13-retrogo-split-core-v1",
   ROM_ROOT = "/sd/roms",
   POLL_DELAY_MS = 16,
   AXIS_THRESHOLD = 0.60,
+  MODULES = {
+    {
+      id = "retro-core",
+      title = "RETRO CORE",
+      detail = "NES SNES GB GBC GW SMS PCE LYNX",
+      path = "/sd/modules/retrogo.so",
+    },
+    {
+      id = "gwenesis",
+      title = "MEGA DRIVE",
+      detail = "MD GEN BIN ZIP",
+      path = "/sd/modules/gwenesis.so",
+    },
+  },
 }
 
 local function log(...)
@@ -172,14 +185,21 @@ local function build_gamepad_mask(state, retrogo_mask)
     mask = mask + retrogo_mask.BTN_RIGHT
   end
 
+  local raw_select_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_SELECT or 0)
+  local raw_start_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_START or 0)
+  local raw_menu_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_MENU or 0)
+  local xbox_menu_pressed = any_true(state, { "menu" })
+  local xbox_view_pressed = any_true(state, { "view" })
+  local start_alias_pressed = xbox_menu_pressed or any_true(state, { "start", "btn_start" })
+  local menu_alias_pressed = xbox_view_pressed or any_true(state, { "menu_btn", "option", "btn_menu" })
+
   local a_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_A or 0) or
       any_true(state, { "a", "btn_a", "button_a" })
   local b_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_B or 0) or
       any_true(state, { "b", "btn_b", "button_b" })
-  local select_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_SELECT or 0) or
-      any_true(state, { "select", "view", "btn_select", "back" })
-  local start_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_START or 0) or
-      any_true(state, { "start", "btn_start", "menu" })
+  local select_pressed = (raw_select_pressed and not xbox_view_pressed) or
+      any_true(state, { "select", "btn_select", "back" })
+  local start_pressed = raw_start_pressed or start_alias_pressed
   local x_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_X or 0) or
       any_true(state, { "x", "btn_x", "button_x" })
   local y_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_Y or 0) or
@@ -190,8 +210,7 @@ local function build_gamepad_mask(state, retrogo_mask)
       any_true(state, { "r", "rb", "r1", "right_shoulder", "btn_r", "button_r", "button_rb" })
   local home_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_HOME or 0) or
       any_true(state, { "xbox", "home", "btn_home", "guide", "system" })
-  local menu_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_MENU or 0) or
-      any_true(state, { "menu_btn", "option", "btn_menu" })
+  local menu_pressed = menu_alias_pressed or (raw_menu_pressed and not start_pressed)
 
   if a_pressed then
     mask = mask + retrogo_mask.BTN_A
@@ -247,6 +266,285 @@ local function sleep_ms(ms)
   return false
 end
 
+local function lv_style(obj, props)
+  if not obj or type(props) ~= "table" then
+    return
+  end
+  local part = rawget(_G, "LV_PART_MAIN") or 0
+  local state = rawget(_G, "LV_STATE_DEFAULT") or 0
+  local selector = part + state
+  if props.bg ~= nil and lv_obj_set_style_bg_color then
+    pcall(lv_obj_set_style_bg_color, obj, props.bg, selector)
+  end
+  if props.bg_opa ~= nil and lv_obj_set_style_bg_opa then
+    pcall(lv_obj_set_style_bg_opa, obj, props.bg_opa, selector)
+  end
+  if props.border ~= nil and lv_obj_set_style_border_color then
+    pcall(lv_obj_set_style_border_color, obj, props.border, selector)
+  end
+  if props.border_w ~= nil and lv_obj_set_style_border_width then
+    pcall(lv_obj_set_style_border_width, obj, props.border_w, selector)
+  end
+  if props.radius ~= nil and lv_obj_set_style_radius then
+    pcall(lv_obj_set_style_radius, obj, props.radius, selector)
+  end
+  if props.pad ~= nil and lv_obj_set_style_pad_all then
+    pcall(lv_obj_set_style_pad_all, obj, props.pad, selector)
+  end
+  if props.color ~= nil and lv_obj_set_style_text_color then
+    pcall(lv_obj_set_style_text_color, obj, props.color, selector)
+  end
+  if props.font and lv_obj_set_style_text_font then
+    local font = rawget(_G, props.font)
+    if font then
+      pcall(lv_obj_set_style_text_font, obj, font, selector)
+    end
+  end
+  if props.align ~= nil and lv_obj_set_style_text_align then
+    pcall(lv_obj_set_style_text_align, obj, props.align, selector)
+  end
+end
+
+local function lv_disable_scroll(obj)
+  local flag = rawget(_G, "LV_OBJ_FLAG_SCROLLABLE")
+  if obj and flag and lv_obj_clear_flag then
+    pcall(lv_obj_clear_flag, obj, flag)
+  end
+end
+
+local function lv_label(parent, text, x, y, w, h, color, font, align)
+  if not lv_label_create then
+    return nil
+  end
+  local label = lv_label_create(parent)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, label, x, y) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, label, w, h) end
+  if lv_label_set_text then pcall(lv_label_set_text, label, text or "") end
+  if lv_label_set_long_mode then
+    pcall(lv_label_set_long_mode, label, rawget(_G, "LV_LABEL_LONG_CLIP") or 0)
+  end
+  lv_style(label, {
+    color = color or 0xFFFFFF,
+    font = font,
+    align = align or rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1,
+  })
+  return label
+end
+
+local function selector_make_ui()
+  if not lv_scr_act or not lv_obj_create or not lv_label_create then
+    log("selector ui unavailable")
+    return nil
+  end
+
+  local root = lv_scr_act()
+  local overlay = lv_obj_create(root)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, overlay, 0, 0) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, overlay, 320, 240) end
+  lv_disable_scroll(overlay)
+  lv_style(overlay, { bg = 0x05070B, bg_opa = 255, border_w = 0, radius = 0, pad = 0 })
+
+  local title = lv_label(overlay, "RETRO-GO", 0, 18, 320, 28, 0xF4F8FF, "LV_FONT_MONTSERRAT_20")
+  local subtitle = lv_label(overlay, "SELECT CORE", 0, 46, 320, 18, 0x7FA7D8, "LV_FONT_MONTSERRAT_12")
+
+  local left = lv_obj_create(overlay)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, left, 16, 82) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, left, 136, 96) end
+  lv_disable_scroll(left)
+
+  local right = lv_obj_create(overlay)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, right, 168, 82) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, right, 136, 96) end
+  lv_disable_scroll(right)
+
+  local hint = lv_label(overlay, "< / > CHANGE    UP / A START", 0, 199, 320, 18, 0x8C9AA8, "LV_FONT_MONTSERRAT_12")
+  local status = lv_label(overlay, "", 0, 218, 320, 16, 0x617083, "LV_FONT_MONTSERRAT_12")
+
+  return {
+    root = overlay,
+    title = title,
+    subtitle = subtitle,
+    cards = { { box = left }, { box = right } },
+    hint = hint,
+    status = status,
+  }
+end
+
+local function selector_card_text(card, mod, selected)
+  if not card or not card.box then
+    return
+  end
+  if not card.title then
+    card.title = lv_label(card.box, "", 8, 18, 120, 22, 0xFFFFFF, "LV_FONT_MONTSERRAT_16")
+    card.detail = lv_label(card.box, "", 8, 48, 120, 28, 0x9AA7B3, "LV_FONT_MONTSERRAT_12")
+  end
+  if lv_label_set_text then
+    pcall(lv_label_set_text, card.title, mod.title)
+    pcall(lv_label_set_text, card.detail, mod.detail)
+  end
+  if selected then
+    lv_style(card.box, { bg = 0x14314C, bg_opa = 255, border = 0x5CA9FF, border_w = 2, radius = 8, pad = 0 })
+    lv_style(card.title, { color = 0xFFFFFF })
+    lv_style(card.detail, { color = 0xD8EAFF })
+  else
+    lv_style(card.box, { bg = 0x111820, bg_opa = 255, border = 0x26313A, border_w = 1, radius = 8, pad = 0 })
+    lv_style(card.title, { color = 0xABB6C1 })
+    lv_style(card.detail, { color = 0x66727E })
+  end
+end
+
+local function selector_render(ui, index, status_text)
+  if not ui then
+    return
+  end
+  selector_card_text(ui.cards[1], APP.MODULES[1], index == 1)
+  selector_card_text(ui.cards[2], APP.MODULES[2], index == 2)
+  if ui.status and lv_label_set_text then
+    pcall(lv_label_set_text, ui.status, status_text or APP.MODULES[index].path)
+  end
+end
+
+local function key_event_is_press(evt_type)
+  if not key then
+    return true
+  end
+  return evt_type == key.START or evt_type == key.SHORT or evt_type == key.LONG_START
+end
+
+local function selector_gamepad_nav(state)
+  if not connected_state(state) then
+    return {}
+  end
+  local raw_mask = read_raw_gamepad_mask(state)
+  local lx = state.lx or state.analog_x or state.left_x
+  local ly = state.ly or state.analog_y or state.left_y
+  return {
+    left = has_bit(raw_mask, gamepad and gamepad.BTN_LEFT or 0) or
+        any_true(state, { "dpad_left", "left", "left_pressed", "west" }) or axis_less_than(lx),
+    right = has_bit(raw_mask, gamepad and gamepad.BTN_RIGHT or 0) or
+        any_true(state, { "dpad_right", "right", "right_pressed", "east" }) or axis_greater_than(lx),
+    confirm = has_bit(raw_mask, gamepad and gamepad.BTN_A or 0) or
+        has_bit(raw_mask, gamepad and gamepad.BTN_START or 0) or
+        has_bit(raw_mask, gamepad and gamepad.BTN_MENU or 0) or
+        any_true(state, { "a", "btn_a", "start", "btn_start", "menu" }),
+    home = has_bit(raw_mask, gamepad and gamepad.BTN_HOME or 0) or
+        any_true(state, { "xbox", "home", "btn_home", "guide", "system" }),
+  }
+end
+
+local function edge(now, prev, name)
+  return now[name] and not prev[name]
+end
+
+local function selector_cleanup(ui, key_codes)
+  if key and key.off then
+    for _, code in ipairs(key_codes or {}) do
+      if code then
+        pcall(function() key.off(code) end)
+      end
+    end
+  end
+  if ui and ui.root and lv_obj_del then
+    pcall(lv_obj_del, ui.root)
+  end
+end
+
+local function choose_module()
+  local index = 1
+  local chosen = false
+  local canceled = false
+  local ui = selector_make_ui()
+  local key_codes = {}
+
+  local function move(delta)
+    index = index + delta
+    if index < 1 then index = #APP.MODULES end
+    if index > #APP.MODULES then index = 1 end
+    selector_render(ui, index)
+    log("selector", APP.MODULES[index].id, APP.MODULES[index].path)
+  end
+
+  local function confirm()
+    chosen = true
+    selector_render(ui, index, "loading " .. APP.MODULES[index].id)
+  end
+
+  local function cancel()
+    canceled = true
+    selector_render(ui, index, "exit")
+  end
+
+  selector_render(ui, index)
+
+  if gamepad and gamepad.start then
+    pcall(function()
+      if gamepad.off then gamepad.off() end
+      gamepad.start({ clear_bonds = false, debug = false })
+    end)
+  end
+
+  if key and key.on then
+    local function bind(code, fn)
+      if not code then return end
+      key_codes[#key_codes + 1] = code
+      pcall(function()
+        key.on(code, function(evt_type)
+          if key_event_is_press(evt_type) then
+            fn()
+          end
+        end)
+      end)
+    end
+    bind(key.LEFT, function() move(-1) end)
+    bind(key.RIGHT, function() move(1) end)
+    bind(key.UP, confirm)
+    bind(key.DOWN, confirm)
+    bind(key.MENU, confirm)
+    bind(key.HOME, cancel)
+  end
+
+  local prev = {}
+  while not chosen and not canceled do
+    if app and app.exiting and app.exiting() then
+      canceled = true
+      break
+    end
+    local nav = selector_gamepad_nav(read_gamepad_state())
+    if edge(nav, prev, "left") then
+      move(-1)
+    elseif edge(nav, prev, "right") then
+      move(1)
+    elseif edge(nav, prev, "confirm") then
+      confirm()
+    elseif edge(nav, prev, "home") then
+      cancel()
+    end
+    prev = nav
+    if not sleep_ms(30) then
+      break
+    end
+  end
+
+  selector_cleanup(ui, key_codes)
+
+  if canceled then
+    if app and app.exit then
+      pcall(function() app.exit() end)
+    end
+    return nil
+  end
+  return APP.MODULES[index]
+end
+
+local selected_module = choose_module()
+if not selected_module then
+  log("module selection canceled")
+  return
+end
+
+APP.MODULE_PATH = selected_module.path
+log("selected", selected_module.id, APP.MODULE_PATH)
+
 local ok_module, retrogo = pcall(require, APP.MODULE_PATH)
 if not ok_module or type(retrogo) ~= "table" then
   log("require failed", tostring(retrogo))
@@ -300,10 +598,10 @@ local function debug_input_aliases(state)
   end
   local aliases = {}
   local checks = {
-    { "SELECT", { "select", "view", "btn_select", "back" } },
+    { "SELECT", { "select", "btn_select", "back" } },
     { "START", { "start", "btn_start", "menu" } },
     { "HOME", { "xbox", "home", "btn_home", "guide", "system" } },
-    { "MENU", { "menu_btn", "option", "btn_menu" } },
+    { "MENU", { "view", "menu_btn", "option", "btn_menu" } },
   }
   for _, check in ipairs(checks) do
     local name = first_true_name(state, check[2])

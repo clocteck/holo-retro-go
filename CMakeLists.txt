@@ -1,27 +1,63 @@
 ﻿cmake_minimum_required(VERSION 3.16)
 
 set(RG_UPSTREAM_DIR "${CMAKE_CURRENT_LIST_DIR}/upstream/retro-go")
+set(HOLO_RETRO_MODULE_PROFILE "retro-core" CACHE STRING "Module profile to build: retro-core or gwenesis")
+set_property(CACHE HOLO_RETRO_MODULE_PROFILE PROPERTY STRINGS retro-core gwenesis)
+
+if(HOLO_RETRO_MODULE_PROFILE STREQUAL "gwenesis")
+    set(HOLO_RETRO_MODULE_NAME "gwenesis" CACHE INTERNAL "Holo Retro-Go module output name")
+    set(HOLO_RETRO_GWENESIS_ONLY 1 CACHE INTERNAL "Build only the gwenesis core")
+elseif(HOLO_RETRO_MODULE_PROFILE STREQUAL "retro-core")
+    set(HOLO_RETRO_MODULE_NAME "retrogo" CACHE INTERNAL "Holo Retro-Go module output name")
+    set(HOLO_RETRO_GWENESIS_ONLY 0 CACHE INTERNAL "Build only the gwenesis core")
+else()
+    message(FATAL_ERROR "Unsupported HOLO_RETRO_MODULE_PROFILE='${HOLO_RETRO_MODULE_PROFILE}'")
+endif()
+
+message(STATUS "Holo Retro module profile: ${HOLO_RETRO_MODULE_PROFILE} -> ${HOLO_RETRO_MODULE_NAME}")
+
+file(WRITE "${CMAKE_BINARY_DIR}/holo_retro_profile.cmake"
+    "set(HOLO_RETRO_MAIN_PROFILE \"${HOLO_RETRO_MODULE_PROFILE}\")\n"
+    "set(HOLO_RETRO_MAIN_MODULE_NAME \"${HOLO_RETRO_MODULE_NAME}\")\n"
+    "set(HOLO_RETRO_MAIN_GWENESIS_ONLY ${HOLO_RETRO_GWENESIS_ONLY})\n"
+)
+
 set(EXTRA_COMPONENT_DIRS
     "${RG_UPSTREAM_DIR}/components"
-    "${RG_UPSTREAM_DIR}/retro-core/components"
 )
 
-set(COMPONENTS
-    main
-    retro-go
-    nofrendo
-    gnuboy
-    pce-go
-    gw-emulator
-    handy
-    smsplus
-    snes9x
-    espressif__elf_loader
-    lwip
-)
+if(HOLO_RETRO_GWENESIS_ONLY)
+    list(APPEND EXTRA_COMPONENT_DIRS
+        "${RG_UPSTREAM_DIR}/gwenesis/components"
+    )
+    set(COMPONENTS
+        main
+        retro-go
+        gwenesis
+        espressif__elf_loader
+        lwip
+    )
+else()
+    list(APPEND EXTRA_COMPONENT_DIRS
+        "${RG_UPSTREAM_DIR}/retro-core/components"
+    )
+    set(COMPONENTS
+        main
+        retro-go
+        nofrendo
+        gnuboy
+        pce-go
+        gw-emulator
+        handy
+        smsplus
+        snes9x
+        espressif__elf_loader
+        lwip
+    )
+endif()
 
 set(RG_BUILD_TARGET RG_TARGET_HOLO_DYNMOD)
-set(RG_PROJECT_APP "retrogo")
+set(RG_PROJECT_APP "${HOLO_RETRO_MODULE_NAME}")
 set(RG_PROJECT_VER "0.1.0")
 set(RG_ENABLE_NETWORKING 0)
 set(RG_ENABLE_NETPLAY 0)
@@ -48,13 +84,14 @@ macro(rg_setup_compile_options)
 endmacro()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(retrogo)
+project(${HOLO_RETRO_MODULE_NAME})
 
 idf_build_set_property(COMPILE_DEFINITIONS "RG_TARGET_HOLO_DYNMOD=1" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "RETRO_GO=1" APPEND)
-idf_build_set_property(COMPILE_DEFINITIONS "RG_PROJECT_APP=\"retrogo\"" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "RG_PROJECT_APP=\"${RG_PROJECT_APP}\"" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "RG_PROJECT_VER=\"0.1.0\"" APPEND)
 idf_build_set_property(COMPILE_DEFINITIONS "RG_BUILD_RELEASE=0" APPEND)
+idf_build_set_property(COMPILE_DEFINITIONS "HOLO_RETRO_GWENESIS_ONLY=${HOLO_RETRO_GWENESIS_ONLY}" APPEND)
 
 execute_process(
     COMMAND ${CMAKE_C_COMPILER} -print-libgcc-file-name
@@ -70,6 +107,14 @@ execute_process(
 set(ELF_LIBS
     "${CMAKE_BINARY_DIR}/esp-idf/main/libmain.a"
     "${CMAKE_BINARY_DIR}/esp-idf/retro-go/libretro-go.a"
+)
+
+if(HOLO_RETRO_GWENESIS_ONLY)
+    list(APPEND ELF_LIBS
+        "${CMAKE_BINARY_DIR}/esp-idf/gwenesis/libgwenesis.a"
+    )
+else()
+    list(APPEND ELF_LIBS
     "${CMAKE_BINARY_DIR}/esp-idf/nofrendo/libnofrendo.a"
     "${CMAKE_BINARY_DIR}/esp-idf/gnuboy/libgnuboy.a"
     "${CMAKE_BINARY_DIR}/esp-idf/pce-go/libpce-go.a"
@@ -77,6 +122,10 @@ set(ELF_LIBS
     "${CMAKE_BINARY_DIR}/esp-idf/handy/libhandy.a"
     "${CMAKE_BINARY_DIR}/esp-idf/smsplus/libsmsplus.a"
     "${CMAKE_BINARY_DIR}/esp-idf/snes9x/libsnes9x.a"
+    )
+endif()
+
+list(APPEND ELF_LIBS
     "$ENV{IDF_PATH}/components/json/cJSON/cJSON.c"
     "${RETROGO_LIBM}"
     "${RETROGO_LIBGCC}"
@@ -88,21 +137,10 @@ set(ELF_SO_LINK_FLAGS
     "-Wl,-z,notext"
     "-Wl,--no-check-sections"
     "-Wl,--version-script=${CMAKE_CURRENT_LIST_DIR}/exports.map"
-    "-Wl,-Map,${CMAKE_BINARY_DIR}/retrogo_so.map"
+    "-Wl,-Map,${CMAKE_BINARY_DIR}/${HOLO_RETRO_MODULE_NAME}_so.map"
 )
 
-set(ELF_SO_OBJCOPY_FLAGS
-    "--rename-section" ".iram1.literal=.mod_iram.literal"
-    "--rename-section" ".iram1=.mod_iram"
-    "--rename-section" ".iram1.0.literal=.mod_iram.0.literal"
-    "--rename-section" ".iram1.0=.mod_iram.0"
-    "--rename-section" ".iram1.1.literal=.mod_iram.1.literal"
-    "--rename-section" ".iram1.1=.mod_iram.1"
-    "--rename-section" ".iram1.2.literal=.mod_iram.2.literal"
-    "--rename-section" ".iram1.2=.mod_iram.2"
-    "--rename-section" ".iram1.3.literal=.mod_iram.3.literal"
-    "--rename-section" ".iram1.3=.mod_iram.3"
-)
+set(ELF_SO_OBJCOPY_FLAGS)
 
 include(elf_loader)
-project_so(retrogo)
+project_so(${HOLO_RETRO_MODULE_NAME})

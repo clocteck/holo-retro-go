@@ -22,6 +22,8 @@ extern "C" {
 #ifdef RG_TARGET_HOLO_DYNMOD
 #undef RTC_NOINIT_ATTR
 #define RTC_NOINIT_ATTR
+#undef IRAM_ATTR
+#define IRAM_ATTR
 #endif
 #else
 #define IRAM_ATTR
@@ -178,6 +180,7 @@ typedef struct
     int tickRate;
     int frameTime;
     int frameskip;
+    int maxFrameskip;
     int overclock;
     int tickTimeout;
     bool lowMemoryMode;

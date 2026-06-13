@@ -121,8 +121,20 @@ void rg_gui_init(void)
         rg_gui_set_language_id(0);
     if (!rg_gui_set_font(rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_DEFAULT)))
         rg_gui_set_font(0);
-    rg_gui_set_theme(rg_settings_get_string(NS_GLOBAL, SETTING_THEME, NULL));
+    char *theme_name = rg_settings_get_string(NS_GLOBAL, SETTING_THEME, NULL);
+    rg_gui_set_theme(theme_name);
+    free(theme_name);
     gui.initialized = true;
+}
+
+void rg_gui_deinit(void)
+{
+    free(gui.draw_buffer);
+    gui.draw_buffer = NULL;
+    gui.draw_buffer_size = 0;
+    cJSON_Delete(gui.theme_obj);
+    gui.theme_obj = NULL;
+    gui.initialized = false;
 }
 
 void rg_gui_update_geometry(void)

@@ -707,6 +707,9 @@ static void application(const char *desc, const char *name, const char *exts, co
 
 void applications_init(void)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+    application("Sega Mega Drive", "md", "md gen bin zip", "gwenesis", 0);
+#else
     application("Nintendo Entertainment System", "nes", "nes fc fds nsf zip", "retro-core", 16);
     application("Super Nintendo", "snes", "smc sfc zip", "retro-core", 0);
     application("Nintendo Gameboy", "gb", "gb gbc zip", "retro-core", 0);
@@ -732,6 +735,7 @@ void applications_init(void)
 
     // Special app to bootstrap native esp32 binaries from the SD card
     // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);
+#endif
 #endif
 
     if (!rg_system_get_app()->lowMemoryMode)

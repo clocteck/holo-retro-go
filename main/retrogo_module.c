@@ -9,6 +9,12 @@
 #define RETROGO_MODULE_EXPORT __attribute__((visibility("default"), used))
 #define RETROGO_VERSION "0.1.0"
 #define RETROGO_MIN_HOST_ABI MODULE_BOOTSTRAP_ABI_VERSION
+#if HOLO_RETRO_GWENESIS_ONLY
+#define RETROGO_MODULE_NAME "gwenesis"
+#else
+#define RETROGO_MODULE_NAME "retrogo"
+#endif
+#define RETROGO_LOG_PREFIX "[" RETROGO_MODULE_NAME ".so] "
 
 void retrogo_core_app_main(void);
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -33,7 +39,7 @@ static const module_manifest_t s_manifest = {
     MODULE_MANIFEST_MAGIC,
     MODULE_ABI_VERSION,
     sizeof(module_manifest_t),
-    "retrogo",
+    RETROGO_MODULE_NAME,
     RETROGO_VERSION,
     "Retro-Go dynamic module for Holocubic",
     0,
@@ -411,7 +417,7 @@ static int l_set_catalog(lua_State *L)
     {
         return 0;
     }
-    create_log(host, "[retrogo.so] set_catalog enter");
+    create_log(host, RETROGO_LOG_PREFIX "set_catalog enter");
 
     if (host->lua.isstring(L, 1))
     {
@@ -452,15 +458,15 @@ static int l_set_catalog(lua_State *L)
 
     if (!blob)
     {
-        create_log(host, "[retrogo.so] set_catalog bad arg");
+        create_log(host, RETROGO_LOG_PREFIX "set_catalog bad arg");
         return push_error(L, host, "retrogo.set_catalog: expected catalog blob or {blob=...}");
     }
     if (!holo_catalog_load_blob(blob, len))
     {
-        create_log(host, "[retrogo.so] set_catalog oom");
+        create_log(host, RETROGO_LOG_PREFIX "set_catalog oom");
         return push_error(L, host, "retrogo.set_catalog: out of memory");
     }
-    create_log(host, "[retrogo.so] set_catalog done");
+    create_log(host, RETROGO_LOG_PREFIX "set_catalog done");
     host->lua.pushboolean(L, 1);
     return 1;
 }
@@ -473,8 +479,8 @@ static void retrogo_task_entry(void *arg)
         return;
     }
     inst->running = 1;
-    holo_port_log("[retrogo.so] task entry");
-    holo_port_log("[retrogo.so] retro-go task start");
+    holo_port_log(RETROGO_LOG_PREFIX "task entry");
+    holo_port_log(RETROGO_LOG_PREFIX "retro-go task start");
     holo_runtime_bind_task(&inst->running, &inst->task);
     retrogo_core_app_main();
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -484,8 +490,8 @@ static void retrogo_task_entry(void *arg)
     inst->running = 0;
     inst->task = NULL;
     holo_display_release();
-    holo_port_log("[retrogo.so] display release");
-    holo_port_log("[retrogo.so] retro-go task stop");
+    holo_port_log(RETROGO_LOG_PREFIX "display release");
+    holo_port_log(RETROGO_LOG_PREFIX "retro-go task stop");
     if (inst->host && inst->host->task.remove)
     {
         inst->host->task.remove(NULL);
@@ -511,10 +517,10 @@ static int l_start(lua_State *L)
     {
         return push_error(L, host, "retrogo.start: instance missing");
     }
-    create_log(host, "[retrogo.so] start enter");
+    create_log(host, RETROGO_LOG_PREFIX "start enter");
     if (inst->running || inst->task)
     {
-        create_log(host, "[retrogo.so] start already running");
+        create_log(host, RETROGO_LOG_PREFIX "start already running");
         return push_error(L, host, "retro-go is already running");
     }
 
@@ -540,29 +546,29 @@ static int l_start(lua_State *L)
 
     if (!host->task.create)
     {
-        create_log(host, "[retrogo.so] start no task api");
+        create_log(host, RETROGO_LOG_PREFIX "start no task api");
         return push_error(L, host, "host task API is missing");
     }
-    create_log(host, "[retrogo.so] start task.create");
+    create_log(host, RETROGO_LOG_PREFIX "start task.create");
     if (host->task.create_ex)
     {
-        if (host->task.create_ex("retrogo", retrogo_task_entry, inst, 10u * 1024u, 3u, 1,
+        if (host->task.create_ex(RETROGO_MODULE_NAME, retrogo_task_entry, inst, 10u * 1024u, 3u, 1,
                                  MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
         {
             inst->task = NULL;
         }
     }
-    else if (host->task.create("retrogo", retrogo_task_entry, inst, 10u * 1024u, 3u, 1, &inst->task) != MODULE_OK)
+    else if (host->task.create(RETROGO_MODULE_NAME, retrogo_task_entry, inst, 10u * 1024u, 3u, 1, &inst->task) != MODULE_OK)
     {
         inst->task = NULL;
     }
     if (!inst->task)
     {
-        create_log(host, "[retrogo.so] start task.create failed");
+        create_log(host, RETROGO_LOG_PREFIX "start task.create failed");
         return push_error(L, host, "failed to create retro-go task");
     }
 
-    create_log(host, "[retrogo.so] start task.create done");
+    create_log(host, RETROGO_LOG_PREFIX "start task.create done");
     host->lua.pushboolean(L, 1);
     return 1;
 }
@@ -638,13 +644,13 @@ RETROGO_MODULE_EXPORT int32_t module_create_v1(const module_host_api_v1 *host,
 {
     retrogo_instance_t *inst;
 
-    create_log(host, "[retrogo.so] create enter");
+    create_log(host, RETROGO_LOG_PREFIX "create enter");
     if (!out_instance || !host)
     {
         return MODULE_ERR_INVALID_ARG;
     }
     *out_instance = NULL;
-    create_log(host, "[retrogo.so] create validate");
+    create_log(host, RETROGO_LOG_PREFIX "create validate");
     if (!host_abi_is_compatible(host))
     {
         return MODULE_ERR_VERSION;
@@ -652,7 +658,7 @@ RETROGO_MODULE_EXPORT int32_t module_create_v1(const module_host_api_v1 *host,
 
     s_host = host;
     holo_port_set_host(host);
-    create_log(host, "[retrogo.so] create host set");
+    create_log(host, RETROGO_LOG_PREFIX "create host set");
 
     inst = &s_static_instance;
     memset(inst, 0, sizeof(*inst));
@@ -661,7 +667,7 @@ RETROGO_MODULE_EXPORT int32_t module_create_v1(const module_host_api_v1 *host,
     inst->created_ms = host->time.millis ? host->time.millis() : 0;
     copy_text(inst->module_path, sizeof(inst->module_path), info ? info->path : "");
     *out_instance = inst;
-    create_log(host, "[retrogo.so] create done");
+    create_log(host, RETROGO_LOG_PREFIX "create done");
     return MODULE_OK;
 }
 
@@ -725,10 +731,10 @@ RETROGO_MODULE_EXPORT void module_destroy_v1(void *instance)
         }
     }
     holo_catalog_clear();
-    holo_port_log("[retrogo.so] destroy");
+    holo_port_log(RETROGO_LOG_PREFIX "destroy");
     if (inst->running)
     {
-        holo_port_log("[retrogo.so] destroy deferred; task still running, force release display");
+        holo_port_log(RETROGO_LOG_PREFIX "destroy deferred; task still running, force release display");
         holo_display_release();
         return;
     }

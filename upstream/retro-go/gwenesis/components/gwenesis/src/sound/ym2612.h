@@ -16,9 +16,14 @@
 #ifndef _H_YM2612_
 #define _H_YM2612_
 
-extern int16_t gwenesis_ym2612_buffer[];
+#include <stdbool.h>
+
+extern int16_t *gwenesis_ym2612_buffer;
 extern int ym2612_index;
 extern int ym2612_clock;
+
+bool gwenesis_ym2612_init_fast_ram(void);
+void gwenesis_ym2612_deinit_fast_ram(void);
 
 extern void YM2612Init(void);
 extern void YM2612Config(unsigned char dac_bits); //,unsigned int AUDIO_FREQ_DIVISOR);

@@ -1,5 +1,6 @@
 # ESP-IDF and CMake outputs
 build/
+build-gwenesis/
 build_*/
 managed_components/
 dependencies.lock

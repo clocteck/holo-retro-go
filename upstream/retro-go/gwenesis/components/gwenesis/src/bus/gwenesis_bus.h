@@ -22,6 +22,7 @@ __license__ = "GPLv3"
 #pragma once
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <string.h>
 
 #define MAX_ROM_SIZE 0x800000
@@ -43,15 +44,37 @@ __license__ = "GPLv3"
 #define GWENESIS_REFRESH_RATE_PAL 50
 #define GWENESIS_AUDIO_FREQ_PAL 52781
 
+#ifndef GWENESIS_AUDIO_ACCURATE
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_AUDIO_ACCURATE 0
+#else
 #define GWENESIS_AUDIO_ACCURATE 1
+#endif
+#endif
+
+#ifndef GWENESIS_AUDIO_EMULATION
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_AUDIO_EMULATION 1
+#else
+#define GWENESIS_AUDIO_EMULATION 1
+#endif
+#endif
 
 #define Z80_FREQ_DIVISOR 14     // Frequency divisor to Z80 clock
 #define VDP_CYCLES_PER_LINE 3420// VDP Cycles per Line
 #define SCREEN_WIDTH 320
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_AUDIO_OUTPUT_RATE 10000
+#define AUDIO_FREQ_DIVISOR 5365
+#define GWENESIS_AUDIO_BUFFER_LENGTH_NTSC 168
+#define GWENESIS_AUDIO_BUFFER_LENGTH_PAL 200
+#else
+#define GWENESIS_AUDIO_OUTPUT_RATE GWENESIS_AUDIO_FREQ_NTSC
 #define AUDIO_FREQ_DIVISOR 1009
 #define GWENESIS_AUDIO_BUFFER_LENGTH_NTSC 888
 #define GWENESIS_AUDIO_BUFFER_LENGTH_PAL 1056
+#endif
 
 /* Audio buffer length */
 
@@ -89,6 +112,7 @@ enum gwenesis_bus_pad_button
 void load_cartridge();
 #else
 void load_cartridge(unsigned char *buffer, size_t size);
+void unload_cartridge(void);
 #endif
 
 void power_on();
@@ -97,5 +121,7 @@ void set_region();
 
 void gwenesis_bus_save_state();
 void gwenesis_bus_load_state();
+bool gwenesis_bus_init_fast_ram(void);
+void gwenesis_bus_deinit_fast_ram(void);
 
 #endif

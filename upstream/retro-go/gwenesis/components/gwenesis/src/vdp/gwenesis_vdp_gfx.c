@@ -18,7 +18,11 @@ __license__ = "GPLv3"
 */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#if defined(RETRO_GO)
+#include <rg_system.h>
+#endif
 #include "m68k.h"
 #include "gwenesis_vdp.h"
 #include "gwenesis_io.h"
@@ -26,6 +30,8 @@ __license__ = "GPLv3"
 #include "gwenesis_savestate.h"
 
 //#include <assert.h>
+
+#define GWENESIS_HOT
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
@@ -45,13 +51,19 @@ extern unsigned char *VRAM;
 
 #endif
 
+#if defined(RETRO_GO)
+extern unsigned short *CRAM;            // CRAM - Palettes
+extern unsigned char *SAT_CACHE;        // Sprite cache
+extern unsigned char *gwenesis_vdp_regs; // Registers
+extern unsigned short *CRAM565;         // CRAM - Palettes
+extern unsigned short *VSRAM;           // VSRAM - Scrolling
+#else
 extern unsigned short CRAM[];            // CRAM - Palettes
 extern unsigned char SAT_CACHE[]__attribute__((aligned(4)));        // Sprite cache
 extern unsigned char gwenesis_vdp_regs[]; // Registers
-
 extern unsigned short CRAM565[];    // CRAM - Palettes
-
 extern unsigned short VSRAM[];        // VSRAM - Scrolling
+#endif
 
 // Define screen buffers: original and scaled for host RGB
 unsigned char *screen, *scaled_screen;
@@ -59,6 +71,10 @@ unsigned char *screen, *scaled_screen;
 // Define screen buffers for embedded 565 format
 static uint8_t *screen_buffer_line=0;
 static uint8_t *screen_buffer=0;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static uint16_t *screen_buffer_line_565=0;
+static uint16_t *screen_buffer_565=0;
+#endif
 
     // Overflow is the maximum size we can draw outside to avoid
     // wasting time and code in clipping. The maximum object is a 4x4 sprite,
@@ -66,8 +82,14 @@ static uint8_t *screen_buffer=0;
 
 enum { PIX_OVERFLOW = 32 };
 
-static uint8_t render_buffer[SCREEN_WIDTH + PIX_OVERFLOW*2];
-static uint8_t sprite_buffer[SCREEN_WIDTH + PIX_OVERFLOW*2];
+#define VDP_GFX_LINE_BUFFER_SIZE (SCREEN_WIDTH + PIX_OVERFLOW * 2)
+#if defined(RETRO_GO)
+static uint8_t *render_buffer;
+static uint8_t *sprite_buffer;
+#else
+static uint8_t render_buffer[VDP_GFX_LINE_BUFFER_SIZE];
+static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
+#endif
 
 // Define VIDEO MODE
 static int mode_h40;
@@ -94,6 +116,27 @@ static int Window_lastcol;
 // #define FETCH16VRAM(A)  ({size_t addr = (A); (VRAM[addr+1]) | (VRAM[addr] << 8);})
 #define FETCH16VRAM(A)  ( (VRAM[(A)+1]) | (VRAM[(A)] << 8) )
 #define VDP_GFX_DISABLE_LOGGING 1
+
+bool gwenesis_vdp_gfx_init_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    if (!render_buffer)
+        render_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
+    if (!sprite_buffer)
+        sprite_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
+#endif
+    return render_buffer && sprite_buffer;
+}
+
+void gwenesis_vdp_gfx_deinit_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    free(render_buffer);
+    free(sprite_buffer);
+    render_buffer = NULL;
+    sprite_buffer = NULL;
+#endif
+}
 
 #if !VDP_GFX_DISABLE_LOGGING
 #include <stdarg.h>
@@ -128,6 +171,10 @@ void gwenesis_vdp_set_buffers(unsigned char *screen_buffer, unsigned char *scale
 //embedded
 void gwenesis_vdp_set_buffer(unsigned short *ptr_screen_buffer)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    screen_buffer_line_565 = ptr_screen_buffer;
+    screen_buffer_565 = ptr_screen_buffer;
+#endif
     screen_buffer_line = ptr_screen_buffer;
     screen_buffer = ptr_screen_buffer;
 }
@@ -921,7 +968,7 @@ void draw_sprites(int line)
  ******************************************************************************/
 //static unsigned short current_line[320];
 
-void gwenesis_vdp_render_config()
+void GWENESIS_HOT gwenesis_vdp_render_config()
 {
     mode_h40 = REG12_MODE_H40;
     mode_pal = REG1_PAL;
@@ -1010,7 +1057,7 @@ blit_4to5_line(uint16_t *in, uint16_t *out) {
 }
 */
 
-void gwenesis_vdp_render_line(int line)
+void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 {
   mode_h40 = REG12_MODE_H40;
   //mode_pal = REG1_PAL;
@@ -1032,9 +1079,14 @@ void gwenesis_vdp_render_line(int line)
 
 // Embedded RGB565
 #else
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  screen_buffer_line_565 = &screen_buffer_565[(((240 - screen_height) / 2) + line) * 320 +
+                                               ((320 - screen_width) / 2)];
+#else
   screen_buffer_line = &screen_buffer[line * 320];
   /* clean up line screen not refreshed when mode is !H40 */
   if (REG12_MODE_H40 == 0) memset(screen_buffer_line - (320-256)/2, 0, 320 * sizeof(screen_buffer_line[0]));
+#endif
 
 #endif
 
@@ -1117,6 +1169,41 @@ void gwenesis_vdp_render_line(int line)
 
   #else
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  /* Mode Highlight/shadow is enabled */
+  if (MODE_SHI) {
+    for (int x = 0; x < screen_width; x++) {
+      uint8_t plane = pb[x];
+      uint8_t sprite = ps[x];
+      uint16_t rgb565;
+
+      if ((plane & 0xC0) < (sprite & 0xC0)) {
+        switch (sprite & 0x3F) {
+        case 0x3E:
+          rgb565 = 0x8410 | (CRAM565[plane] >> 1);
+          break;
+        case 0x3F:
+          rgb565 = CRAM565[plane] >> 1;
+          break;
+        default:
+          rgb565 = CRAM565[sprite];
+          break;
+        }
+      } else {
+        rgb565 = CRAM565[plane];
+      }
+      screen_buffer_line_565[x] = rgb565;
+    }
+
+    /* Normal mode */
+  } else {
+    uint32_t *video_out = (uint32_t *) &screen_buffer_line_565[0];
+
+    for (int x = 0; x < screen_width; x += 2) {
+      *video_out++ = CRAM565[pb[x]] | ((uint32_t)CRAM565[pb[x + 1]] << 16);
+    }
+  }
+#else
   /* Mode Highlight/shadow is enabled */
   if (MODE_SHI) {
     for (int x = 0; x < screen_width; x++) {
@@ -1159,6 +1246,7 @@ void gwenesis_vdp_render_line(int line)
 #endif
   }
 
+#endif
   #endif
 }
 
@@ -1166,8 +1254,8 @@ void gwenesis_vdp_gfx_save_state() {
   /*
   SaveState* state;
   state = saveGwenesisStateOpenForWrite("vdp_gfx");
-  saveGwenesisStateSetBuffer(state, "render_buffer", render_buffer, sizeof(render_buffer));
-  saveGwenesisStateSetBuffer(state, "sprite_buffer", sprite_buffer, sizeof(sprite_buffer));
+  saveGwenesisStateSetBuffer(state, "render_buffer", render_buffer, VDP_GFX_LINE_BUFFER_SIZE);
+  saveGwenesisStateSetBuffer(state, "sprite_buffer", sprite_buffer, VDP_GFX_LINE_BUFFER_SIZE);
   saveGwenesisStateSet(state, "mode_h40", mode_h40);
   saveGwenesisStateSet(state, "mode_pal", mode_pal);
   saveGwenesisStateSet(state, "screen_width", screen_width);
@@ -1185,8 +1273,8 @@ void gwenesis_vdp_gfx_save_state() {
 void gwenesis_vdp_gfx_load_state() {
   /*
     SaveState* state = saveGwenesisStateOpenForRead("vdp_gfx");
-    saveGwenesisStateGetBuffer(state, "render_buffer", render_buffer, sizeof(render_buffer));
-    saveGwenesisStateGetBuffer(state, "sprite_buffer", sprite_buffer, sizeof(sprite_buffer));
+    saveGwenesisStateGetBuffer(state, "render_buffer", render_buffer, VDP_GFX_LINE_BUFFER_SIZE);
+    saveGwenesisStateGetBuffer(state, "sprite_buffer", sprite_buffer, VDP_GFX_LINE_BUFFER_SIZE);
     mode_h40 = saveGwenesisStateGet(state, "mode_h40");
     mode_pal = saveGwenesisStateGet(state, "mode_pal");
     screen_width = saveGwenesisStateGet(state, "screen_width");

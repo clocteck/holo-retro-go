@@ -127,6 +127,25 @@ static bool screenshot_handler(const char *filename, int width, int height)
     return rg_surface_save_image_file(currentUpdate, filename, width, height);
 }
 
+static void gw_cleanup(void)
+{
+    gw_system_shutdown();
+
+    free(GW_ROM);
+    GW_ROM = NULL;
+
+    free(ROM_DATA);
+    ROM_DATA = NULL;
+    ROM_DATA_LENGTH = 0;
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        rg_surface_free(updates[i]);
+        updates[i] = NULL;
+    }
+    currentUpdate = NULL;
+}
+
 void gw_main(void)
 {
     const rg_handlers_t handlers = {
@@ -229,6 +248,12 @@ void gw_main(void)
 
     while (true)
     {
+        if (holo_should_exit())
+        {
+            gw_cleanup();
+            return;
+        }
+
         /* refresh internal G&W timer on emulated CPU state transition */
         if (previous_m_halt != m_halt)
             gw_check_time();
@@ -242,6 +267,11 @@ void gw_main(void)
             rg_gui_game_menu();
         else if (joystick & RG_KEY_OPTION)
             rg_gui_options_menu();
+        if (holo_should_exit())
+        {
+            gw_cleanup();
+            return;
+        }
 
         // soft keys emulation
         if (softkey_duration > 0)
@@ -283,4 +313,6 @@ void gw_main(void)
         rg_audio_submit(mixbuffer, GW_AUDIO_BUFFER_LENGTH);
         gw_audio_buffer_copied = true;
     } // end of loop
+
+    gw_cleanup();
 }

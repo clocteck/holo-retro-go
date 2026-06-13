@@ -332,6 +332,12 @@ RunPCE(void)
 	}
 }
 
+void
+StopPCE(void)
+{
+	running = false;
+}
+
 
 /**
  * Load saved state

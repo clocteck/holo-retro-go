@@ -48,6 +48,7 @@
  * Things like unique_string("abc") == unique_string("abc") are guaranteed to be true
 */
 const char *rg_unique_string(const char *str);
+void rg_unique_string_deinit(void);
 char *rg_strtolower(char *str);
 char *rg_strtoupper(char *str);
 char *rg_json_fixup(char *json);

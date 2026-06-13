@@ -31,6 +31,25 @@ int gnuboy_init(int samplerate, gb_audio_fmt_t audio_fmt, gb_video_fmt_t video_f
 	return 0;
 }
 
+void gnuboy_deinit(void)
+{
+	gnuboy_free_rom();
+	gnuboy_free_bios();
+
+	free(hw.rambanks);
+	hw.rambanks = NULL;
+
+	free(hw.vbanks);
+	hw.vbanks = NULL;
+
+	hw.cpu = NULL;
+	hw.snd = NULL;
+	hw.cart = NULL;
+	GB.audio.buffer = NULL;
+	GB.audio.len = 0;
+	GB.video.buffer = NULL;
+}
+
 
 /*
  * gnuboy_reset is called to initialize the state of the emulated

@@ -18,6 +18,8 @@ static bool loadBIOSFile = false;
 static rg_app_t *app;
 static rg_surface_t *updates[2];
 static rg_surface_t *currentUpdate;
+static void *soundBuffer;
+static void *romData;
 
 static const char *SETTING_SAVESRAM = "SaveSRAM";
 static const char *SETTING_PALETTE  = "Palette";
@@ -241,6 +243,27 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static void gbc_cleanup(void)
+{
+    if (sramFile && gnuboy_sram_dirty())
+        gnuboy_save_sram(sramFile, true);
+
+    gnuboy_deinit();
+
+    free(soundBuffer);
+    soundBuffer = NULL;
+
+    free(romData);
+    romData = NULL;
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        rg_surface_free(updates[i]);
+        updates[i] = NULL;
+    }
+    currentUpdate = NULL;
+}
+
 void gbc_main(void)
 {
     const rg_handlers_t handlers = {
@@ -271,16 +294,16 @@ void gbc_main(void)
         RG_PANIC("Emulator init failed!");
 
     gnuboy_set_framebuffer(currentUpdate->data);
-    gnuboy_set_soundbuffer(malloc(AUDIO_BUFFER_LENGTH * 4), AUDIO_BUFFER_LENGTH);
+    soundBuffer = malloc(AUDIO_BUFFER_LENGTH * 4);
+    gnuboy_set_soundbuffer(soundBuffer, AUDIO_BUFFER_LENGTH);
 
     // Load ROM
     if (rg_extension_match(app->romPath, "zip"))
     {
-        void *data;
         size_t size;
-        if (!rg_storage_unzip_file(app->romPath, NULL, &data, &size, RG_FILE_ALIGN_16KB))
+        if (!rg_storage_unzip_file(app->romPath, NULL, &romData, &size, RG_FILE_ALIGN_16KB))
             RG_PANIC("ROM file unzipping failed!");
-        if (gnuboy_load_rom(data, size) < 0)
+        if (gnuboy_load_rom(romData, size) < 0)
             RG_PANIC("ROM Loading failed!");
     }
     else if (gnuboy_load_rom_file(app->romPath) < 0)
@@ -317,6 +340,12 @@ void gbc_main(void)
 
     while (true)
     {
+        if (holo_should_exit())
+        {
+            gbc_cleanup();
+            return;
+        }
+
         joystick = rg_input_read_gamepad();
 
         if (joystick & (RG_KEY_MENU|RG_KEY_OPTION))
@@ -329,6 +358,11 @@ void gbc_main(void)
             }
             else
                 rg_gui_options_menu();
+            if (holo_should_exit())
+            {
+                gbc_cleanup();
+                return;
+            }
         }
         else if (joystick != joystick_old)
         {
@@ -390,4 +424,6 @@ void gbc_main(void)
             skipFrames--;
         }
     }
+
+    gbc_cleanup();
 }

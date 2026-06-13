@@ -12,6 +12,7 @@
 
 // Safe mode means no loading/saving config files
 void rg_settings_init(bool safe_mode);
+void rg_settings_deinit(void);
 void rg_settings_commit(void);
 void rg_settings_reset(void);
 bool rg_settings_get_boolean(const char *section, const char *key, bool default_value);

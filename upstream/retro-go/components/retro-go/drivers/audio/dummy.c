@@ -66,12 +66,16 @@ static bool holo_driver_deinit(void)
 static bool holo_driver_submit(const rg_audio_frame_t *frames, size_t count)
 {
     rg_audio_frame_t buffer[HOLO_AUDIO_BUFFER_FRAMES];
-    const float volume = holo_state.muted ? 0.f : (holo_state.volume * 0.01f);
     size_t pos = 0;
 
     if (!frames || count == 0) {
         return true;
     }
+    if (holo_state.muted || holo_state.volume <= 0) {
+        return true;
+    }
+
+    const float volume = holo_state.volume * 0.01f;
 
     for (size_t i = 0; i < count; ++i) {
         buffer[pos].left = (int16_t)(frames[i].left * volume);

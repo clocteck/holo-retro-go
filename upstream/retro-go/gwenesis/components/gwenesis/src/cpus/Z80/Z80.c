@@ -22,6 +22,8 @@
 #include "Tables.h"
 #include <stdio.h>
 
+#define GWENESIS_HOT
+
 /** INLINE ***************************************************/
 /** C99 standard has "inline", but older compilers used     **/
 /** __inline for the same purpose.                          **/
@@ -518,7 +520,7 @@ int GetRunCyclesZ80(register Z80 *R)
 {
   return(R->ICount - R->RunCycles);
 }
-int ExecZ80(register Z80 *R,register int RunCycles)
+int GWENESIS_HOT ExecZ80(register Z80 *R,register int RunCycles)
 {
   register byte I;
   register pair J;

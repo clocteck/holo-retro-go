@@ -21,6 +21,8 @@ __license__ = "GPLv3"
 
 #pragma once
 
+#include <stdbool.h>
+
 #define BIT(v, idx) (((v) >> (idx)) & 1)
 #define BITS(v, idx, n) (((v) >> (idx)) & ((1 << (n)) - 1))
 
@@ -149,5 +151,9 @@ void gwenesis_vdp_gfx_save_state();
 void gwenesis_vdp_gfx_load_state();
 void gwenesis_vdp_mem_save_state();
 void gwenesis_vdp_mem_load_state();
+bool gwenesis_vdp_mem_init_fast_ram(void);
+void gwenesis_vdp_mem_deinit_fast_ram(void);
+bool gwenesis_vdp_gfx_init_fast_ram(void);
+void gwenesis_vdp_gfx_deinit_fast_ram(void);
 
 #endif

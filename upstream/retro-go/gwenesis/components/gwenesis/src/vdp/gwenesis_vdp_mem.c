@@ -20,7 +20,11 @@ __license__ = "GPLv3"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#if defined(RETRO_GO)
+#include <rg_system.h>
+#endif
 #include "m68k.h"
 #include "ym2612.h"
 #include "gwenesis_vdp.h"
@@ -30,6 +34,8 @@ __license__ = "GPLv3"
 #include "gwenesis_savestate.h"
 
 #include <assert.h>
+
+#define GWENESIS_HOT
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
@@ -68,12 +74,21 @@ void vdpm_log(const char *subs, const char *fmt, ...) {
   unsigned char *VRAM;
 #endif
 
+#if defined(RETRO_GO)
+unsigned short *CRAM;            // CRAM - Palettes
+unsigned char *SAT_CACHE;        // Sprite cache
+unsigned char *gwenesis_vdp_regs; // Registers
+unsigned short *fifo;            // Fifo
+unsigned short *CRAM565;         // CRAM - Palettes
+unsigned short *VSRAM;           // VSRAM - Scrolling
+#else
 unsigned short CRAM[CRAM_MAX_SIZE];           // CRAM - Palettes
 unsigned char SAT_CACHE[SAT_CACHE_MAX_SIZE];  // Sprite cache
 unsigned char gwenesis_vdp_regs[REG_SIZE];    // Registers
 unsigned short fifo[FIFO_SIZE];               // Fifo
 unsigned short CRAM565[CRAM_MAX_SIZE * 4];    // CRAM - Palettes
 unsigned short VSRAM[VSRAM_MAX_SIZE];         // VSRAM - Scrolling
+#endif
 
 // Define VDP control code and set initial code
 static unsigned char code_reg = 0;
@@ -114,6 +129,43 @@ extern bool sprite_collision;
 // 16 bits access to VRAM
 #define FETCH16(A) ( ( (*(unsigned short *)&VRAM[(A)]) >> 8 ) | ( (*(unsigned short *)&VRAM[(A)]) << 8 ) )
 
+bool gwenesis_vdp_mem_init_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    if (!CRAM)
+        CRAM = rg_alloc(sizeof(*CRAM) * CRAM_MAX_SIZE, MEM_FAST);
+    if (!SAT_CACHE)
+        SAT_CACHE = rg_alloc(SAT_CACHE_MAX_SIZE, MEM_FAST);
+    if (!gwenesis_vdp_regs)
+        gwenesis_vdp_regs = rg_alloc(REG_SIZE, MEM_FAST);
+    if (!fifo)
+        fifo = rg_alloc(sizeof(*fifo) * FIFO_SIZE, MEM_FAST);
+    if (!CRAM565)
+        CRAM565 = rg_alloc(sizeof(*CRAM565) * CRAM_MAX_SIZE * 4, MEM_FAST);
+    if (!VSRAM)
+        VSRAM = rg_alloc(sizeof(*VSRAM) * VSRAM_MAX_SIZE, MEM_FAST);
+#endif
+    return CRAM && SAT_CACHE && gwenesis_vdp_regs && fifo && CRAM565 && VSRAM;
+}
+
+void gwenesis_vdp_mem_deinit_fast_ram(void)
+{
+#if defined(RETRO_GO)
+    free(CRAM);
+    free(SAT_CACHE);
+    free(gwenesis_vdp_regs);
+    free(fifo);
+    free(CRAM565);
+    free(VSRAM);
+    CRAM = NULL;
+    SAT_CACHE = NULL;
+    gwenesis_vdp_regs = NULL;
+    fifo = NULL;
+    CRAM565 = NULL;
+    VSRAM = NULL;
+#endif
+}
+
 
 /******************************************************************************
  *
@@ -122,7 +174,7 @@ extern bool sprite_collision;
  *
  ******************************************************************************/
 
-int m68k_irq_acked(int irq) {
+int GWENESIS_HOT m68k_irq_acked(int irq) {
 
   /* VINT has higher priority (Fatal Rewind) */
   if (REG1_VBLANK_INTERRUPT && (gwenesis_vdp_status & STATUS_VIRQPENDING))
@@ -151,11 +203,11 @@ int m68k_irq_acked(int irq) {
 
 void gwenesis_vdp_reset() {
   memset(VRAM, 0, VRAM_MAX_SIZE);
-  memset(SAT_CACHE, 0, sizeof(SAT_CACHE));
-  memset(CRAM, 0, sizeof(CRAM));
-  memset(CRAM565, 0, sizeof(CRAM565));
-  memset(VSRAM, 0, sizeof(VSRAM));
-  memset(gwenesis_vdp_regs, 0, sizeof(gwenesis_vdp_regs));
+  memset(SAT_CACHE, 0, SAT_CACHE_MAX_SIZE);
+  memset(CRAM, 0, sizeof(*CRAM) * CRAM_MAX_SIZE);
+  memset(CRAM565, 0, sizeof(*CRAM565) * CRAM_MAX_SIZE * 4);
+  memset(VSRAM, 0, sizeof(*VSRAM) * VSRAM_MAX_SIZE);
+  memset(gwenesis_vdp_regs, 0, REG_SIZE);
   command_word_pending = 0;
   address_reg = 0;
   code_reg = 0;
@@ -177,7 +229,7 @@ void gwenesis_vdp_reset() {
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-int gwenesis_vdp_hcounter()
+int GWENESIS_HOT gwenesis_vdp_hcounter()
 {
     int mclk = m68k_cycles_run() ;
     int pixclk;
@@ -209,7 +261,7 @@ int gwenesis_vdp_hcounter()
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-int gwenesis_vdp_vcounter()
+int GWENESIS_HOT gwenesis_vdp_vcounter()
 {
 
     int vc = scan_line;
@@ -242,7 +294,7 @@ int gwenesis_vdp_vcounter()
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-unsigned short gwenesis_vdp_hvcounter()
+unsigned short GWENESIS_HOT gwenesis_vdp_hvcounter()
 {
     /* H/V Counter */
     if (hvcounter_latched == 1)
@@ -258,7 +310,7 @@ unsigned short gwenesis_vdp_hvcounter()
 }
 
 //static inline __attribute__((always_inline))
-bool vblank(void)
+bool GWENESIS_HOT vblank(void)
 {
     int vc = gwenesis_vdp_vcounter();
  //  printf("vc=%d,REG1_DISP_ENABLED=%d,VBLAN?%d\n",vc,REG1_DISP_ENABLED,
@@ -913,7 +965,7 @@ unsigned int gwenesis_vdp_get_status()
  *
  ******************************************************************************/
  //static inline 
-unsigned int gwenesis_vdp_read_memory_8(unsigned int address)
+unsigned int GWENESIS_HOT gwenesis_vdp_read_memory_8(unsigned int address)
 {
     unsigned int ret = gwenesis_vdp_read_memory_16(address & ~1);
     if (address & 1)
@@ -932,7 +984,7 @@ unsigned int gwenesis_vdp_read_memory_8(unsigned int address)
  *
  ******************************************************************************/
  //static inline 
-unsigned int gwenesis_vdp_read_memory_16(unsigned int address)
+unsigned int GWENESIS_HOT gwenesis_vdp_read_memory_16(unsigned int address)
 {
     
     address &= 0x1F;
@@ -955,7 +1007,7 @@ unsigned int gwenesis_vdp_read_memory_16(unsigned int address)
  *
  ******************************************************************************/
  //static inline 
-void gwenesis_vdp_write_memory_8(unsigned int address, unsigned int value)
+void GWENESIS_HOT gwenesis_vdp_write_memory_8(unsigned int address, unsigned int value)
 {
   gwenesis_vdp_write_memory_16(address & ~1, (value << 8) | value);
 
@@ -969,7 +1021,7 @@ void gwenesis_vdp_write_memory_8(unsigned int address, unsigned int value)
  ******************************************************************************/
  //static inline
  extern int system_clock;
-void gwenesis_vdp_write_memory_16(unsigned int address, unsigned int value) {
+void GWENESIS_HOT gwenesis_vdp_write_memory_16(unsigned int address, unsigned int value) {
   address = address & 0x1F;
 
   if (address < 0x4) {
@@ -996,12 +1048,12 @@ void gwenesis_vdp_mem_save_state() {
   state = saveGwenesisStateOpenForWrite("vdp_mem");
 
   saveGwenesisStateSetBuffer(state, "VRAM", VRAM, VRAM_MAX_SIZE);
-  saveGwenesisStateSetBuffer(state, "CRAM", CRAM, sizeof(CRAM));
-  saveGwenesisStateSetBuffer(state, "SAT_CACHE", SAT_CACHE, sizeof(SAT_CACHE));
-  saveGwenesisStateSetBuffer(state, "gwenesis_vdp_regs", gwenesis_vdp_regs, sizeof(gwenesis_vdp_regs));
-  saveGwenesisStateSetBuffer(state, "fifo", fifo, sizeof(fifo));
-  saveGwenesisStateSetBuffer(state, "CRAM565", CRAM565, sizeof(CRAM565));
-  saveGwenesisStateSetBuffer(state, "VSRAM", VSRAM, sizeof(VSRAM));
+  saveGwenesisStateSetBuffer(state, "CRAM", CRAM, sizeof(*CRAM) * CRAM_MAX_SIZE);
+  saveGwenesisStateSetBuffer(state, "SAT_CACHE", SAT_CACHE, SAT_CACHE_MAX_SIZE);
+  saveGwenesisStateSetBuffer(state, "gwenesis_vdp_regs", gwenesis_vdp_regs, REG_SIZE);
+  saveGwenesisStateSetBuffer(state, "fifo", fifo, sizeof(*fifo) * FIFO_SIZE);
+  saveGwenesisStateSetBuffer(state, "CRAM565", CRAM565, sizeof(*CRAM565) * CRAM_MAX_SIZE * 4);
+  saveGwenesisStateSetBuffer(state, "VSRAM", VSRAM, sizeof(*VSRAM) * VSRAM_MAX_SIZE);
   saveGwenesisStateSet(state, "code_reg", code_reg);
   saveGwenesisStateSet(state, "address_reg", address_reg);
   saveGwenesisStateSet(state, "command_word_pending", command_word_pending);
@@ -1016,12 +1068,12 @@ void gwenesis_vdp_mem_load_state() {
   SaveState* state = saveGwenesisStateOpenForRead("vdp_mem");
 
   saveGwenesisStateGetBuffer(state, "VRAM", VRAM, VRAM_MAX_SIZE);
-  saveGwenesisStateGetBuffer(state, "CRAM", CRAM, sizeof(CRAM));
-  saveGwenesisStateGetBuffer(state, "SAT_CACHE", SAT_CACHE, sizeof(SAT_CACHE));
-  saveGwenesisStateGetBuffer(state, "gwenesis_vdp_regs", gwenesis_vdp_regs, sizeof(gwenesis_vdp_regs));
-  saveGwenesisStateGetBuffer(state, "fifo", fifo, sizeof(fifo));
-  saveGwenesisStateGetBuffer(state, "CRAM565", CRAM565, sizeof(CRAM565));
-  saveGwenesisStateGetBuffer(state, "VSRAM", VSRAM, sizeof(VSRAM));
+  saveGwenesisStateGetBuffer(state, "CRAM", CRAM, sizeof(*CRAM) * CRAM_MAX_SIZE);
+  saveGwenesisStateGetBuffer(state, "SAT_CACHE", SAT_CACHE, SAT_CACHE_MAX_SIZE);
+  saveGwenesisStateGetBuffer(state, "gwenesis_vdp_regs", gwenesis_vdp_regs, REG_SIZE);
+  saveGwenesisStateGetBuffer(state, "fifo", fifo, sizeof(*fifo) * FIFO_SIZE);
+  saveGwenesisStateGetBuffer(state, "CRAM565", CRAM565, sizeof(*CRAM565) * CRAM_MAX_SIZE * 4);
+  saveGwenesisStateGetBuffer(state, "VSRAM", VSRAM, sizeof(*VSRAM) * VSRAM_MAX_SIZE);
   code_reg = saveGwenesisStateGet(state, "code_reg");
   address_reg = saveGwenesisStateGet(state, "address_reg");
   command_word_pending = saveGwenesisStateGet(state, "command_word_pending");

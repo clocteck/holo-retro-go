@@ -200,6 +200,11 @@ static inline void write_dword(void *address, uint32 data)
 
 void render_shutdown(void)
 {
+  free((void *)lut);
+  lut = NULL;
+
+  free((void *)bp_lut);
+  bp_lut = NULL;
 }
 
 /* Initialize the rendering data */

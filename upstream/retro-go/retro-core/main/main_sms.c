@@ -94,6 +94,23 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static void sms_cleanup(void)
+{
+    system_shutdown();
+
+    free(cart.rom);
+    free(cart.sram);
+    memset(&cart, 0, sizeof(cart));
+    memset(&bitmap, 0, sizeof(bitmap));
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        rg_surface_free(updates[i]);
+        updates[i] = NULL;
+    }
+    currentUpdate = NULL;
+}
+
 void sms_main(void)
 {
     const rg_handlers_t handlers = {
@@ -166,6 +183,12 @@ void sms_main(void)
 
     while (true)
     {
+        if (holo_should_exit())
+        {
+            sms_cleanup();
+            return;
+        }
+
         const int64_t startTime = rg_system_timer();
         uint32_t joystick = rg_input_read_gamepad();
         bool drawFrame = !skipFrames;
@@ -177,6 +200,11 @@ void sms_main(void)
                 rg_gui_game_menu();
             else
                 rg_gui_options_menu();
+            if (holo_should_exit())
+            {
+                sms_cleanup();
+                return;
+            }
             continue;
         }
 
@@ -228,6 +256,11 @@ void sms_main(void)
                 else
                     colecoKey = 255;
                 colecoKeyDecay = 4;
+                if (holo_should_exit())
+                {
+                    sms_cleanup();
+                    return;
+                }
                 continue;
             }
             else if (joystick & RG_KEY_SELECT)
@@ -281,4 +314,6 @@ void sms_main(void)
             skipFrames--;
         }
     }
+
+    sms_cleanup();
 }

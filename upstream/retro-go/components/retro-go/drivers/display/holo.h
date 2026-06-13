@@ -1,21 +1,48 @@
 #include "holo_port.h"
 
-static uint16_t *lcd_buffer;
-static int s_holo_window_left;
-static int s_holo_window_top;
+#define HOLO_LCD_DMA_BUFFER_COUNT 2
+
+static uint16_t *lcd_buffers[HOLO_LCD_DMA_BUFFER_COUNT];
+static uint8_t lcd_buffer_count;
+static uint8_t lcd_buffer_index;
 static int s_holo_window_width;
 static int s_holo_window_height;
 static size_t s_holo_window_offset;
+static bool s_holo_write_active;
+static bool s_holo_window_ready;
+
+static void lcd_alloc_buffers(void)
+{
+    if (lcd_buffer_count > 0) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < HOLO_LCD_DMA_BUFFER_COUNT; ++i) {
+        lcd_buffers[i] = (uint16_t *)holo_dma_alloc(LCD_BUFFER_LENGTH * sizeof(uint16_t));
+        if (!lcd_buffers[i]) {
+            if (i == 0) {
+                holo_port_log("[retrogo.so] display dma buffer alloc failed; display updates disabled");
+            } else {
+                holo_port_log("[retrogo.so] second display dma buffer alloc failed; falling back to single buffer");
+            }
+            break;
+        }
+        lcd_buffer_count++;
+    }
+}
+
+static void lcd_sync(void)
+{
+    if (s_holo_write_active) {
+        holo_display_end_write();
+        s_holo_write_active = false;
+        s_holo_window_ready = false;
+    }
+}
 
 static void lcd_init(void)
 {
-    uint16_t *dma_buffer = (uint16_t *)holo_dma_alloc(LCD_BUFFER_LENGTH * sizeof(uint16_t));
-    if (dma_buffer) {
-        lcd_buffer = dma_buffer;
-    } else {
-        lcd_buffer = NULL;
-        holo_port_log("[retrogo.so] display dma buffer alloc failed; display updates disabled");
-    }
+    lcd_alloc_buffers();
     if (!holo_display_acquire(RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT)) {
         holo_port_log("[retrogo.so] display acquire failed");
     }
@@ -23,11 +50,16 @@ static void lcd_init(void)
 
 static void lcd_deinit(void)
 {
+    lcd_sync();
     holo_display_release();
-    if (lcd_buffer) {
-        holo_dma_free(lcd_buffer);
+    for (uint8_t i = 0; i < HOLO_LCD_DMA_BUFFER_COUNT; ++i) {
+        if (lcd_buffers[i]) {
+            holo_dma_free(lcd_buffers[i]);
+            lcd_buffers[i] = NULL;
+        }
     }
-    lcd_buffer = NULL;
+    lcd_buffer_count = 0;
+    lcd_buffer_index = 0;
 }
 
 static void lcd_set_rotation(int rotation)
@@ -42,28 +74,39 @@ static void lcd_set_backlight(float percent)
 
 static void lcd_set_window(int left, int top, int width, int height)
 {
-    s_holo_window_left = left;
-    s_holo_window_top = top;
     s_holo_window_width = width;
     s_holo_window_height = height;
     s_holo_window_offset = 0;
+    s_holo_window_ready = false;
+
+    if (!s_holo_write_active) {
+        s_holo_write_active = holo_display_start_write() != 0;
+    }
+
+    if (s_holo_write_active) {
+        s_holo_window_ready = holo_display_set_addr_window(left, top, width, height) != 0;
+    }
 }
 
 static inline uint16_t *lcd_get_buffer(size_t length)
 {
     (void)length;
-    if (!lcd_buffer) {
-        lcd_buffer = (uint16_t *)holo_dma_alloc(LCD_BUFFER_LENGTH * sizeof(uint16_t));
-        if (!lcd_buffer) {
-            holo_port_log("[retrogo.so] display dma buffer unavailable");
-        }
+    if (lcd_buffer_count == 0) {
+        lcd_alloc_buffers();
     }
-    return lcd_buffer;
+    if (lcd_buffer_count == 0) {
+        holo_port_log("[retrogo.so] display dma buffer unavailable");
+        return NULL;
+    }
+    uint16_t *buffer = lcd_buffers[lcd_buffer_index];
+    lcd_buffer_index = (lcd_buffer_index + 1) % lcd_buffer_count;
+    return buffer;
 }
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
-    if (!buffer || length == 0 || s_holo_window_width <= 0 || s_holo_window_height <= 0) {
+    if (!buffer || length == 0 || !s_holo_window_ready ||
+        s_holo_window_width <= 0 || s_holo_window_height <= 0) {
         return;
     }
 
@@ -72,49 +115,19 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
     const size_t total_pixels = window_width * window_height;
 
     while (length > 0 && s_holo_window_offset < total_pixels) {
-        const size_t row = s_holo_window_offset / window_width;
-        const size_t col = s_holo_window_offset % window_width;
-        const size_t row_space = window_width - col;
-        size_t sent = 0;
-
-        if (col == 0 && length >= window_width) {
-            size_t rows = length / window_width;
-            if (row + rows > window_height) {
-                rows = window_height - row;
-            }
-
-            if (rows == 0) {
-                break;
-            }
-
-            if (!holo_display_push_image((int16_t)s_holo_window_left,
-                                         (int16_t)(s_holo_window_top + (int)row),
-                                         (uint16_t)window_width,
-                                         (uint16_t)rows,
-                                         buffer)) {
-                break;
-            }
-            sent = rows * window_width;
-        } else {
-            size_t pixels = length < row_space ? length : row_space;
-            if (!holo_display_push_image((int16_t)(s_holo_window_left + (int)col),
-                                         (int16_t)(s_holo_window_top + (int)row),
-                                         (uint16_t)pixels,
-                                         1,
-                                         buffer)) {
-                break;
-            }
-            sent = pixels;
+        size_t sent = length;
+        const size_t remaining = total_pixels - s_holo_window_offset;
+        if (sent > remaining) {
+            sent = remaining;
         }
 
+        if (!holo_display_push_pixels(buffer, sent)) {
+            break;
+        }
         buffer += sent;
         length -= sent;
         s_holo_window_offset += sent;
     }
-}
-
-static void lcd_sync(void)
-{
 }
 
 const rg_display_driver_t rg_display_driver_holo = {

@@ -21,6 +21,11 @@ static bool slowFrame = false;
 static rg_app_t *app;
 static rg_surface_t *updates[2];
 static rg_surface_t *currentUpdate;
+static void *update_data_base[2];
+static int update_width_base[2];
+static volatile bool audioTaskRunning;
+static volatile bool audioTaskActive;
+static bool pceInitialized;
 
 static const char *SETTING_OVERSCAN  = "overscan";
 // --- MAIN
@@ -100,6 +105,9 @@ void osd_vsync(void)
         lasttime = prevtime;
 
     drawFrame = (skipFrames == 0);
+
+    if (holo_should_exit())
+        StopPCE();
 }
 
 void osd_input_read(uint8_t joypads[8])
@@ -115,6 +123,8 @@ void osd_input_read(uint8_t joypads[8])
         else
             rg_gui_options_menu();
         emulationPaused = false;
+        if (holo_should_exit())
+            StopPCE();
     }
 
     if (joystick & RG_KEY_LEFT)   buttons |= JOY_LEFT;
@@ -134,15 +144,19 @@ static void audioTask(void *arg)
     const size_t numSamples = 62; // TODO: Find the best value
 
     RG_LOGI("task started. numSamples=%d.", (int)numSamples);
-    while (1)
+    audioTaskActive = true;
+    while (audioTaskRunning)
     {
         rg_audio_sample_t samples[numSamples];
         // TODO: Clearly we need to add a better way to remain in sync with the main task...
-        while (emulationPaused)
+        while (emulationPaused && audioTaskRunning)
             rg_task_yield();
+        if (!audioTaskRunning)
+            break;
         psg_update((int16_t *)samples, numSamples, 0xFF);
         rg_audio_submit(samples, numSamples);
     }
+    audioTaskActive = false;
 }
 
 static void event_handler(int event, void *arg)
@@ -187,6 +201,36 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+static void pce_cleanup(void)
+{
+    audioTaskRunning = false;
+    emulationPaused = false;
+    for (int i = 0; audioTaskActive && i < 50; ++i)
+        rg_task_delay(10);
+
+    if (pceInitialized)
+    {
+        ShutdownPCE();
+        pceInitialized = false;
+    }
+
+    for (size_t i = 0; i < RG_COUNT(updates); ++i)
+    {
+        if (updates[i])
+        {
+            if (update_data_base[i])
+                updates[i]->data = update_data_base[i];
+            if (update_width_base[i])
+                updates[i]->width = update_width_base[i];
+            rg_surface_free(updates[i]);
+            updates[i] = NULL;
+            update_data_base[i] = NULL;
+            update_width_base[i] = 0;
+        }
+    }
+    currentUpdate = NULL;
+}
+
 void pce_main(void)
 {
     const rg_handlers_t handlers = {
@@ -205,8 +249,12 @@ void pce_main(void)
     updates[1] = rg_surface_create(XBUF_WIDTH, XBUF_HEIGHT, RG_PIXEL_PAL565_BE, MEM_FAST);
     currentUpdate = updates[0];
 
+    update_data_base[0] = updates[0]->data;
+    update_width_base[0] = updates[0]->width;
     updates[0]->data += 16;
     updates[0]->width -= 16;
+    update_data_base[1] = updates[1]->data;
+    update_width_base[1] = updates[1]->width;
     updates[1]->data += 16;
     updates[1]->width -= 16;
 
@@ -224,9 +272,12 @@ void pce_main(void)
     free(palette);
 
     emulationPaused = true;
+    audioTaskRunning = true;
+    audioTaskActive = false;
     rg_task_create("pce_sound", &audioTask, NULL, 2 * 1024, RG_TASK_PRIORITY_2, 1);
 
     InitPCE(app->sampleRate, true);
+    pceInitialized = true;
 
     if (rg_extension_match(app->romPath, "zip"))
     {
@@ -253,5 +304,5 @@ void pce_main(void)
     emulationPaused = false;
     RunPCE();
 
-    RG_PANIC("PCE-GO died.");
+    pce_cleanup();
 }
