@@ -8,5 +8,6 @@ rg_setup_compile_options(
     -fomit-frame-pointer
     -fno-math-errno
     -Wno-incompatible-pointer-types
+    -DBUILD_TABLES
     -DROM_DATA=gwenesis_ROM_DATA
 )

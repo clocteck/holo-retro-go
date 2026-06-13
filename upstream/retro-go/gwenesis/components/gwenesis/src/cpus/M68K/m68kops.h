@@ -23696,7 +23696,9 @@ static const opcode_handler_struct m68k_opcode_handler_table[] =
 {
 /*   function                      mask    match  cyc */
   {m68k_op_1010                , 0xf000, 0xa000,  4},
+#ifdef TABLES_FULL
   {m68k_op_1111                , 0xf000, 0xf000,  4},
+#endif
   {m68k_op_moveq_32            , 0xf100, 0x7000,  4},
   {m68k_op_bra_8               , 0xff00, 0x6000, 10},
   {m68k_op_bsr_8               , 0xff00, 0x6100, 18},

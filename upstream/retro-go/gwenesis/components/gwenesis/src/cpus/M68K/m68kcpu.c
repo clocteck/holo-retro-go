@@ -20,6 +20,11 @@ extern int vdp_68k_irq_ack(int int_level);
 #endif
 
 #include "m68kconf.h"
+
+#ifdef BUILD_TABLES
+static unsigned char m68ki_cycles[0x10000];
+#endif
+
 #include "m68kcpu.h"
 #include "m68kops.h"
 #include "gwenesis_savestate.h"
@@ -29,10 +34,6 @@ extern int vdp_68k_irq_ack(int int_level);
 /* ======================================================================== */
 /* ================================= DATA ================================= */
 /* ======================================================================== */
-
-#ifdef BUILD_TABLES
-static unsigned char m68ki_cycles[0x10000];
-#endif
 
 static int irq_latency;
 
