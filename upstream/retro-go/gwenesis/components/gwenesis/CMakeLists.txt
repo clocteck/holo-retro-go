@@ -4,8 +4,6 @@ set(COMPONENT_REQUIRES "retro-go")
 register_component()
 rg_setup_compile_options(
     -O3
-    -fjump-tables
-    -ftree-switch-conversion
     -fbuiltin
     -fomit-frame-pointer
     -fno-math-errno

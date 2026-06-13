@@ -91,6 +91,7 @@ static rg_task_t *gwenesis_audio_task_handle;
 static volatile bool gwenesis_audio_task_running;
 static uint32_t gwenesis_audio_ring_read;
 static uint32_t gwenesis_audio_ring_write;
+static bool gwenesis_cleaned_up;
 
 static void gwenesis_close_savestate(void)
 {
@@ -389,6 +390,10 @@ static void gwenesis_force_native_display(void)
 
 static void gwenesis_cleanup(void)
 {
+    if (gwenesis_cleaned_up)
+        return;
+    gwenesis_cleaned_up = true;
+
     gwenesis_audio_stop();
 
     gwenesis_close_savestate();
@@ -604,6 +609,7 @@ void app_main(void)
 #else
     app = rg_system_init(AUDIO_OUTPUT_SAMPLE_RATE, &handlers, NULL);
 #endif
+    gwenesis_cleaned_up = false;
 
 #if GWENESIS_AUDIO_EMULATION
     gwenesis_audio_mode = rg_settings_get_number(NS_APP, SETTING_AUDIO_MODE, GWENESIS_AUDIO_MODE_FAST);

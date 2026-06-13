@@ -19,6 +19,7 @@ __license__ = "GPLv3"
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <ctype.h>
 #if defined(RETRO_GO)
@@ -72,6 +73,13 @@ unsigned char *M68K_RAM=(void *)(uint32_t)(0); // 68K RAM
 #else
 
 unsigned char *ROM_DATA; // 68K Main Program (uncompressed)
+unsigned int ROM_MASK = MAX_ROM_SIZE - 1;
+unsigned char *CART_SRAM_DATA;
+unsigned int CART_SRAM_START = MAX_ROM_SIZE;
+unsigned int CART_SRAM_END = 0;
+static bool CART_SRAM_PARITY_ONLY;
+static unsigned int CART_SRAM_PARITY;
+static size_t CART_SRAM_SIZE;
 #if defined(RETRO_GO)
 unsigned char *M68K_RAM; // 68K RAM
 #else
@@ -145,6 +153,158 @@ void load_cartridge()
 }
 #else
 
+static size_t gwenesis_rom_mirror_size(size_t size)
+{
+    size_t mirror_size = 0x10000;
+
+    while (mirror_size < size && mirror_size < MAX_ROM_SIZE)
+        mirror_size <<= 1;
+
+    return mirror_size > MAX_ROM_SIZE ? MAX_ROM_SIZE : mirror_size;
+}
+
+static unsigned int gwenesis_rom_read_be32(size_t offset, size_t size)
+{
+    if (offset + 3 >= size)
+        return 0;
+
+    return ((unsigned int)ROM_DATA[offset + 0] << 24) |
+           ((unsigned int)ROM_DATA[offset + 1] << 16) |
+           ((unsigned int)ROM_DATA[offset + 2] << 8) |
+           ((unsigned int)ROM_DATA[offset + 3]);
+}
+
+static void gwenesis_sram_reset(void)
+{
+    free(CART_SRAM_DATA);
+    CART_SRAM_DATA = NULL;
+    CART_SRAM_START = MAX_ROM_SIZE;
+    CART_SRAM_END = 0;
+    CART_SRAM_PARITY_ONLY = false;
+    CART_SRAM_PARITY = 0;
+    CART_SRAM_SIZE = 0;
+}
+
+static void gwenesis_sram_configure(size_t rom_size)
+{
+    gwenesis_sram_reset();
+
+    if (!ROM_DATA || rom_size < 0x1BC || ROM_DATA[0x1B0] != 'R' || ROM_DATA[0x1B1] != 'A')
+        return;
+
+    unsigned int start = gwenesis_rom_read_be32(0x1B4, rom_size) & 0xFFFFFF;
+    unsigned int end = gwenesis_rom_read_be32(0x1B8, rom_size) & 0xFFFFFF;
+
+    if (start >= MAX_ROM_SIZE || end < start)
+        return;
+    if (end >= MAX_ROM_SIZE)
+        end = MAX_ROM_SIZE - 1;
+
+    const bool parity_only = ((start ^ end) & 1) == 0;
+    size_t sram_size = parity_only ? (((end - start) >> 1) + 1) : ((end - start) + 1);
+
+    if (sram_size == 0)
+        return;
+    if (sram_size > 0x20000)
+        sram_size = 0x20000;
+
+#if defined(RETRO_GO)
+    CART_SRAM_DATA = rg_alloc(sram_size, MEM_SLOW);
+#else
+    CART_SRAM_DATA = malloc(sram_size);
+#endif
+    if (!CART_SRAM_DATA)
+        return;
+
+    memset(CART_SRAM_DATA, 0xff, sram_size);
+    CART_SRAM_START = start;
+    CART_SRAM_END = end;
+    CART_SRAM_PARITY_ONLY = parity_only;
+    CART_SRAM_PARITY = start & 1;
+    CART_SRAM_SIZE = sram_size;
+
+    printf("Genesis SRAM start=0x%06x end=0x%06x size=%u parity=%s\n",
+           CART_SRAM_START, CART_SRAM_END, (unsigned)CART_SRAM_SIZE,
+           CART_SRAM_PARITY_ONLY ? (CART_SRAM_PARITY ? "odd" : "even") : "both");
+}
+
+static inline bool gwenesis_sram_contains(unsigned int address)
+{
+    address &= 0xFFFFFF;
+    if (!CART_SRAM_DATA || address < CART_SRAM_START || address > CART_SRAM_END)
+        return false;
+    return !CART_SRAM_PARITY_ONLY || ((address & 1) == CART_SRAM_PARITY);
+}
+
+static inline bool gwenesis_sram_overlaps(unsigned int address, unsigned int width)
+{
+    address &= 0xFFFFFF;
+    return CART_SRAM_DATA && address <= CART_SRAM_END && (address + width - 1) >= CART_SRAM_START;
+}
+
+static inline size_t gwenesis_sram_offset(unsigned int address)
+{
+    address &= 0xFFFFFF;
+    size_t offset = address - CART_SRAM_START;
+    if (CART_SRAM_PARITY_ONLY)
+        offset >>= 1;
+    return offset;
+}
+
+static inline unsigned int gwenesis_sram_read_8(unsigned int address)
+{
+    if (!gwenesis_sram_contains(address))
+        return 0xff;
+
+    const size_t offset = gwenesis_sram_offset(address);
+    return offset < CART_SRAM_SIZE ? CART_SRAM_DATA[offset] : 0xff;
+}
+
+static inline void gwenesis_sram_write_8(unsigned int address, unsigned int value)
+{
+    if (!gwenesis_sram_contains(address))
+        return;
+
+    const size_t offset = gwenesis_sram_offset(address);
+    if (offset < CART_SRAM_SIZE)
+        CART_SRAM_DATA[offset] = value & 0xff;
+}
+
+static void gwenesis_rom_finalize(size_t size)
+{
+    if (!ROM_DATA || size == 0)
+        return;
+
+    if (size > MAX_ROM_SIZE)
+    {
+        printf("Genesis ROM larger than 8MB, truncating visible map from %u to %u bytes\n",
+               (unsigned)size, (unsigned)MAX_ROM_SIZE);
+        size = MAX_ROM_SIZE;
+    }
+
+    const size_t mirror_size = gwenesis_rom_mirror_size(size);
+    const size_t alloc_size = mirror_size + sizeof(uint32_t);
+    unsigned char *rom = realloc(ROM_DATA, alloc_size);
+
+#if defined(RETRO_GO)
+    if (!rom)
+        RG_PANIC("Genesis ROM mirror allocation failed!");
+#else
+    assert(rom);
+    if (!rom)
+        return;
+#endif
+
+    ROM_DATA = rom;
+    ROM_MASK = (unsigned int)(mirror_size - 1);
+
+    for (size_t i = size; i < alloc_size; ++i)
+        ROM_DATA[i] = ROM_DATA[i % size];
+
+    printf("Genesis ROM size=%u mirror=%u mask=0x%06x\n",
+           (unsigned)size, (unsigned)mirror_size, ROM_MASK);
+}
+
 void load_cartridge(unsigned char *buffer, size_t size)
 {
     if (!gwenesis_bus_init_fast_ram())
@@ -158,35 +318,47 @@ void load_cartridge(unsigned char *buffer, size_t size)
     z80_set_memory(ZRAM);
     z80_pulse_reset();
 
+    if (!buffer || size == 0)
+        return;
+
     // Copy file contents to CPU ROM memory
     #ifdef RETRO_GO
     ROM_DATA = buffer;
     #else
-    ROM_DATA = realloc(ROM_DATA, (size & ~0xFFFF) + 0x10000); // 64KB align just in case
+    unsigned char *rom = realloc(ROM_DATA, size);
+    if (!rom)
+        return;
+    ROM_DATA = rom;
     memcpy(ROM_DATA, buffer, size);
     #endif
 
     // https://github.com/franckverrot/EmulationResources/blob/master/consoles/megadrive/genesis_rom.txt
-    if (ROM_DATA[1] == 0x03 && ROM_DATA[8] == 0xAA && ROM_DATA[9] == 0xBB)
+    if (size > 512 && ROM_DATA[1] == 0x03 && ROM_DATA[8] == 0xAA && ROM_DATA[9] == 0xBB)
     {
       printf("--SMD de-interleave mode--\n");
-      memmove(ROM_DATA, ROM_DATA + 512, size - 512);
+      size -= 512;
+      memmove(ROM_DATA, ROM_DATA + 512, size);
       uint8 *temp = malloc(0x4000);
-      for (size_t i = 0; i < size; i += 0x4000)
+      if (temp)
       {
-        memcpy(temp, ROM_DATA + i, 0x4000);
-        for (size_t j = 0; j < 0x2000; ++j)
+        for (size_t i = 0; i + 0x4000 <= size; i += 0x4000)
         {
-          ROM_DATA[i + (j * 2) + 0] = temp[0x2000 + j];
-          ROM_DATA[i + (j * 2) + 1] = temp[0x0000 + j];
+          memcpy(temp, ROM_DATA + i, 0x4000);
+          for (size_t j = 0; j < 0x2000; ++j)
+          {
+            ROM_DATA[i + (j * 2) + 0] = temp[0x2000 + j];
+            ROM_DATA[i + (j * 2) + 1] = temp[0x0000 + j];
+          }
         }
+        free(temp);
       }
-      free(temp);
     }
+
+    gwenesis_sram_configure(size);
 
     #ifdef ROM_SWAP
     bus_log(__FUNCTION__,"--ROM swap mode--");
-    for (int i=0; i < size;i+=2 )
+    for (size_t i = 0; i + 1 < size; i += 2)
     {   
         char z = ROM_DATA[i];
         ROM_DATA[i]=ROM_DATA[i+1];
@@ -194,14 +366,20 @@ void load_cartridge(unsigned char *buffer, size_t size)
     }
     #endif
 
+    gwenesis_rom_finalize(size);
 
     set_region();
 }
 
 void unload_cartridge(void)
 {
-    free(ROM_DATA);
-    ROM_DATA = NULL;
+    if (ROM_DATA)
+    {
+        free(ROM_DATA);
+        ROM_DATA = NULL;
+    }
+    ROM_MASK = MAX_ROM_SIZE - 1;
+    gwenesis_sram_reset();
 }
 
 #endif
@@ -443,7 +621,7 @@ unsigned int gwenesis_bus_map_address(unsigned int address) {
 
   else if (range == 0xC0) // VDP ADDRESS 0xC00000 - 0xDFFFFFF
     return VDP_ADDR;
-  else if (range == 0xFF) // RAM ADDRESS 0xE00000 - 0xFFFFFFF
+  else if (range >= 0xE0) // RAM ADDRESS 0xE00000 - 0xFFFFFF
     return RAM_ADDR;
   // If not a valid address return 0
   bus_log(__FUNCTION__,"M68K > ?? unnmap address %x", address);
@@ -458,6 +636,9 @@ unsigned int gwenesis_bus_map_address(unsigned int address) {
  ******************************************************************************/
 static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_8(unsigned int address) {
  bus_log(__FUNCTION__,"read8  %x", address);
+
+  if (gwenesis_sram_contains(address))
+    return gwenesis_sram_read_8(address);
 
   switch (gwenesis_bus_map_address(address)) {
   
@@ -505,6 +686,9 @@ static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_8(unsigned int 
 static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_16(unsigned int address) {
    bus_log(__FUNCTION__,"read16 %x", address);
    unsigned int ret_value;
+
+  if (gwenesis_sram_overlaps(address, 2))
+    return (gwenesis_sram_read_8(address) << 8) | gwenesis_sram_read_8(address + 1);
 
   switch (gwenesis_bus_map_address(address)) {
 
@@ -559,6 +743,12 @@ static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_16(unsigned int
 static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address,
                                               unsigned int value) {
   bus_log(__FUNCTION__,"write8  @%x:%x", address,value);
+
+  if (gwenesis_sram_contains(address))
+  {
+    gwenesis_sram_write_8(address, value);
+    return;
+  }
 
   switch (gwenesis_bus_map_address(address)) {
 
@@ -620,6 +810,13 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
                                                unsigned int value) {
   bus_log(__FUNCTION__,"write16  @%x:%x", address,value);
 
+  if (gwenesis_sram_overlaps(address, 2))
+  {
+    gwenesis_sram_write_8(address, (value >> 8) & 0xff);
+    gwenesis_sram_write_8(address + 1, value & 0xff);
+    return;
+  }
+
   switch (gwenesis_bus_map_address(address)) {
 
   case VDP_ADDR:
@@ -671,7 +868,7 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
 {
-    if ((address & 0xFF0000) == 0xFF0000)
+    if ((address & 0xE00000) == 0xE00000)
         return FETCH8RAM(address);
     return gwenesis_bus_read_memory_8(address);
 }
@@ -684,7 +881,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
 {
-    if ((address & 0xFF0000) == 0xFF0000)
+    if ((address & 0xE00000) == 0xE00000)
         return FETCH16RAM(address);
     return gwenesis_bus_read_memory_16(address);
 }
@@ -697,7 +894,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
 {
-  if ((address & 0xFF0000) == 0xFF0000 && ((address + 2) & 0xFF0000) == 0xFF0000) {
+  if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
     return (FETCH16RAM(address) << 16) | FETCH16RAM(address + 2);
   }
   return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
@@ -710,7 +907,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
  *
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
-  if ((address & 0xFF0000) == 0xFF0000) {
+  if ((address & 0xE00000) == 0xE00000) {
     WRITE8RAM(address, value);
     return;
   }
@@ -725,7 +922,7 @@ void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) 
  *
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
-  if ((address & 0xFF0000) == 0xFF0000) {
+  if ((address & 0xE00000) == 0xE00000) {
     WRITE16RAM(address, value);
     return;
   }
@@ -740,7 +937,7 @@ void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value)
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
 
-  if ((address & 0xFF0000) == 0xFF0000 && ((address + 2) & 0xFF0000) == 0xFF0000) {
+  if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
     WRITE16RAM(address, (value >> 16) & 0xffff);
     WRITE16RAM(address + 2, value & 0xffff);
     return;

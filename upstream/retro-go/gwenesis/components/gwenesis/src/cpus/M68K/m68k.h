@@ -154,16 +154,25 @@
 #if GNW_TARGET_MARIO != 0 | GNW_TARGET_ZELDA != 0 || defined(RETRO_GO)
 
 	extern unsigned char *ROM_DATA;
+	extern unsigned int ROM_MASK;
+	extern unsigned char *CART_SRAM_DATA;
+	extern unsigned int CART_SRAM_START;
+	extern unsigned int CART_SRAM_END;
 	extern unsigned char *M68K_RAM;
 #else
 
 	extern unsigned char *ROM_DATA;
+	extern unsigned int ROM_MASK;
+	extern unsigned char *CART_SRAM_DATA;
+	extern unsigned int CART_SRAM_START;
+	extern unsigned int CART_SRAM_END;
 	extern unsigned char M68K_RAM[];
 #endif
 
-#define FETCH8ROM(A) ((ROM_DATA[((A) ^ 1)]))
-#define FETCH16ROM(A) ((*(unsigned short *)&ROM_DATA[(A)]))
-#define FETCH32ROM(A) ( (*(unsigned int *)&ROM_DATA[(A)] << 16) | (*(unsigned int *)&ROM_DATA[(A)] >> 16) )
+#define CART_SRAM_TOUCHES(A, S) (CART_SRAM_DATA && ((unsigned int)(A) <= CART_SRAM_END) && (((unsigned int)(A) + ((S) - 1)) >= CART_SRAM_START))
+#define FETCH8ROM(A) ((ROM_DATA[(((A) & ROM_MASK) ^ 1)]))
+#define FETCH16ROM(A) ((*(unsigned short *)&ROM_DATA[((A) & ROM_MASK)]))
+#define FETCH32ROM(A) ( (*(unsigned int *)&ROM_DATA[((A) & ROM_MASK)] << 16) | (*(unsigned int *)&ROM_DATA[((A) & ROM_MASK)] >> 16) )
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
 

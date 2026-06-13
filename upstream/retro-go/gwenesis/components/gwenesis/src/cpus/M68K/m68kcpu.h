@@ -861,9 +861,13 @@ INLINE uint m68ki_read_8(uint address)
 
   m68ki_set_fc(FLAG_S | m68ki_get_address_space()) /* auto-disable (see m68kcpu.h) */
 
-	if (ADDRESS_68K(address) <  0x800000) return FETCH8ROM(ADDRESS_68K(address));
-	if (ADDRESS_68K(address) >= 0xFF0000) return FETCH8RAM(ADDRESS_68K(address));
-	return m68k_read_memory_8(ADDRESS_68K(address));
+	uint address_68k = ADDRESS_68K(address);
+	if (address_68k <  0x800000) {
+		if (CART_SRAM_TOUCHES(address_68k, 1)) return m68k_read_memory_8(address_68k);
+		return FETCH8ROM(address_68k);
+	}
+	if (address_68k >= 0xE00000) return FETCH8RAM(address_68k);
+	return m68k_read_memory_8(address_68k);
 
 }
 
@@ -872,9 +876,13 @@ INLINE uint m68ki_read_16(uint address)
 
   m68ki_set_fc(FLAG_S | m68ki_get_address_space()) /* auto-disable (see m68kcpu.h) */
  
- 	if (ADDRESS_68K(address) <  0x800000) return FETCH16ROM(ADDRESS_68K(address));
-	if (ADDRESS_68K(address) >= 0xFF0000) return FETCH16RAM(ADDRESS_68K(address));
-	return m68k_read_memory_16(ADDRESS_68K(address));
+	uint address_68k = ADDRESS_68K(address);
+ 	if (address_68k <  0x800000) {
+		if (CART_SRAM_TOUCHES(address_68k, 2)) return m68k_read_memory_16(address_68k);
+		return FETCH16ROM(address_68k);
+	}
+	if (address_68k >= 0xE00000) return FETCH16RAM(address_68k);
+	return m68k_read_memory_16(address_68k);
 
 }
 
@@ -882,16 +890,20 @@ INLINE uint m68ki_read_32(uint address)
 {
 
   m68ki_set_fc(FLAG_S | m68ki_get_address_space()) /* auto-disable (see m68kcpu.h) */
-	if (ADDRESS_68K(address) <  0x800000) return FETCH32ROM(ADDRESS_68K(address));
-	if (ADDRESS_68K(address) >= 0xFF0000) return FETCH32RAM(ADDRESS_68K(address));
-	return m68k_read_memory_32(ADDRESS_68K(address));
+	uint address_68k = ADDRESS_68K(address);
+	if (address_68k <  0x800000) {
+		if (CART_SRAM_TOUCHES(address_68k, 4)) return m68k_read_memory_32(address_68k);
+		return FETCH32ROM(address_68k);
+	}
+	if (address_68k >= 0xE00000) return FETCH32RAM(address_68k);
+	return m68k_read_memory_32(address_68k);
 }
 
 INLINE void m68ki_write_8(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xFF0000) {
+        if (ADDRESS_68K(address) >= 0xE00000) {
           WRITE8RAM(ADDRESS_68K(address), value);
         } else
         m68k_write_memory_8(ADDRESS_68K(address), value);
@@ -901,7 +913,7 @@ INLINE void m68ki_write_16(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xFF0000) {
+        if (ADDRESS_68K(address) >= 0xE00000) {
           WRITE16RAM(ADDRESS_68K(address), value);
         } else
 	m68k_write_memory_16(ADDRESS_68K(address), value);
@@ -911,7 +923,7 @@ INLINE void m68ki_write_32(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xFF0000) {
+        if (ADDRESS_68K(address) >= 0xE00000) {
           WRITE32RAM(ADDRESS_68K(address), value);
         } else
 	m68k_write_memory_32(ADDRESS_68K(address), value);

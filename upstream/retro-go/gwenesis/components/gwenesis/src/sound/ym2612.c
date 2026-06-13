@@ -666,12 +666,7 @@ typedef struct
 } YM2612;
 
 /* emulated chip */
-#if defined(RETRO_GO)
-static YM2612 *ym2612_ptr;
-#define ym2612 (*ym2612_ptr)
-#else
 static YM2612 ym2612;
-#endif
 
 /* current chip state */
 static INT32  m2,c1,c2;   /* Phase Modulation input for operators 2,3,4 */
@@ -693,14 +688,12 @@ static unsigned ym2612_tables_initialized;
 bool gwenesis_ym2612_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
-  if (!ym2612_ptr)
-    ym2612_ptr = rg_alloc(sizeof(*ym2612_ptr), MEM_FAST);
   if (!OPNREGS)
     OPNREGS = rg_alloc(OPNREGS_SIZE, MEM_FAST);
   if (!sin_tab)
     sin_tab = rg_alloc(sizeof(*sin_tab) * SIN_LEN, MEM_FAST);
 
-  return ym2612_ptr && OPNREGS && sin_tab;
+  return OPNREGS && sin_tab;
 #else
   return true;
 #endif
@@ -709,8 +702,6 @@ bool gwenesis_ym2612_init_fast_ram(void)
 void gwenesis_ym2612_deinit_fast_ram(void)
 {
 #if defined(RETRO_GO)
-  free(ym2612_ptr);
-  ym2612_ptr = NULL;
   free(OPNREGS);
   OPNREGS = NULL;
   free(sin_tab);
