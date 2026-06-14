@@ -675,6 +675,12 @@ static INT32  out_fm[8];  /* outputs of working channels */
 static UINT32 bitmask;    /* working channels output bitmasking (DAC quantization) */
 static bool ym2612_lite_mode;
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 4
+#else
+#define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 2
+#endif
+
 /* mirror of all OPN registers */
 #define OPNREGS_SIZE 512
 #if defined(RETRO_GO)
@@ -2254,11 +2260,17 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
       ym2612.OPN.SL3.key_csm = 0;
     }
 
-    if (ym2612_lite_mode && (i + 1) < length)
+    if (ym2612_lite_mode)
     {
-      *buffer++ = lt;
-      i++;
-      YM2612AdvanceLiteSkippedSample(ym2612.dacen ? 5 : 6);
+      const int num_channels = ym2612.dacen ? 5 : 6;
+      for (int lite_skip = 1;
+           lite_skip < GWENESIS_YM2612_LITE_SAMPLE_STRIDE && (i + 1) < length;
+           ++lite_skip)
+      {
+        *buffer++ = lt;
+        i++;
+        YM2612AdvanceLiteSkippedSample(num_channels);
+      }
     }
   }
 

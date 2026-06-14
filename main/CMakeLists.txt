@@ -137,6 +137,9 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -fvisibility=hidden
     -fdata-sections
     -ffunction-sections
+    -fno-builtin-memcpy
+    -fno-builtin-memmove
+    -fno-builtin-memset
     -DRG_TARGET_HOLO_DYNMOD=1
     -DRETRO_GO=1
     -DRG_PROJECT_APP="${HOLO_RETRO_MAIN_MODULE_NAME}"
@@ -146,3 +149,11 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-error=format
     -Wno-error=nonnull-compare
 )
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    target_compile_options(${COMPONENT_LIB} PRIVATE
+        -flto=auto
+        -ffat-lto-objects
+        -flto-compression-level=9
+    )
+endif()

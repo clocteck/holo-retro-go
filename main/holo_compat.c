@@ -66,6 +66,79 @@ typedef struct holo_file_t {
 
 static holo_file_t *s_open_files[HOLO_MAX_OPEN_FILES];
 
+typedef uint32_t holo_mem_word_t __attribute__((__may_alias__));
+
+static void holo_memcpy_forward(unsigned char *d, const unsigned char *s, size_t n)
+{
+    if (n >= 16 && ((((uintptr_t)d) ^ ((uintptr_t)s)) & (sizeof(holo_mem_word_t) - 1u)) == 0) {
+        while (n && (((uintptr_t)d) & (sizeof(holo_mem_word_t) - 1u))) {
+            *d++ = *s++;
+            --n;
+        }
+
+        holo_mem_word_t *dw = (holo_mem_word_t *)d;
+        const holo_mem_word_t *sw = (const holo_mem_word_t *)s;
+
+        while (n >= 16) {
+            dw[0] = sw[0];
+            dw[1] = sw[1];
+            dw[2] = sw[2];
+            dw[3] = sw[3];
+            dw += 4;
+            sw += 4;
+            n -= 16;
+        }
+        while (n >= sizeof(holo_mem_word_t)) {
+            *dw++ = *sw++;
+            n -= sizeof(holo_mem_word_t);
+        }
+
+        d = (unsigned char *)dw;
+        s = (const unsigned char *)sw;
+    }
+
+    while (n--) {
+        *d++ = *s++;
+    }
+}
+
+static void holo_memmove_backward(unsigned char *d, const unsigned char *s, size_t n)
+{
+    d += n;
+    s += n;
+
+    if (n >= 16 && ((((uintptr_t)d) ^ ((uintptr_t)s)) & (sizeof(holo_mem_word_t) - 1u)) == 0) {
+        while (n && (((uintptr_t)d) & (sizeof(holo_mem_word_t) - 1u))) {
+            *--d = *--s;
+            --n;
+        }
+
+        holo_mem_word_t *dw = (holo_mem_word_t *)d;
+        const holo_mem_word_t *sw = (const holo_mem_word_t *)s;
+
+        while (n >= 16) {
+            dw -= 4;
+            sw -= 4;
+            dw[3] = sw[3];
+            dw[2] = sw[2];
+            dw[1] = sw[1];
+            dw[0] = sw[0];
+            n -= 16;
+        }
+        while (n >= sizeof(holo_mem_word_t)) {
+            *--dw = *--sw;
+            n -= sizeof(holo_mem_word_t);
+        }
+
+        d = (unsigned char *)dw;
+        s = (const unsigned char *)sw;
+    }
+
+    while (n--) {
+        *--d = *--s;
+    }
+}
+
 static int host_heap_usable(const module_host_api_v1 *host)
 {
     const size_t need_heap = offsetof(module_host_api_v1, heap) + sizeof(module_heap_api_t);
@@ -111,10 +184,8 @@ struct _reent *__getreent(void)
 
 void *memcpy(void *dst, const void *src, size_t n)
 {
-    unsigned char *d = (unsigned char *)dst;
-    const unsigned char *s = (const unsigned char *)src;
-    while (n--) {
-        *d++ = *s++;
+    if (n != 0 && dst != src) {
+        holo_memcpy_forward((unsigned char *)dst, (const unsigned char *)src, n);
     }
     return dst;
 }
@@ -127,15 +198,9 @@ void *memmove(void *dst, const void *src, size_t n)
         return dst;
     }
     if (d < s) {
-        while (n--) {
-            *d++ = *s++;
-        }
+        holo_memcpy_forward(d, s, n);
     } else {
-        d += n;
-        s += n;
-        while (n--) {
-            *--d = *--s;
-        }
+        holo_memmove_backward(d, s, n);
     }
     return dst;
 }
@@ -143,8 +208,35 @@ void *memmove(void *dst, const void *src, size_t n)
 void *memset(void *dst, int value, size_t n)
 {
     unsigned char *d = (unsigned char *)dst;
+    const unsigned char byte = (unsigned char)value;
+    const holo_mem_word_t word = (holo_mem_word_t)byte * 0x01010101u;
+
+    if (n >= 16) {
+        while (n && (((uintptr_t)d) & (sizeof(holo_mem_word_t) - 1u))) {
+            *d++ = byte;
+            --n;
+        }
+
+        holo_mem_word_t *dw = (holo_mem_word_t *)d;
+
+        while (n >= 16) {
+            dw[0] = word;
+            dw[1] = word;
+            dw[2] = word;
+            dw[3] = word;
+            dw += 4;
+            n -= 16;
+        }
+        while (n >= sizeof(holo_mem_word_t)) {
+            *dw++ = word;
+            n -= sizeof(holo_mem_word_t);
+        }
+
+        d = (unsigned char *)dw;
+    }
+
     while (n--) {
-        *d++ = (unsigned char)value;
+        *d++ = byte;
     }
     return dst;
 }

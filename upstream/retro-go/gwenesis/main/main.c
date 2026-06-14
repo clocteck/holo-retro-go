@@ -83,6 +83,7 @@ static const int muted_frameskip = 2;
 static uint32_t frame_counter;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static const int z80_batch_lines = 8;
+static const int z80_lite_batch_lines = 16;
 #else
 static const int z80_batch_lines = 1;
 #endif
@@ -92,6 +93,15 @@ static volatile bool gwenesis_audio_task_running;
 static uint32_t gwenesis_audio_ring_read;
 static uint32_t gwenesis_audio_ring_write;
 static bool gwenesis_cleaned_up;
+
+static inline int gwenesis_z80_batch_lines_current(void)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    return gwenesis_audio_mode == GWENESIS_AUDIO_MODE_LITE_YM ? z80_lite_batch_lines : z80_batch_lines;
+#else
+    return z80_batch_lines;
+#endif
+}
 
 static void gwenesis_close_savestate(void)
 {
@@ -812,13 +822,14 @@ void app_main(void)
             memset(gwenesis_sn76489_buffer, 0, sizeof(*gwenesis_sn76489_buffer) * AUDIO_BUFFER_LENGTH);
 
         scan_line = 0;
+        const int active_z80_batch_lines = gwenesis_z80_batch_lines_current();
 
         while (scan_line < lines_per_frame)
         {
             const int line_target = system_clock + VDP_CYCLES_PER_LINE;
             const bool z80_sync_line =
-                z80_batch_lines <= 1 ||
-                ((scan_line + 1) % z80_batch_lines) == 0 ||
+                active_z80_batch_lines <= 1 ||
+                ((scan_line + 1) % active_z80_batch_lines) == 0 ||
                 scan_line == screen_height - 1 ||
                 scan_line == screen_height ||
                 scan_line == lines_per_frame - 1;
