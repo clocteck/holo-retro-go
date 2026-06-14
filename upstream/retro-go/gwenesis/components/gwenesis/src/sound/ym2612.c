@@ -2308,20 +2308,8 @@ void GWENESIS_HOT ym2612_run( int target) {
 /* n = number  */
 /* a = address */
 /* v = value   */
-void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v,  int target)
+static inline void GWENESIS_HOT YM2612WriteCore(unsigned int a, unsigned int v)
 {
-#if !GWENESIS_AUDIO_EMULATION
-  (void)a;
-  (void)v;
-  ym2612_clock = target;
-  return;
-#endif
-  ym_log(__FUNCTION__," %06x : %02x",a,v);
-
-  //Sync
-  if (GWENESIS_AUDIO_ACCURATE == 1)
-    ym2612_run(target); 
-
   v &= 0xff;  /* adjust to 8 bit bus */
 
   switch( a )
@@ -2366,16 +2354,68 @@ void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v,  int target)
   }
 }
 
+void GWENESIS_HOT YM2612WriteDirect(unsigned int a, unsigned int v, int target)
+{
+#if !GWENESIS_AUDIO_EMULATION
+  (void)a;
+  (void)v;
+  ym2612_clock = target;
+  return;
+#endif
+  ym_log(__FUNCTION__," %06x : %02x",a,v);
+
+  if (ym2612_clock < target)
+    ym2612_run(target);
+
+  YM2612WriteCore(a, v);
+}
+
+void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v,  int target)
+{
+#if !GWENESIS_AUDIO_EMULATION
+  (void)a;
+  (void)v;
+  ym2612_clock = target;
+  return;
+#endif
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  if (gwenesis_ym2612_async_write(a, v, target))
+    return;
+#endif
+  ym_log(__FUNCTION__," %06x : %02x",a,v);
+
+  //Sync
+  if (GWENESIS_AUDIO_ACCURATE == 1)
+    ym2612_run(target);
+
+  YM2612WriteCore(a, v);
+}
+
 unsigned int GWENESIS_HOT YM2612Read(int target)
 {
 #if !GWENESIS_AUDIO_EMULATION
   ym2612_clock = target;
   return 0;
 #endif
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  if (gwenesis_ym2612_async_enabled())
+    return gwenesis_ym2612_async_read(target);
+  (void)target;
+  ym_log(__FUNCTION__, "%02x",ym2612.OPN.ST.status & 0x7f);
+  return ym2612.OPN.ST.status & 0x7f;
+#endif
   // //Sync
   if (GWENESIS_AUDIO_ACCURATE == 1)
     ym2612_run(target);
   ym_log(__FUNCTION__, "%02x",ym2612.OPN.ST.status & 0xff);
+  return ym2612.OPN.ST.status & 0xff;
+}
+
+unsigned int GWENESIS_HOT YM2612ReadStatusDirect(void)
+{
+#if !GWENESIS_AUDIO_EMULATION
+  return 0;
+#endif
   return ym2612.OPN.ST.status & 0xff;
 }
 

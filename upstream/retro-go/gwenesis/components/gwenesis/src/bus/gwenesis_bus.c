@@ -860,6 +860,13 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
 {
+    address &= 0xFFFFFF;
+    if (address < 0x800000)
+    {
+        if (CART_SRAM_TOUCHES(address, 1))
+            return gwenesis_bus_read_memory_8(address);
+        return FETCH8ROM(address);
+    }
     if ((address & 0xE00000) == 0xE00000)
         return FETCH8RAM(address);
     return gwenesis_bus_read_memory_8(address);
@@ -873,6 +880,13 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
 {
+    address &= 0xFFFFFF;
+    if (address < 0x800000)
+    {
+        if (CART_SRAM_TOUCHES(address, 2))
+            return gwenesis_bus_read_memory_16(address);
+        return FETCH16ROM(address);
+    }
     if ((address & 0xE00000) == 0xE00000)
         return FETCH16RAM(address);
     return gwenesis_bus_read_memory_16(address);
@@ -886,6 +900,12 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
  ******************************************************************************/
 unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
 {
+  address &= 0xFFFFFF;
+  if (address < 0x800000 && (address + 3) < 0x800000) {
+    if (CART_SRAM_TOUCHES(address, 4))
+      return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
+    return FETCH32ROM(address);
+  }
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
     return (FETCH16RAM(address) << 16) | FETCH16RAM(address + 2);
   }

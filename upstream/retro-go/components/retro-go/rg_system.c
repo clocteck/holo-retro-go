@@ -104,6 +104,7 @@ static uint32_t indicators;
 static rg_color_t ledColor = -1;
 static rg_stats_t statistics;
 static rg_app_t app;
+static char monitorExtra[32];
 static rg_task_t tasks[8];
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static char holo_app_config_ns[16];
@@ -331,12 +332,25 @@ static void system_monitor_task(void *arg)
         update_indicators(false);
 
         // Try to avoid complex conversions that could allocate, prefer rounding/ceiling if necessary.
-        rg_system_log(RG_LOG_DEBUG, NULL, "STACK:%d, HEAP:%d+%d (%d+%d), BUSY:%d%%, FPS:%d (S:%d R:%d+%d), BATT:%d",
-                      statistics.freeStackMain, statistics.freeMemoryInt / 1024, statistics.freeMemoryExt / 1024,
-                      statistics.freeBlockInt / 1024, statistics.freeBlockExt / 1024,
-                      (int)roundf(statistics.busyPercent), (int)roundf(statistics.totalFPS),
-                      (int)roundf(statistics.skippedFPS), (int)roundf(statistics.partialFPS),
-                      (int)roundf(statistics.fullFPS), (int)roundf((battery.volts * 1000) ?: battery.level));
+        if (monitorExtra[0])
+        {
+            rg_system_log(RG_LOG_DEBUG, NULL, "STACK:%d, HEAP:%d+%d (%d+%d), BUSY:%d%%, FPS:%d (S:%d R:%d+%d), BATT:%d, %s",
+                          statistics.freeStackMain, statistics.freeMemoryInt / 1024, statistics.freeMemoryExt / 1024,
+                          statistics.freeBlockInt / 1024, statistics.freeBlockExt / 1024,
+                          (int)roundf(statistics.busyPercent), (int)roundf(statistics.totalFPS),
+                          (int)roundf(statistics.skippedFPS), (int)roundf(statistics.partialFPS),
+                          (int)roundf(statistics.fullFPS), (int)roundf((battery.volts * 1000) ?: battery.level),
+                          monitorExtra);
+        }
+        else
+        {
+            rg_system_log(RG_LOG_DEBUG, NULL, "STACK:%d, HEAP:%d+%d (%d+%d), BUSY:%d%%, FPS:%d (S:%d R:%d+%d), BATT:%d",
+                          statistics.freeStackMain, statistics.freeMemoryInt / 1024, statistics.freeMemoryExt / 1024,
+                          statistics.freeBlockInt / 1024, statistics.freeBlockExt / 1024,
+                          (int)roundf(statistics.busyPercent), (int)roundf(statistics.totalFPS),
+                          (int)roundf(statistics.skippedFPS), (int)roundf(statistics.partialFPS),
+                          (int)roundf(statistics.fullFPS), (int)roundf((battery.volts * 1000) ?: battery.level));
+        }
 
         // Auto frameskip
         if (statistics.ticks > app.tickRate * 2)
@@ -923,6 +937,18 @@ void rg_system_set_tick_rate(int tickRate)
 int rg_system_get_tick_rate(void)
 {
     return app.tickRate;
+}
+
+void rg_system_set_monitor_extra(const char *text)
+{
+    if (!text || !text[0])
+    {
+        monitorExtra[0] = 0;
+        return;
+    }
+
+    strncpy(monitorExtra, text, sizeof(monitorExtra) - 1);
+    monitorExtra[sizeof(monitorExtra) - 1] = 0;
 }
 
 void rg_system_tick(int busyTime)
