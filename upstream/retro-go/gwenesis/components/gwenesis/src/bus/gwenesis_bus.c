@@ -37,6 +37,11 @@ __license__ = "GPLv3"
 #include "gwenesis_savestate.h"
 
 #define GWENESIS_HOT
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_IRAM_HOT __attribute__((section(".mod_iram"), noinline, used))
+#else
+#define GWENESIS_IRAM_HOT GWENESIS_HOT
+#endif
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
@@ -866,7 +871,7 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
  *   Read an address from memory mapped and return value as byte
  *
  ******************************************************************************/
-unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
+unsigned int GWENESIS_IRAM_HOT m68k_read_memory_8(unsigned int address)
 {
     if ((address & 0xE00000) == 0xE00000)
         return FETCH8RAM(address);
@@ -879,7 +884,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
  *   Read an address from memory mapped and return value as word
  *
  ******************************************************************************/
-unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
+unsigned int GWENESIS_IRAM_HOT m68k_read_memory_16(unsigned int address)
 {
     if ((address & 0xE00000) == 0xE00000)
         return FETCH16RAM(address);
@@ -892,7 +897,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
  *   Read an address from memory mapped and return value as long
  *
  ******************************************************************************/
-unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
+unsigned int GWENESIS_IRAM_HOT m68k_read_memory_32(unsigned int address)
 {
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
     return (FETCH16RAM(address) << 16) | FETCH16RAM(address + 2);
@@ -906,7 +911,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
  *   Write an value as byte to memory mapped on specified address
  *
  ******************************************************************************/
-void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
+void GWENESIS_IRAM_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
   if ((address & 0xE00000) == 0xE00000) {
     WRITE8RAM(address, value);
     return;
@@ -921,7 +926,7 @@ void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) 
  *   Write an value as word to memory mapped on specified address
  *
  ******************************************************************************/
-void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
+void GWENESIS_IRAM_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
   if ((address & 0xE00000) == 0xE00000) {
     WRITE16RAM(address, value);
     return;
@@ -935,7 +940,7 @@ void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value)
  *   Write an value as word to memory mapped on specified address
  *
  ******************************************************************************/
-void GWENESIS_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
+void GWENESIS_IRAM_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
 
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
     WRITE16RAM(address, (value >> 16) & 0xffff);

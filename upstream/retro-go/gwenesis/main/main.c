@@ -13,7 +13,7 @@
 #define AUDIO_OUTPUT_SAMPLE_RATE (GWENESIS_AUDIO_OUTPUT_RATE)
 #define AUDIO_BUFFER_LENGTH (GWENESIS_AUDIO_BUFFER_LENGTH_PAL + 8)
 
-extern unsigned char* VRAM;
+extern unsigned char *VRAM;
 extern int zclk;
 int system_clock;
 int scan_line;
@@ -28,7 +28,8 @@ int ym2612_clock;
 static FILE *savestate_fp = NULL;
 static int savestate_errors = 0;
 
-typedef enum {
+typedef enum
+{
     GWENESIS_AUDIO_MODE_FAST = 0,
     GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE = 1,
     GWENESIS_AUDIO_MODE_LITE_YM = 2,
@@ -74,7 +75,7 @@ static bool gwenesis_z80_enabled = true;
 #define GWENESIS_SURFACE_FORMAT RG_PIXEL_PAL565_BE
 #endif
 #define GWENESIS_AUDIO_RING_FRAMES 1024
-#define GWENESIS_AUDIO_TASK_STACK (4 * 1024)
+#define GWENESIS_AUDIO_TASK_STACK (4 * 1024 - 256)
 #define GWENESIS_AUDIO_STRETCH_MAX_FRAMES (AUDIO_BUFFER_LENGTH * 4)
 // --- MAIN
 
@@ -111,7 +112,8 @@ static void gwenesis_close_savestate(void)
         fclose(fp);
 }
 
-typedef struct {
+typedef struct
+{
     int64_t last_log_us;
     int64_t total_us;
     int64_t m68k_us;
@@ -157,8 +159,8 @@ static void gwenesis_profiler_maybe_log(void)
                              gwenesis_profiler.vdp_us + gwenesis_profiler.display_us +
                              gwenesis_profiler.audio_us;
     const int64_t other_us = gwenesis_profiler.total_us > known_us
-        ? gwenesis_profiler.total_us - known_us
-        : 0;
+                                 ? gwenesis_profiler.total_us - known_us
+                                 : 0;
 
     RG_LOGI("gwen prof: mode=%s frames=%u draw=%u avg=%dus "
             "m68k=%d%% z80=%d%% ym=%d%% sn=%d%% vdp=%d%% disp=%d%% aud=%d%% other=%d%% dskip=%u "
@@ -231,7 +233,7 @@ static void gwenesis_audio_task(void *arg)
 
     while (gwenesis_audio_task_running ||
            __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE) !=
-           __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE))
+               __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE))
     {
         uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_RELAXED);
         const uint32_t write = __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE);
@@ -346,8 +348,8 @@ static size_t gwenesis_audio_submit_frame(size_t count, int64_t frame_us)
         rg_audio_frame_t *out = gwenesis_audio_stretch_buffer;
         uint32_t pos = 0;
         const uint32_t step = (count > 1 && output_count > 1)
-            ? (uint32_t)(((uint64_t)(count - 1) << 16) / (output_count - 1))
-            : 0;
+                                  ? (uint32_t)(((uint64_t)(count - 1) << 16) / (output_count - 1))
+                                  : 0;
 
         for (size_t i = 0; i < output_count; ++i)
         {
@@ -386,7 +388,8 @@ static size_t gwenesis_audio_submit_frame(size_t count, int64_t frame_us)
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static void gwenesis_clear_surface(void)
 {
-    if (currentUpdate && currentUpdate->data) {
+    if (currentUpdate && currentUpdate->data)
+    {
         memset(currentUpdate->data, 0, currentUpdate->stride * GWENESIS_SURFACE_HEIGHT);
     }
 }
@@ -443,34 +446,35 @@ static void gwenesis_cleanup(void)
     gwenesis_bus_deinit_fast_ram();
 }
 
-typedef struct {
+typedef struct
+{
     char key[28];
     uint32_t length;
 } svar_t;
 
-SaveState* saveGwenesisStateOpenForRead(const char* fileName)
+SaveState *saveGwenesisStateOpenForRead(const char *fileName)
 {
-    return (void*)1;
+    return (void *)1;
 }
 
-SaveState* saveGwenesisStateOpenForWrite(const char* fileName)
+SaveState *saveGwenesisStateOpenForWrite(const char *fileName)
 {
-    return (void*)1;
+    return (void *)1;
 }
 
-int saveGwenesisStateGet(SaveState* state, const char* tagName)
+int saveGwenesisStateGet(SaveState *state, const char *tagName)
 {
     int value = 0;
     saveGwenesisStateGetBuffer(state, tagName, &value, sizeof(int));
     return value;
 }
 
-void saveGwenesisStateSet(SaveState* state, const char* tagName, int value)
+void saveGwenesisStateSet(SaveState *state, const char *tagName, int value)
 {
     saveGwenesisStateSetBuffer(state, tagName, &value, sizeof(int));
 }
 
-void saveGwenesisStateGetBuffer(SaveState* state, const char* tagName, void* buffer, int length)
+void saveGwenesisStateGetBuffer(SaveState *state, const char *tagName, void *buffer, int length)
 {
     size_t initial_pos = ftell(savestate_fp);
     bool from_start = false;
@@ -501,7 +505,7 @@ void saveGwenesisStateGetBuffer(SaveState* state, const char* tagName, void* buf
     savestate_errors++;
 }
 
-void saveGwenesisStateSetBuffer(SaveState* state, const char* tagName, void* buffer, int length)
+void saveGwenesisStateSetBuffer(SaveState *state, const char *tagName, void *buffer, int length)
 {
     // TO DO: seek the file to find if the key already exists. It's possible it could be written twice.
     svar_t var = {{0}, length};
@@ -514,7 +518,6 @@ void saveGwenesisStateSetBuffer(SaveState* state, const char* tagName, void* buf
 void gwenesis_io_get_buttons()
 {
 }
-
 
 static rg_gui_event_t audio_mode_update_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
@@ -624,7 +627,8 @@ void app_main(void)
 #if GWENESIS_AUDIO_EMULATION
     gwenesis_audio_mode = rg_settings_get_number(NS_APP, SETTING_AUDIO_MODE, GWENESIS_AUDIO_MODE_FAST);
     if (gwenesis_audio_mode < GWENESIS_AUDIO_MODE_FAST ||
-        gwenesis_audio_mode > GWENESIS_AUDIO_MODE_LITE_YM) {
+        gwenesis_audio_mode > GWENESIS_AUDIO_MODE_LITE_YM)
+    {
         gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
     }
 #else
@@ -716,7 +720,7 @@ void app_main(void)
     RG_LOGI("mod frameskip: audio=%d (~20fps), muted=%d (~30fps)\n", full_frameskip, muted_frameskip);
 
     extern unsigned char *gwenesis_vdp_regs;
-    extern unsigned int gwenesis_vdp_status;
+    extern unsigned short gwenesis_vdp_status;
     extern unsigned short *CRAM565;
     extern unsigned int screen_width, screen_height;
     extern int hint_pending;
@@ -794,7 +798,8 @@ void app_main(void)
         screen_height = REG1_PAL ? 240 : 224;
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-        if (screen_width != last_screen_width || screen_height != last_screen_height) {
+        if (screen_width != last_screen_width || screen_height != last_screen_height)
+        {
             gwenesis_clear_surface();
             last_screen_width = screen_width;
             last_screen_height = screen_height;
@@ -847,10 +852,11 @@ void app_main(void)
 
             /* Audio */
             /*  GWENESIS_AUDIO_ACCURATE:
-            *    =1 : cycle accurate mode. audio is refreshed when CPUs are performing a R/W access
-            *    =0 : line  accurate mode. audio is refreshed every lines.
-            */
-            if (GWENESIS_AUDIO_ACCURATE == 0) {
+             *    =1 : cycle accurate mode. audio is refreshed when CPUs are performing a R/W access
+             *    =0 : line  accurate mode. audio is refreshed every lines.
+             */
+            if (GWENESIS_AUDIO_ACCURATE == 0)
+            {
                 if (sn76489_run_enabled)
                 {
                     prof_start = rg_system_timer();
@@ -874,7 +880,8 @@ void app_main(void)
             }
 
             // On these lines, the line counter interrupt is reloaded
-            if ((scan_line == 0) || (scan_line > screen_height)) {
+            if ((scan_line == 0) || (scan_line > screen_height))
+            {
                 //  if (REG0_LINE_INTERRUPT != 0)
                 //    printf("HINTERRUPT counter reloaded: (scan_line: %d, new
                 //    counter: %d)\n", scan_line, REG10_LINE_COUNTER);
@@ -882,12 +889,14 @@ void app_main(void)
             }
 
             // interrupt line counter
-            if (--hint_counter < 0) {
-                if ((REG0_LINE_INTERRUPT != 0) && (scan_line <= screen_height)) {
+            if (--hint_counter < 0)
+            {
+                if ((REG0_LINE_INTERRUPT != 0) && (scan_line <= screen_height))
+                {
                     hint_pending = 1;
                     // printf("Line int pending %d\n",scan_line);
                     if ((gwenesis_vdp_status & STATUS_VIRQPENDING) == 0)
-                    m68k_update_irq(4);
+                        m68k_update_irq(4);
                 }
                 hint_counter = REG10_LINE_COUNTER;
             }
@@ -895,15 +904,18 @@ void app_main(void)
             scan_line++;
 
             // vblank begin at the end of last rendered line
-            if (scan_line == screen_height) {
-                if (REG1_VBLANK_INTERRUPT != 0) {
+            if (scan_line == screen_height)
+            {
+                if (REG1_VBLANK_INTERRUPT != 0)
+                {
                     gwenesis_vdp_status |= STATUS_VIRQPENDING;
                     m68k_set_irq(6);
                 }
                 if (z80_run_enabled)
                     z80_irq_line(1);
             }
-            if (scan_line == (screen_height + 1)) {
+            if (scan_line == (screen_height + 1))
+            {
                 if (z80_run_enabled)
                     z80_irq_line(0);
             }
@@ -912,10 +924,11 @@ void app_main(void)
         }
 
         /* Audio
-        * synchronize YM2612 and SN76489 to system_clock
-        * it completes the missing audio sample for accurate audio mode
-        */
-        if (GWENESIS_AUDIO_ACCURATE == 1) {
+         * synchronize YM2612 and SN76489 to system_clock
+         * it completes the missing audio sample for accurate audio mode
+         */
+        if (GWENESIS_AUDIO_ACCURATE == 1)
+        {
             if (sn76489_run_enabled)
                 gwenesis_SN76489_run(system_clock);
             if (yfm_run_enabled)

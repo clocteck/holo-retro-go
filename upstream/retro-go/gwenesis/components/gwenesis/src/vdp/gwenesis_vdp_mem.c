@@ -36,6 +36,11 @@ __license__ = "GPLv3"
 #include <assert.h>
 
 #define GWENESIS_HOT
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_IRAM_HOT __attribute__((section(".mod_iram"), noinline, used))
+#else
+#define GWENESIS_IRAM_HOT GWENESIS_HOT
+#endif
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
@@ -229,7 +234,7 @@ void gwenesis_vdp_reset() {
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-int GWENESIS_HOT gwenesis_vdp_hcounter()
+int GWENESIS_IRAM_HOT gwenesis_vdp_hcounter()
 {
     int mclk = m68k_cycles_run() ;
     int pixclk;
@@ -261,7 +266,7 @@ int GWENESIS_HOT gwenesis_vdp_hcounter()
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-int GWENESIS_HOT gwenesis_vdp_vcounter()
+int GWENESIS_IRAM_HOT gwenesis_vdp_vcounter()
 {
 
     int vc = scan_line;
@@ -294,7 +299,7 @@ int GWENESIS_HOT gwenesis_vdp_vcounter()
  *
  ******************************************************************************/
 //static inline __attribute__((always_inline))
-unsigned short GWENESIS_HOT gwenesis_vdp_hvcounter()
+unsigned short GWENESIS_IRAM_HOT gwenesis_vdp_hvcounter()
 {
     /* H/V Counter */
     if (hvcounter_latched == 1)
@@ -310,7 +315,7 @@ unsigned short GWENESIS_HOT gwenesis_vdp_hvcounter()
 }
 
 //static inline __attribute__((always_inline))
-bool GWENESIS_HOT vblank(void)
+bool GWENESIS_IRAM_HOT vblank(void)
 {
     int vc = gwenesis_vdp_vcounter();
  //  printf("vc=%d,REG1_DISP_ENABLED=%d,VBLAN?%d\n",vc,REG1_DISP_ENABLED,

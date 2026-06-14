@@ -359,7 +359,7 @@ static bool load_state_handler(const char *filename)
 
 static bool reset_handler(bool hard)
 {
-    ResetMSX(Mode,RAMPages,VRAMPages);
+    ResetMSX(Mode, RAMPages, VRAMPages);
     return true;
 }
 
@@ -413,7 +413,7 @@ static void audioTask(void *arg)
 static void options_handler(rg_gui_option_t *dest)
 {
     *dest++ = (rg_gui_option_t){0, _("Input"), "-", RG_DIALOG_FLAG_NORMAL, &input_select_cb};
-    *dest++ = (rg_gui_option_t){0, _("Crop"),  "-", RG_DIALOG_FLAG_NORMAL, &crop_select_cb};
+    *dest++ = (rg_gui_option_t){0, _("Crop"), "-", RG_DIALOG_FLAG_NORMAL, &crop_select_cb};
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
@@ -447,7 +447,7 @@ void app_main(void)
         {
             char message[512];
             snprintf(message, 512, "File: %s\nYou can find it at:\n%s",
-                        rg_relpath(pathbuf), "https://fms.komkon.org/fMSX/");
+                     rg_relpath(pathbuf), "https://fms.komkon.org/fMSX/");
             rg_gui_alert(_("BIOS file missing!"), message);
         }
     }
@@ -459,12 +459,19 @@ void app_main(void)
 
     const char *argv[] = {
         "fmsx",
-        "-ram", "2",
-        "-vram", "2",
-        "-skip", "50",
-        "-home", BiosFolder,
-        "-joy", "1",
-        NULL, NULL, NULL,
+        "-ram",
+        "2",
+        "-vram",
+        "2",
+        "-skip",
+        "50",
+        "-home",
+        BiosFolder,
+        "-joy",
+        "1",
+        NULL,
+        NULL,
+        NULL,
     };
     int argc = RG_COUNT(argv) - 3;
 
@@ -474,7 +481,7 @@ void app_main(void)
     }
     argv[argc++] = app->romPath;
 
-    audioQueue = rg_task_create("audioTask", &audioTask, NULL, 4096, RG_TASK_PRIORITY_2, 1);
+    audioQueue = rg_task_create("audioTask", &audioTask, NULL, 4096 - 256, RG_TASK_PRIORITY_2, 1);
 
     RG_LOGI("fMSX start");
     fmsx_main(argc, (char **)argv);

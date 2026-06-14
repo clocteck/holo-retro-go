@@ -49,7 +49,7 @@ static rg_battery_t battery_state = {0};
 
 #define UPDATE_GLOBAL_MAP(keymap)                 \
     for (size_t i = 0; i < RG_COUNT(keymap); ++i) \
-        gamepad_mapped |= keymap[i].key;          \
+        gamepad_mapped |= keymap[i].key;
 
 #ifdef ESP_PLATFORM
 static inline int adc_get_raw(adc_unit_t unit, adc_channel_t channel)
@@ -368,7 +368,7 @@ void rg_input_init(void)
     rg_input_read_gamepad_raw(NULL);
 
     // Start background polling
-    rg_task_create("rg_input", &input_task, NULL, 7 * 512, RG_TASK_PRIORITY_6, 1);
+    rg_task_create("rg_input", &input_task, NULL, 6 * 512, RG_TASK_PRIORITY_6, 1);
     while (gamepad_state == -1)
         rg_task_yield();
     RG_LOGI("Input ready. state=" PRINTF_BINARY_16 "\n", PRINTF_BINVAL_16(gamepad_state));
@@ -421,21 +421,37 @@ const char *rg_input_get_key_name(rg_key_t key)
 {
     switch (key)
     {
-    case RG_KEY_UP: return "Up";
-    case RG_KEY_RIGHT: return "Right";
-    case RG_KEY_DOWN: return "Down";
-    case RG_KEY_LEFT: return "Left";
-    case RG_KEY_SELECT: return "Select";
-    case RG_KEY_START: return "Start";
-    case RG_KEY_MENU: return "Menu";
-    case RG_KEY_OPTION: return "Option";
-    case RG_KEY_A: return "A";
-    case RG_KEY_B: return "B";
-    case RG_KEY_X: return "X";
-    case RG_KEY_Y: return "Y";
-    case RG_KEY_L: return "Left Shoulder";
-    case RG_KEY_R: return "Right Shoulder";
-    case RG_KEY_NONE: return "None";
-    default: return "Unknown";
+    case RG_KEY_UP:
+        return "Up";
+    case RG_KEY_RIGHT:
+        return "Right";
+    case RG_KEY_DOWN:
+        return "Down";
+    case RG_KEY_LEFT:
+        return "Left";
+    case RG_KEY_SELECT:
+        return "Select";
+    case RG_KEY_START:
+        return "Start";
+    case RG_KEY_MENU:
+        return "Menu";
+    case RG_KEY_OPTION:
+        return "Option";
+    case RG_KEY_A:
+        return "A";
+    case RG_KEY_B:
+        return "B";
+    case RG_KEY_X:
+        return "X";
+    case RG_KEY_Y:
+        return "Y";
+    case RG_KEY_L:
+        return "Left Shoulder";
+    case RG_KEY_R:
+        return "Right Shoulder";
+    case RG_KEY_NONE:
+        return "None";
+    default:
+        return "Unknown";
     }
 }
