@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 12) // In pixels
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 10) // In pixels
 
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;

@@ -721,6 +721,12 @@ void ym2612_set_lite_mode(bool enabled)
   ym2612_lite_mode = enabled;
 }
 
+void ym2612_set_divisor(int divisor)
+{
+  if (divisor > 0)
+    ym2612.divisor = divisor;
+}
+
 INLINE void FM_KEYON(FM_CH *CH , int s )
 {
   FM_SLOT *SLOT = &CH->SLOT[s];

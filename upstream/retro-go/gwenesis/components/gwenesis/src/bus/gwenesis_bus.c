@@ -79,6 +79,7 @@ unsigned char *M68K_RAM=(void *)(uint32_t)(0); // 68K RAM
 
 unsigned char *ROM_DATA; // 68K Main Program (uncompressed)
 unsigned int ROM_MASK = MAX_ROM_SIZE - 1;
+unsigned int ROM_SIZE;
 unsigned char *CART_SRAM_DATA;
 unsigned int CART_SRAM_START = MAX_ROM_SIZE;
 unsigned int CART_SRAM_END = 0;
@@ -288,25 +289,10 @@ static void gwenesis_rom_finalize(size_t size)
     }
 
     const size_t mirror_size = gwenesis_rom_mirror_size(size);
-    const size_t alloc_size = mirror_size + sizeof(uint32_t);
-    unsigned char *rom = realloc(ROM_DATA, alloc_size);
-
-#if defined(RETRO_GO)
-    if (!rom)
-        RG_PANIC("Genesis ROM mirror allocation failed!");
-#else
-    assert(rom);
-    if (!rom)
-        return;
-#endif
-
-    ROM_DATA = rom;
+    ROM_SIZE = (unsigned int)size;
     ROM_MASK = (unsigned int)(mirror_size - 1);
 
-    for (size_t i = size; i < alloc_size; ++i)
-        ROM_DATA[i] = ROM_DATA[i % size];
-
-    printf("Genesis ROM size=%u mirror=%u mask=0x%06x\n",
+    printf("Genesis ROM size=%u virtual_mirror=%u mask=0x%06x\n",
            (unsigned)size, (unsigned)mirror_size, ROM_MASK);
 }
 
@@ -384,6 +370,7 @@ void unload_cartridge(void)
         ROM_DATA = NULL;
     }
     ROM_MASK = MAX_ROM_SIZE - 1;
+    ROM_SIZE = 0;
     gwenesis_sram_reset();
 }
 

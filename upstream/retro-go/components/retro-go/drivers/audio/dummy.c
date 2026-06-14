@@ -34,7 +34,7 @@ const rg_audio_driver_t rg_audio_driver_dummy = {
 
 #include "holo_port.h"
 
-#define HOLO_AUDIO_BUFFER_FRAMES 180
+#define HOLO_AUDIO_BUFFER_FRAMES 256
 
 static struct {
     const char *last_error;

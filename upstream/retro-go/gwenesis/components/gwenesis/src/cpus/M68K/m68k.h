@@ -155,6 +155,7 @@
 
 	extern unsigned char *ROM_DATA;
 	extern unsigned int ROM_MASK;
+	extern unsigned int ROM_SIZE;
 	extern unsigned char *CART_SRAM_DATA;
 	extern unsigned int CART_SRAM_START;
 	extern unsigned int CART_SRAM_END;
@@ -163,6 +164,7 @@
 
 	extern unsigned char *ROM_DATA;
 	extern unsigned int ROM_MASK;
+	extern unsigned int ROM_SIZE;
 	extern unsigned char *CART_SRAM_DATA;
 	extern unsigned int CART_SRAM_START;
 	extern unsigned int CART_SRAM_END;
@@ -170,9 +172,42 @@
 #endif
 
 #define CART_SRAM_TOUCHES(A, S) (CART_SRAM_DATA && ((unsigned int)(A) <= CART_SRAM_END) && (((unsigned int)(A) + ((S) - 1)) >= CART_SRAM_START))
-#define FETCH8ROM(A) ((ROM_DATA[(((A) & ROM_MASK) ^ 1)]))
-#define FETCH16ROM(A) ((*(unsigned short *)&ROM_DATA[((A) & ROM_MASK)]))
-#define FETCH32ROM(A) ( (*(unsigned int *)&ROM_DATA[((A) & ROM_MASK)] << 16) | (*(unsigned int *)&ROM_DATA[((A) & ROM_MASK)] >> 16) )
+
+static inline unsigned char gwenesis_fetch_rom_byte(unsigned int offset)
+{
+	if (ROM_SIZE == 0)
+		return 0xff;
+	return ROM_DATA[offset < ROM_SIZE ? offset : (offset % ROM_SIZE)];
+}
+
+static inline unsigned int gwenesis_fetch8rom(unsigned int address)
+{
+	unsigned int offset = ((address & ROM_MASK) ^ 1);
+	return gwenesis_fetch_rom_byte(offset);
+}
+
+static inline unsigned int gwenesis_fetch16rom(unsigned int address)
+{
+	unsigned int offset = address & ROM_MASK;
+	if (ROM_SIZE != 0 && offset + 1 < ROM_SIZE)
+		return *(unsigned short *)&ROM_DATA[offset];
+	return gwenesis_fetch_rom_byte(offset) | (gwenesis_fetch_rom_byte(offset + 1) << 8);
+}
+
+static inline unsigned int gwenesis_fetch32rom(unsigned int address)
+{
+	unsigned int offset = address & ROM_MASK;
+	if (ROM_SIZE != 0 && offset + 3 < ROM_SIZE)
+	{
+		unsigned int value = *(unsigned int *)&ROM_DATA[offset];
+		return (value << 16) | (value >> 16);
+	}
+	return (gwenesis_fetch16rom(address) << 16) | gwenesis_fetch16rom(address + 2);
+}
+
+#define FETCH8ROM(A) gwenesis_fetch8rom((A))
+#define FETCH16ROM(A) gwenesis_fetch16rom((A))
+#define FETCH32ROM(A) gwenesis_fetch32rom((A))
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
 
