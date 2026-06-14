@@ -19,7 +19,6 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 #define MODULE_PATH_MAX 160u
 
 #define MODULE_SYMBOL_QUERY_V1 "module_query_v1"
-#define MODULE_SYMBOL_CREATE_V1 "module_create_v1"
 #define MODULE_SYMBOL_CREATE_V2 "module_create_v2"
 #define MODULE_SYMBOL_LUAOPEN_V1 "module_luaopen_v1"
 #define MODULE_SYMBOL_DESTROY_V1 "module_destroy_v1"
@@ -50,6 +49,7 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 
 #define MODULE_PROC_DISPLAY_WIDTH_V1 0x00040001u
 #define MODULE_PROC_DISPLAY_HEIGHT_V1 0x00040002u
+#define MODULE_PROC_DISPLAY_GET_CAPS_V1 0x00040003u
 #define MODULE_PROC_DISPLAY_ACQUIRE_V1 0x00040004u
 #define MODULE_PROC_DISPLAY_RELEASE_V1 0x00040005u
 #define MODULE_PROC_DISPLAY_START_WRITE_V1 0x00040006u
@@ -121,6 +121,51 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 #define MODULE_PROC_LUA_CHECKLSTRING_V1 0x00090025u
 #define MODULE_PROC_LUA_PUSHLSTRING_V1 0x00090026u
 
+#define MODULE_PROC_I2S_BEGIN_V1 0x000A0001u
+#define MODULE_PROC_I2S_WRITE_V1 0x000A0002u
+#define MODULE_PROC_I2S_READ_V1 0x000A0003u
+#define MODULE_PROC_I2S_AVAILABLE_FOR_WRITE_V1 0x000A0004u
+#define MODULE_PROC_I2S_FLUSH_V1 0x000A0005u
+#define MODULE_PROC_I2S_MUTE_V1 0x000A0006u
+#define MODULE_PROC_I2S_END_V1 0x000A0007u
+
+#define MODULE_PROC_DIAG_UPDATE_CONTEXT_V1 0x000B0001u
+#define MODULE_PROC_DIAG_SET_ROM_PATH_V1 0x000B0002u
+#define MODULE_PROC_DIAG_HEARTBEAT_V1 0x000B0003u
+
+#define DYNMOD_LAST_CONTEXT_MAGIC 0x4D4F4443u /* "MODC" */
+#define DYNMOD_LAST_CONTEXT_VERSION 1u
+#define DYNMOD_LAST_MODULE_PATH_MAX 128u
+#define DYNMOD_LAST_ROM_PATH_MAX 160u
+
+typedef struct dynmod_last_context_t {
+    uint32_t magic;
+    uint32_t version;
+
+    char module_name[MODULE_NAME_MAX];
+    char module_path[DYNMOD_LAST_MODULE_PATH_MAX];
+    char rom_path[DYNMOD_LAST_ROM_PATH_MAX];
+
+    uintptr_t text_start;
+    uintptr_t text_end;
+    uintptr_t data_start;
+    uintptr_t data_end;
+    uintptr_t psram_start;
+    uintptr_t psram_end;
+
+    uint32_t mapper;
+    uint32_t frame;
+    uint32_t scanline;
+    uint16_t cpu_pc;
+    uint8_t cpu_a;
+    uint8_t cpu_x;
+    uint8_t cpu_y;
+    uint8_t cpu_p;
+    uint8_t cpu_sp;
+
+    uint32_t heartbeat_ms;
+} dynmod_last_context_t;
+
 typedef enum module_error_t {
     MODULE_OK = 0,
     MODULE_ERR_FAILED = -1,
@@ -186,30 +231,6 @@ typedef enum module_i2s_flags_t {
     MODULE_I2S_FLAG_AUTO_CLEAR_TX = 1u << 1,
 } module_i2s_flags_t;
 
-typedef enum module_gamepad_button_t {
-    MODULE_GAMEPAD_A = 1u << 0,
-    MODULE_GAMEPAD_B = 1u << 1,
-    MODULE_GAMEPAD_SELECT = 1u << 2,
-    MODULE_GAMEPAD_START = 1u << 3,
-    MODULE_GAMEPAD_UP = 1u << 4,
-    MODULE_GAMEPAD_DOWN = 1u << 5,
-    MODULE_GAMEPAD_LEFT = 1u << 6,
-    MODULE_GAMEPAD_RIGHT = 1u << 7,
-    MODULE_GAMEPAD_X = 1u << 8,
-    MODULE_GAMEPAD_Y = 1u << 9,
-    MODULE_GAMEPAD_L = 1u << 10,
-    MODULE_GAMEPAD_R = 1u << 11,
-    MODULE_GAMEPAD_HOME = 1u << 12,
-    MODULE_GAMEPAD_MENU = 1u << 13,
-} module_gamepad_button_t;
-
-typedef enum module_input_event_type_t {
-    MODULE_INPUT_NONE = 0,
-    MODULE_INPUT_GAMEPAD = 1,
-    MODULE_INPUT_KEY = 2,
-    MODULE_INPUT_TOUCH = 3,
-} module_input_event_type_t;
-
 typedef struct module_manifest_t {
     uint32_t magic;
     uint32_t abi_version;
@@ -262,16 +283,6 @@ typedef struct module_display_chunk_t {
     uint32_t pitch_bytes;
     uint32_t pixel_format;
 } module_display_chunk_t;
-
-typedef struct module_gamepad_event_t {
-    uint32_t size;
-    uint32_t type;
-    uint8_t player;
-    uint8_t pressed;
-    uint16_t reserved;
-    uint32_t mask;
-    uint32_t changed;
-} module_gamepad_event_t;
 
 typedef struct module_audio_desc_t {
     uint32_t size;
@@ -333,16 +344,13 @@ typedef struct module_file_api_t {
     int32_t (*size_bytes)(void *file, uint64_t *out_size);
     int32_t (*flush)(void *file);
     int32_t (*is_directory)(void *file, int32_t *out_is_directory);
-    int32_t (*openNextFile)(void *dir, void **out_entry);
-    int32_t (*name)(void *file, char *buf, size_t buf_len, size_t *out_len);
-    int32_t (*file_size)(void *file, uint64_t *out_size);
-    int32_t (*isDirectory)(void *file, int32_t *out_is_directory);
 } module_file_api_t;
 
 typedef struct module_display_api_t {
     uint32_t size;
     int32_t (*width)(void);
     int32_t (*height)(void);
+    int32_t (*get_caps)(module_display_caps_t *out_caps);
     int32_t (*acquire)(const char *owner, const module_display_desc_t *desc, void **out_surface);
     int32_t (*release)(void *surface);
     int32_t (*startWrite)(void *surface);
@@ -374,12 +382,6 @@ typedef struct module_i2s_api_t {
     int32_t (*mute)(void *stream);
     int32_t (*end)(void *stream);
 } module_i2s_api_t;
-
-typedef struct module_gamepad_api_t {
-    uint32_t size;
-    int32_t (*poll_event)(module_gamepad_event_t *out_event, uint32_t timeout_ms);
-    int32_t (*set_focus)(const char *owner, int32_t enabled);
-} module_gamepad_api_t;
 
 typedef struct module_time_api_t {
     uint32_t size;
@@ -454,6 +456,13 @@ typedef struct module_lua_api_t {
     void (*pushlstring)(lua_State *L, const char *data, size_t len);
 } module_lua_api_t;
 
+typedef struct module_diag_api_t {
+    uint32_t size;
+    int32_t (*update_context)(const dynmod_last_context_t *ctx);
+    int32_t (*set_rom_path)(const char *rom_path);
+    void (*heartbeat)(void);
+} module_diag_api_t;
+
 typedef struct module_host_api_v1 {
     uint32_t abi_version;
     uint32_t size;
@@ -462,19 +471,16 @@ typedef struct module_host_api_v1 {
     module_file_api_t file;
     module_display_api_t display;
     module_audio_api_t audio;
-    module_gamepad_api_t gamepad;
     module_time_api_t time;
     module_heap_api_t heap;
     module_task_api_t task;
     module_lua_api_t lua;
     module_i2s_api_t i2s;
+    module_diag_api_t diag;
 } module_host_api_v1;
 
 typedef const module_manifest_t *(*module_query_v1_fn)(void);
 typedef int32_t (*module_host_resolve_v1_fn)(void *resolve_ctx, uint32_t proc_id, void **out_proc);
-typedef int32_t (*module_create_v1_fn)(const module_host_api_v1 *host,
-                                       const module_open_info_t *info,
-                                       void **out_instance);
 typedef int32_t (*module_create_v2_fn)(module_host_resolve_v1_fn resolve,
                                        void *resolve_ctx,
                                        const module_open_info_t *info,
@@ -485,3 +491,210 @@ typedef void (*module_destroy_v1_fn)(void *instance);
 #ifdef __cplusplus
 }
 #endif
+
+/**
+ * @brief Resolve one required host function by stable procedure ID.
+ */
+static inline int32_t module_sdk_resolve_required_v1(module_host_resolve_v1_fn resolve,
+                                                     void *resolve_ctx,
+                                                     uint32_t proc_id,
+                                                     void **out_proc)
+{
+    int32_t err = MODULE_OK;
+    if (!resolve || !out_proc)
+    {
+        return MODULE_ERR_INVALID_ARG;
+    }
+
+    *out_proc = NULL;
+    err = resolve(resolve_ctx, proc_id, out_proc);
+    if (err != MODULE_OK)
+    {
+        return err;
+    }
+    return *out_proc ? MODULE_OK : MODULE_ERR_UNSUPPORTED;
+}
+
+/**
+ * @brief Clear a module-local host table without depending on libc memset.
+ */
+static inline void module_sdk_zero_host_v1(module_host_api_v1 *out)
+{
+    unsigned char *p = NULL;
+    size_t i = 0;
+    if (!out)
+    {
+        return;
+    }
+    p = (unsigned char *)out;
+    for (i = 0; i < sizeof(*out); ++i)
+    {
+        p[i] = 0;
+    }
+}
+
+#ifdef __cplusplus
+#define MODULE_SDK_CAST_PROC(slot, proc) reinterpret_cast<decltype(slot)>(proc)
+#else
+#define MODULE_SDK_CAST_PROC(slot, proc) ((__typeof__(slot))(proc))
+#endif
+
+#define MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, proc_id, slot) \
+    do                                                                 \
+    {                                                                  \
+        void *_module_sdk_proc = NULL;                                 \
+        int32_t _module_sdk_err = module_sdk_resolve_required_v1(      \
+            (resolve), (resolve_ctx), (proc_id), &_module_sdk_proc);   \
+        if (_module_sdk_err != MODULE_OK)                              \
+        {                                                              \
+            return _module_sdk_err;                                    \
+        }                                                              \
+        (slot) = MODULE_SDK_CAST_PROC(slot, _module_sdk_proc);         \
+    } while (0)
+
+/**
+ * @brief Build the module-local host table from stable host procedure IDs.
+ *
+ * The table is owned by the .so, so its field order is no longer part of the
+ * firmware/module boundary. Old modules keep using the layout they compiled
+ * with while the firmware only promises the stable MODULE_PROC_* IDs.
+ */
+static inline int32_t module_sdk_resolve_host_v1(module_host_resolve_v1_fn resolve,
+                                                 void *resolve_ctx,
+                                                 module_host_api_v1 *out)
+{
+    if (!out)
+    {
+        return MODULE_ERR_INVALID_ARG;
+    }
+
+    module_sdk_zero_host_v1(out);
+    out->abi_version = MODULE_SDK_VERSION;
+    out->size = sizeof(*out);
+
+    out->serial.size = sizeof(out->serial);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_WRITE_V1, out->serial.write);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINT_V1, out->serial.print);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINTLN_V1, out->serial.println);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_FLUSH_V1, out->serial.flush);
+
+    out->sd.size = sizeof(out->sd);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_BEGIN_V1, out->sd.begin);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MOUNTED_V1, out->sd.mounted);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MOUNT_POINT_V1, out->sd.mount_point);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_EXISTS_V1, out->sd.exists);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MKDIR_V1, out->sd.mkdir);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_REMOVE_V1, out->sd.remove);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_RENAME_V1, out->sd.rename);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_OPEN_V1, out->sd.open);
+
+    out->file.size = sizeof(out->file);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_CLOSE_V1, out->file.close);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_AVAILABLE_V1, out->file.available);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_READ_V1, out->file.read);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_WRITE_V1, out->file.write);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_SEEK_V1, out->file.seek);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_POSITION_V1, out->file.position);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_SIZE_BYTES_V1, out->file.size_bytes);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_FLUSH_V1, out->file.flush);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_IS_DIRECTORY_V1, out->file.is_directory);
+
+    out->display.size = sizeof(out->display);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_WIDTH_V1, out->display.width);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_HEIGHT_V1, out->display.height);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_GET_CAPS_V1, out->display.get_caps);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_ACQUIRE_V1, out->display.acquire);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_RELEASE_V1, out->display.release);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_START_WRITE_V1, out->display.startWrite);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_IMAGE_DMA_V1, out->display.pushImageDMA);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_END_WRITE_V1, out->display.endWrite);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_FILL_SCREEN_V1, out->display.fillScreen);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_SET_ADDR_WINDOW_V1, out->display.setAddrWindow);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_PIXELS_DMA_V1, out->display.pushPixelsDMA);
+
+    out->audio.size = sizeof(out->audio);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_BEGIN_V1, out->audio.begin);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_WRITE_V1, out->audio.write);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_AVAILABLE_V1, out->audio.available);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_END_V1, out->audio.end);
+
+    out->time.size = sizeof(out->time);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_MILLIS_V1, out->time.millis);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_MICROS_V1, out->time.micros);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_DELAY_V1, out->time.delay);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_YIELD_V1, out->time.yield);
+
+    out->heap.size = sizeof(out->heap);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_MALLOC_V1, out->heap.malloc);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_CALLOC_V1, out->heap.calloc);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_REALLOC_V1, out->heap.realloc);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_V1, out->heap.free);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_SIZE_V1, out->heap.free_size);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_LARGEST_FREE_BLOCK_V1, out->heap.largest_free_block);
+
+    out->task.size = sizeof(out->task);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_V1, out->task.create);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_REMOVE_V1, out->task.remove);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_YIELD_V1, out->task.yield);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_DELAY_V1, out->task.delay);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_EX_V1, out->task.create_ex);
+
+    out->lua.size = sizeof(out->lua);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETTOP_V1, out->lua.gettop);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETTOP_V1, out->lua.settop);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TYPE_V1, out->lua.type);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISTABLE_V1, out->lua.istable);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISNIL_V1, out->lua.isnil);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISNUMBER_V1, out->lua.isnumber);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISSTRING_V1, out->lua.isstring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOBOOLEAN_V1, out->lua.toboolean);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOINTEGER_V1, out->lua.tointeger);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TONUMBER_V1, out->lua.tonumber);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOSTRING_V1, out->lua.tostring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKINTEGER_V1, out->lua.checkinteger);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKNUMBER_V1, out->lua.checknumber);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKSTRING_V1, out->lua.checkstring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOUSERDATA_V1, out->lua.touserdata);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNIL_V1, out->lua.pushnil);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHBOOLEAN_V1, out->lua.pushboolean);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHINTEGER_V1, out->lua.pushinteger);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNUMBER_V1, out->lua.pushnumber);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHSTRING_V1, out->lua.pushstring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLIGHTUSERDATA_V1, out->lua.pushlightuserdata);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCFUNCTION_V1, out->lua.pushcfunction);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCCLOSURE_V1, out->lua.pushcclosure);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHVALUE_V1, out->lua.pushvalue);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_NEWTABLE_V1, out->lua.newtable);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CREATETABLE_V1, out->lua.createtable);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETFIELD_V1, out->lua.getfield);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETFIELD_V1, out->lua.setfield);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETGLOBAL_V1, out->lua.getglobal);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETGLOBAL_V1, out->lua.setglobal);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_REF_V1, out->lua.registry_ref);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_UNREF_V1, out->lua.registry_unref);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_RAWGETI_V1, out->lua.registry_rawgeti);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_UPVALUE_INDEX_V1, out->lua.upvalue_index);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ERROR_V1, out->lua.error);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOLSTRING_V1, out->lua.tolstring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKLSTRING_V1, out->lua.checklstring);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLSTRING_V1, out->lua.pushlstring);
+
+    out->i2s.size = sizeof(out->i2s);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_BEGIN_V1, out->i2s.begin);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_WRITE_V1, out->i2s.write);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_READ_V1, out->i2s.read);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_AVAILABLE_FOR_WRITE_V1, out->i2s.availableForWrite);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_FLUSH_V1, out->i2s.flush);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_MUTE_V1, out->i2s.mute);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_END_V1, out->i2s.end);
+
+    out->diag.size = sizeof(out->diag);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_UPDATE_CONTEXT_V1, out->diag.update_context);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_SET_ROM_PATH_V1, out->diag.set_rom_path);
+    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_HEARTBEAT_V1, out->diag.heartbeat);
+
+    return MODULE_OK;
+}
+
+#undef MODULE_SDK_RESOLVE_PROC_V1
+#undef MODULE_SDK_CAST_PROC

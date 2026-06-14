@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "../include/module_abi.h"
+#include "holo_gamepad_bits.h"
 
 static const module_host_api_v1 *s_host;
 static uint32_t s_input_source_mask;
@@ -38,46 +39,46 @@ static uint32_t nes_mask_to_rg_mask(uint32_t mask)
 {
     uint32_t out = 0;
 
-    if (mask & MODULE_GAMEPAD_A) {
+    if (mask & HOLO_MODULE_GAMEPAD_A) {
         out |= HOLO_RG_KEY_A;
     }
-    if (mask & MODULE_GAMEPAD_B) {
+    if (mask & HOLO_MODULE_GAMEPAD_B) {
         out |= HOLO_RG_KEY_B;
     }
-    if (mask & MODULE_GAMEPAD_SELECT) {
+    if (mask & HOLO_MODULE_GAMEPAD_SELECT) {
         out |= HOLO_RG_KEY_SELECT;
     }
-    if (mask & MODULE_GAMEPAD_START) {
+    if (mask & HOLO_MODULE_GAMEPAD_START) {
         out |= HOLO_RG_KEY_START;
     }
-    if (mask & MODULE_GAMEPAD_UP) {
+    if (mask & HOLO_MODULE_GAMEPAD_UP) {
         out |= HOLO_RG_KEY_UP;
     }
-    if (mask & MODULE_GAMEPAD_DOWN) {
+    if (mask & HOLO_MODULE_GAMEPAD_DOWN) {
         out |= HOLO_RG_KEY_DOWN;
     }
-    if (mask & MODULE_GAMEPAD_LEFT) {
+    if (mask & HOLO_MODULE_GAMEPAD_LEFT) {
         out |= HOLO_RG_KEY_LEFT;
     }
-    if (mask & MODULE_GAMEPAD_RIGHT) {
+    if (mask & HOLO_MODULE_GAMEPAD_RIGHT) {
         out |= HOLO_RG_KEY_RIGHT;
     }
-    if (mask & MODULE_GAMEPAD_X) {
+    if (mask & HOLO_MODULE_GAMEPAD_X) {
         out |= HOLO_RG_KEY_X;
     }
-    if (mask & MODULE_GAMEPAD_Y) {
+    if (mask & HOLO_MODULE_GAMEPAD_Y) {
         out |= HOLO_RG_KEY_Y;
     }
-    if (mask & MODULE_GAMEPAD_L) {
+    if (mask & HOLO_MODULE_GAMEPAD_L) {
         out |= HOLO_RG_KEY_L;
     }
-    if (mask & MODULE_GAMEPAD_R) {
+    if (mask & HOLO_MODULE_GAMEPAD_R) {
         out |= HOLO_RG_KEY_R;
     }
-    if (mask & MODULE_GAMEPAD_MENU) {
+    if (mask & HOLO_MODULE_GAMEPAD_MENU) {
         out |= HOLO_RG_KEY_MENU;
     }
-    if (mask & MODULE_GAMEPAD_HOME) {
+    if (mask & HOLO_MODULE_GAMEPAD_HOME) {
         out |= HOLO_RG_KEY_OPTION;
     }
 

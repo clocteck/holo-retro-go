@@ -4,6 +4,7 @@
 
 #include "../include/module_abi.h"
 #include "holo_catalog.h"
+#include "holo_gamepad_bits.h"
 #include "holo_port.h"
 
 #define RETROGO_MODULE_EXPORT __attribute__((visibility("default"), used))
@@ -152,190 +153,22 @@ static void create_log(const module_host_api_v1 *host, const char *text)
     }
 }
 
-static int32_t resolve_required_proc(module_host_resolve_v1_fn resolve,
-                                     void *resolve_ctx,
-                                     uint32_t proc_id,
-                                     void **out_proc)
-{
-    int32_t err;
-
-    if (!resolve || !out_proc)
-    {
-        return MODULE_ERR_INVALID_ARG;
-    }
-
-    *out_proc = NULL;
-    err = resolve(resolve_ctx, proc_id, out_proc);
-    if (err != MODULE_OK)
-    {
-        return err;
-    }
-    return *out_proc ? MODULE_OK : MODULE_ERR_UNSUPPORTED;
-}
-
-#define RESOLVE_REQUIRED(proc_id, slot)                                              \
-    do                                                                               \
-    {                                                                                \
-        void *proc = NULL;                                                           \
-        int32_t err = resolve_required_proc(resolve, resolve_ctx, (proc_id), &proc); \
-        if (err != MODULE_OK)                                                        \
-        {                                                                            \
-            return err;                                                              \
-        }                                                                            \
-        (slot) = (__typeof__(slot))proc;                                             \
-    } while (0)
-
-#define RESOLVE_OPTIONAL(proc_id, slot)                                                 \
-    do                                                                                  \
-    {                                                                                   \
-        void *proc = NULL;                                                              \
-        if (resolve_required_proc(resolve, resolve_ctx, (proc_id), &proc) == MODULE_OK) \
-        {                                                                               \
-            (slot) = (__typeof__(slot))proc;                                            \
-        }                                                                               \
-    } while (0)
-
-static int32_t resolve_host_api(module_host_resolve_v1_fn resolve,
-                                void *resolve_ctx,
-                                module_host_api_v1 *out)
-{
-    if (!out)
-    {
-        return MODULE_ERR_INVALID_ARG;
-    }
-
-    memset(out, 0, sizeof(*out));
-    out->abi_version = MODULE_ABI_VERSION;
-    out->size = sizeof(*out);
-
-    out->serial.size = sizeof(out->serial);
-    RESOLVE_REQUIRED(MODULE_PROC_SERIAL_WRITE_V1, out->serial.write);
-    RESOLVE_REQUIRED(MODULE_PROC_SERIAL_PRINT_V1, out->serial.print);
-    RESOLVE_REQUIRED(MODULE_PROC_SERIAL_PRINTLN_V1, out->serial.println);
-    RESOLVE_REQUIRED(MODULE_PROC_SERIAL_FLUSH_V1, out->serial.flush);
-
-    out->sd.size = sizeof(out->sd);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_BEGIN_V1, out->sd.begin);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_MOUNTED_V1, out->sd.mounted);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_MOUNT_POINT_V1, out->sd.mount_point);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_EXISTS_V1, out->sd.exists);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_MKDIR_V1, out->sd.mkdir);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_REMOVE_V1, out->sd.remove);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_RENAME_V1, out->sd.rename);
-    RESOLVE_REQUIRED(MODULE_PROC_SD_OPEN_V1, out->sd.open);
-
-    out->file.size = sizeof(out->file);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_CLOSE_V1, out->file.close);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_AVAILABLE_V1, out->file.available);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_READ_V1, out->file.read);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_WRITE_V1, out->file.write);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_SEEK_V1, out->file.seek);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_POSITION_V1, out->file.position);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_SIZE_BYTES_V1, out->file.size_bytes);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_FLUSH_V1, out->file.flush);
-    RESOLVE_REQUIRED(MODULE_PROC_FILE_IS_DIRECTORY_V1, out->file.is_directory);
-
-    out->display.size = sizeof(out->display);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_WIDTH_V1, out->display.width);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_HEIGHT_V1, out->display.height);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_ACQUIRE_V1, out->display.acquire);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_RELEASE_V1, out->display.release);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_START_WRITE_V1, out->display.startWrite);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_PUSH_IMAGE_DMA_V1, out->display.pushImageDMA);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_END_WRITE_V1, out->display.endWrite);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_FILL_SCREEN_V1, out->display.fillScreen);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_SET_ADDR_WINDOW_V1, out->display.setAddrWindow);
-    RESOLVE_REQUIRED(MODULE_PROC_DISPLAY_PUSH_PIXELS_DMA_V1, out->display.pushPixelsDMA);
-
-    out->audio.size = sizeof(out->audio);
-    RESOLVE_REQUIRED(MODULE_PROC_AUDIO_BEGIN_V1, out->audio.begin);
-    RESOLVE_REQUIRED(MODULE_PROC_AUDIO_WRITE_V1, out->audio.write);
-    RESOLVE_REQUIRED(MODULE_PROC_AUDIO_AVAILABLE_V1, out->audio.available);
-    RESOLVE_REQUIRED(MODULE_PROC_AUDIO_END_V1, out->audio.end);
-
-    out->time.size = sizeof(out->time);
-    RESOLVE_REQUIRED(MODULE_PROC_TIME_MILLIS_V1, out->time.millis);
-    RESOLVE_REQUIRED(MODULE_PROC_TIME_MICROS_V1, out->time.micros);
-    RESOLVE_REQUIRED(MODULE_PROC_TIME_DELAY_V1, out->time.delay);
-    RESOLVE_REQUIRED(MODULE_PROC_TIME_YIELD_V1, out->time.yield);
-
-    out->heap.size = sizeof(out->heap);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_MALLOC_V1, out->heap.malloc);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_CALLOC_V1, out->heap.calloc);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_REALLOC_V1, out->heap.realloc);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_FREE_V1, out->heap.free);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_FREE_SIZE_V1, out->heap.free_size);
-    RESOLVE_REQUIRED(MODULE_PROC_HEAP_LARGEST_FREE_BLOCK_V1, out->heap.largest_free_block);
-
-    out->task.size = sizeof(out->task);
-    RESOLVE_REQUIRED(MODULE_PROC_TASK_CREATE_V1, out->task.create);
-    RESOLVE_REQUIRED(MODULE_PROC_TASK_REMOVE_V1, out->task.remove);
-    RESOLVE_REQUIRED(MODULE_PROC_TASK_YIELD_V1, out->task.yield);
-    RESOLVE_REQUIRED(MODULE_PROC_TASK_DELAY_V1, out->task.delay);
-    RESOLVE_OPTIONAL(MODULE_PROC_TASK_CREATE_EX_V1, out->task.create_ex);
-
-    out->lua.size = sizeof(out->lua);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_GETTOP_V1, out->lua.gettop);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_SETTOP_V1, out->lua.settop);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TYPE_V1, out->lua.type);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_ISTABLE_V1, out->lua.istable);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_ISNIL_V1, out->lua.isnil);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_ISNUMBER_V1, out->lua.isnumber);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_ISSTRING_V1, out->lua.isstring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TOBOOLEAN_V1, out->lua.toboolean);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TOINTEGER_V1, out->lua.tointeger);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TONUMBER_V1, out->lua.tonumber);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TOSTRING_V1, out->lua.tostring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_CHECKINTEGER_V1, out->lua.checkinteger);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_CHECKNUMBER_V1, out->lua.checknumber);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_CHECKSTRING_V1, out->lua.checkstring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TOUSERDATA_V1, out->lua.touserdata);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHNIL_V1, out->lua.pushnil);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHBOOLEAN_V1, out->lua.pushboolean);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHINTEGER_V1, out->lua.pushinteger);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHNUMBER_V1, out->lua.pushnumber);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHSTRING_V1, out->lua.pushstring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHLIGHTUSERDATA_V1, out->lua.pushlightuserdata);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHCFUNCTION_V1, out->lua.pushcfunction);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHCCLOSURE_V1, out->lua.pushcclosure);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHVALUE_V1, out->lua.pushvalue);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_NEWTABLE_V1, out->lua.newtable);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_CREATETABLE_V1, out->lua.createtable);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_GETFIELD_V1, out->lua.getfield);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_SETFIELD_V1, out->lua.setfield);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_GETGLOBAL_V1, out->lua.getglobal);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_SETGLOBAL_V1, out->lua.setglobal);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_REGISTRY_REF_V1, out->lua.registry_ref);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_REGISTRY_UNREF_V1, out->lua.registry_unref);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_REGISTRY_RAWGETI_V1, out->lua.registry_rawgeti);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_UPVALUE_INDEX_V1, out->lua.upvalue_index);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_ERROR_V1, out->lua.error);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_TOLSTRING_V1, out->lua.tolstring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_CHECKLSTRING_V1, out->lua.checklstring);
-    RESOLVE_REQUIRED(MODULE_PROC_LUA_PUSHLSTRING_V1, out->lua.pushlstring);
-
-    return MODULE_OK;
-}
-
-#undef RESOLVE_REQUIRED
-#undef RESOLVE_OPTIONAL
-
 static void set_gamepad_constants(lua_State *L, const module_host_api_v1 *host)
 {
-    set_integer_field(L, host, "BTN_A", MODULE_GAMEPAD_A);
-    set_integer_field(L, host, "BTN_B", MODULE_GAMEPAD_B);
-    set_integer_field(L, host, "BTN_SELECT", MODULE_GAMEPAD_SELECT);
-    set_integer_field(L, host, "BTN_START", MODULE_GAMEPAD_START);
-    set_integer_field(L, host, "BTN_UP", MODULE_GAMEPAD_UP);
-    set_integer_field(L, host, "BTN_DOWN", MODULE_GAMEPAD_DOWN);
-    set_integer_field(L, host, "BTN_LEFT", MODULE_GAMEPAD_LEFT);
-    set_integer_field(L, host, "BTN_RIGHT", MODULE_GAMEPAD_RIGHT);
-    set_integer_field(L, host, "BTN_X", MODULE_GAMEPAD_X);
-    set_integer_field(L, host, "BTN_Y", MODULE_GAMEPAD_Y);
-    set_integer_field(L, host, "BTN_L", MODULE_GAMEPAD_L);
-    set_integer_field(L, host, "BTN_R", MODULE_GAMEPAD_R);
-    set_integer_field(L, host, "BTN_HOME", MODULE_GAMEPAD_HOME);
-    set_integer_field(L, host, "BTN_MENU", MODULE_GAMEPAD_MENU);
+    set_integer_field(L, host, "BTN_A", HOLO_MODULE_GAMEPAD_A);
+    set_integer_field(L, host, "BTN_B", HOLO_MODULE_GAMEPAD_B);
+    set_integer_field(L, host, "BTN_SELECT", HOLO_MODULE_GAMEPAD_SELECT);
+    set_integer_field(L, host, "BTN_START", HOLO_MODULE_GAMEPAD_START);
+    set_integer_field(L, host, "BTN_UP", HOLO_MODULE_GAMEPAD_UP);
+    set_integer_field(L, host, "BTN_DOWN", HOLO_MODULE_GAMEPAD_DOWN);
+    set_integer_field(L, host, "BTN_LEFT", HOLO_MODULE_GAMEPAD_LEFT);
+    set_integer_field(L, host, "BTN_RIGHT", HOLO_MODULE_GAMEPAD_RIGHT);
+    set_integer_field(L, host, "BTN_X", HOLO_MODULE_GAMEPAD_X);
+    set_integer_field(L, host, "BTN_Y", HOLO_MODULE_GAMEPAD_Y);
+    set_integer_field(L, host, "BTN_L", HOLO_MODULE_GAMEPAD_L);
+    set_integer_field(L, host, "BTN_R", HOLO_MODULE_GAMEPAD_R);
+    set_integer_field(L, host, "BTN_HOME", HOLO_MODULE_GAMEPAD_HOME);
+    set_integer_field(L, host, "BTN_MENU", HOLO_MODULE_GAMEPAD_MENU);
 }
 
 static retrogo_instance_t *instance_from_lua(lua_State *L)
@@ -638,9 +471,9 @@ RETROGO_MODULE_EXPORT const module_manifest_t *module_query_v1(void)
     return &s_manifest;
 }
 
-RETROGO_MODULE_EXPORT int32_t module_create_v1(const module_host_api_v1 *host,
-                                               const module_open_info_t *info,
-                                               void **out_instance)
+static int32_t create_instance_from_host(const module_host_api_v1 *host,
+                                         const module_open_info_t *info,
+                                         void **out_instance)
 {
     retrogo_instance_t *inst;
 
@@ -676,12 +509,12 @@ RETROGO_MODULE_EXPORT int32_t module_create_v2(module_host_resolve_v1_fn resolve
                                                const module_open_info_t *info,
                                                void **out_instance)
 {
-    int32_t err = resolve_host_api(resolve, resolve_ctx, &s_resolved_host);
+    int32_t err = module_sdk_resolve_host_v1(resolve, resolve_ctx, &s_resolved_host);
     if (err != MODULE_OK)
     {
         return err;
     }
-    return module_create_v1(&s_resolved_host, info, out_instance);
+    return create_instance_from_host(&s_resolved_host, info, out_instance);
 }
 
 RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
