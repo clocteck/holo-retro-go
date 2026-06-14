@@ -33,7 +33,6 @@ typedef enum
 {
     GWENESIS_AUDIO_MODE_FAST = 0,
     GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE = 1,
-    GWENESIS_AUDIO_MODE_LITE_YM = 2,
 } gwenesis_audio_mode_t;
 
 static gwenesis_audio_mode_t gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
@@ -44,11 +43,9 @@ static const char *gwenesis_audio_mode_name(gwenesis_audio_mode_t mode)
     {
     case GWENESIS_AUDIO_MODE_FAST:
         return "Fast";
-    case GWENESIS_AUDIO_MODE_LITE_YM:
-        return "Lite YM";
     case GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE:
     default:
-        return "Muted Performance";
+        return "Mute";
     }
 }
 
@@ -74,7 +71,9 @@ static bool gwenesis_z80_enabled = true;
 #define GWENESIS_SURFACE_HEIGHT 241
 #define GWENESIS_SURFACE_FORMAT RG_PIXEL_PAL565_BE
 #endif
-#define GWENESIS_AUDIO_QUEUE_PACKETS 3
+#define GWENESIS_AUDIO_QUEUE_PACKETS 5
+#define GWENESIS_AUDIO_PREBUFFER_PACKETS 3
+#define GWENESIS_AUDIO_UNDERFLOW_CHUNK_FRAMES 64
 #define GWENESIS_AUDIO_TASK_STACK (4 * 1024 - 256)
 // --- MAIN
 
@@ -91,9 +90,7 @@ static int64_t frame_pacer_next_us;
 static uint32_t frame_counter;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static const int z80_batch_lines = 4;
-static const int z80_lite_batch_lines = 4;
 static const int ym_batch_lines = 1;
-static const int ym_lite_batch_lines = 1;
 #else
 static const int z80_batch_lines = 1;
 static const int ym_batch_lines = 1;
@@ -113,26 +110,19 @@ static volatile uint32_t gwenesis_audio_queue_min_fill;
 static volatile uint32_t gwenesis_audio_queue_max_fill;
 static volatile uint32_t gwenesis_audio_queue_full_waits;
 static volatile uint32_t gwenesis_audio_queue_empty_waits;
+static volatile uint32_t gwenesis_audio_silence_samples;
 static uint32_t gwenesis_audio_clip_count;
 static int32_t gwenesis_audio_peak;
 static bool gwenesis_cleaned_up;
 
 static inline int gwenesis_z80_batch_lines_current(void)
 {
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    return gwenesis_audio_mode == GWENESIS_AUDIO_MODE_LITE_YM ? z80_lite_batch_lines : z80_batch_lines;
-#else
     return z80_batch_lines;
-#endif
 }
 
 static inline int gwenesis_ym_batch_lines_current(void)
 {
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    return gwenesis_audio_mode == GWENESIS_AUDIO_MODE_LITE_YM ? ym_lite_batch_lines : ym_batch_lines;
-#else
     return ym_batch_lines;
-#endif
 }
 
 static void gwenesis_close_savestate(void)
@@ -198,12 +188,14 @@ static void gwenesis_profiler_maybe_log(void)
     uint32_t audio_queue_max = gwenesis_audio_queue_max_fill;
     uint32_t audio_queue_full = gwenesis_audio_queue_full_waits;
     uint32_t audio_queue_empty = gwenesis_audio_queue_empty_waits;
+    uint32_t audio_silence_samples = gwenesis_audio_silence_samples;
     uint32_t audio_clip_count = gwenesis_audio_clip_count;
     int32_t audio_peak = gwenesis_audio_peak;
     gwenesis_audio_queue_min_fill = (uint32_t)-1;
     gwenesis_audio_queue_max_fill = 0;
     gwenesis_audio_queue_full_waits = 0;
     gwenesis_audio_queue_empty_waits = 0;
+    gwenesis_audio_silence_samples = 0;
     gwenesis_audio_clip_count = 0;
     gwenesis_audio_peak = 0;
     if (audio_queue_min == (uint32_t)-1)
@@ -211,7 +203,7 @@ static void gwenesis_profiler_maybe_log(void)
 
     RG_LOGI("gwen prof: mode=%s frames=%u draw=%u avg=%dus askip=%d "
             "m68k=%d%% z80=%d%% ym=%d%% sn=%d%% vdp=%d%% disp=%d%% aud=%d%% idle=%d%% other=%d%% dskip=%u "
-            "ym_samp=%u out_samp=%u z80_calls=%u ym_calls=%u aq=%u-%u aqwait=%u aempty=%u aclip=%u apeak=%d",
+            "ym_samp=%u out_samp=%u z80_calls=%u ym_calls=%u aq=%u-%u aqwait=%u aempty=%u asilence=%u aclip=%u apeak=%d",
             gwenesis_audio_mode_name(gwenesis_audio_mode),
             (unsigned)gwenesis_profiler.frames,
             (unsigned)gwenesis_profiler.draw_frames,
@@ -235,6 +227,7 @@ static void gwenesis_profiler_maybe_log(void)
             (unsigned)audio_queue_max,
             (unsigned)audio_queue_full,
             (unsigned)audio_queue_empty,
+            (unsigned)audio_silence_samples,
             (unsigned)audio_clip_count,
             (int)audio_peak);
 
@@ -426,8 +419,49 @@ static bool gwenesis_audio_queue_push(const rg_audio_frame_t *frames, size_t cou
     return false;
 }
 
+static void gwenesis_audio_make_fade_out(rg_audio_frame_t *frames, size_t count, rg_audio_frame_t start)
+{
+    if (!frames || count == 0)
+        return;
+
+    if (count == 1)
+    {
+        frames[0].left = 0;
+        frames[0].right = 0;
+        return;
+    }
+
+    const int32_t denom = (int32_t)(count - 1);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const int32_t scale = (int32_t)(count - 1 - i);
+        frames[i].left = (int16_t)(((int32_t)start.left * scale) / denom);
+        frames[i].right = (int16_t)(((int32_t)start.right * scale) / denom);
+    }
+}
+
+static void gwenesis_audio_apply_fade_in(rg_audio_frame_t *frames, size_t count)
+{
+    if (!frames || count == 0)
+        return;
+
+    const size_t fade_count = RG_MIN(count, (size_t)GWENESIS_AUDIO_UNDERFLOW_CHUNK_FRAMES);
+    for (size_t i = 0; i < fade_count; ++i)
+    {
+        const int32_t scale = (int32_t)(i + 1);
+        const int32_t denom = (int32_t)fade_count;
+        frames[i].left = (int16_t)(((int32_t)frames[i].left * scale) / denom);
+        frames[i].right = (int16_t)(((int32_t)frames[i].right * scale) / denom);
+    }
+}
+
 static void gwenesis_audio_task(void *arg)
 {
+    rg_audio_frame_t generated[GWENESIS_AUDIO_UNDERFLOW_CHUNK_FRAMES];
+    rg_audio_frame_t last_frame = {0, 0};
+    bool have_last_frame = false;
+    bool prebuffering = true;
+    bool was_underflowing = false;
     (void)arg;
 
     while (gwenesis_audio_task_running ||
@@ -436,11 +470,31 @@ static void gwenesis_audio_task(void *arg)
     {
         uint32_t read = __atomic_load_n(&gwenesis_audio_queue_read, __ATOMIC_RELAXED);
         const uint32_t write = __atomic_load_n(&gwenesis_audio_queue_write, __ATOMIC_ACQUIRE);
+        const uint32_t used = write - read;
+
+        if (gwenesis_audio_task_running && prebuffering && used < GWENESIS_AUDIO_PREBUFFER_PACKETS)
+        {
+            gwenesis_audio_queue_stat_min(used);
+            if (used == 0)
+                gwenesis_audio_queue_empty_waits++;
+            rg_task_delay(1);
+            continue;
+        }
+        prebuffering = false;
 
         if (read == write)
         {
             gwenesis_audio_queue_empty_waits++;
             gwenesis_audio_queue_stat_min(0);
+            if (have_last_frame)
+            {
+                gwenesis_audio_make_fade_out(generated, RG_COUNT(generated), last_frame);
+                have_last_frame = false;
+                rg_audio_submit(generated, RG_COUNT(generated));
+                gwenesis_audio_silence_samples += RG_COUNT(generated);
+                was_underflowing = true;
+            }
+            prebuffering = true;
             rg_task_delay(1);
             continue;
         }
@@ -451,7 +505,14 @@ static void gwenesis_audio_task(void *arg)
         if (count > 0)
         {
             gwenesis_audio_eq_process_frames(packet->frames, count);
+            if (was_underflowing)
+            {
+                gwenesis_audio_apply_fade_in(packet->frames, count);
+                was_underflowing = false;
+            }
             rg_audio_submit(packet->frames, count);
+            last_frame = packet->frames[count - 1];
+            have_last_frame = true;
         }
 
         read++;
@@ -475,6 +536,7 @@ static bool gwenesis_audio_start(void)
     gwenesis_audio_queue_max_fill = 0;
     gwenesis_audio_queue_full_waits = 0;
     gwenesis_audio_queue_empty_waits = 0;
+    gwenesis_audio_silence_samples = 0;
     gwenesis_audio_clip_count = 0;
     gwenesis_audio_peak = 0;
     gwenesis_audio_eq_reset();
@@ -697,14 +759,12 @@ static rg_gui_event_t audio_mode_update_cb(rg_gui_option_t *option, rg_gui_event
 {
 #if !GWENESIS_AUDIO_EMULATION
     gwenesis_audio_mode = GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE;
-    strcpy(option->value, "Muted Performance");
+    strcpy(option->value, "Mute");
     return RG_DIALOG_VOID;
 #endif
     if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT)
     {
         if (gwenesis_audio_mode == GWENESIS_AUDIO_MODE_FAST)
-            gwenesis_audio_mode = GWENESIS_AUDIO_MODE_LITE_YM;
-        else if (gwenesis_audio_mode == GWENESIS_AUDIO_MODE_LITE_YM)
             gwenesis_audio_mode = GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE;
         else
             gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
@@ -801,7 +861,7 @@ void app_main(void)
 #if GWENESIS_AUDIO_EMULATION
     gwenesis_audio_mode = rg_settings_get_number(NS_APP, SETTING_AUDIO_MODE, GWENESIS_AUDIO_MODE_FAST);
     if (gwenesis_audio_mode < GWENESIS_AUDIO_MODE_FAST ||
-        gwenesis_audio_mode > GWENESIS_AUDIO_MODE_LITE_YM)
+        gwenesis_audio_mode > GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE)
     {
         gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
     }
@@ -854,7 +914,7 @@ void app_main(void)
         RG_PANIC("Genesis VDP gfx fast memory allocation failed!");
 #if GWENESIS_AUDIO_EMULATION
     if (!gwenesis_audio_start())
-        RG_PANIC("Genesis audio ring allocation failed!");
+        RG_PANIC("Genesis audio queue allocation failed!");
 #endif
 
     RG_LOGI("Genesis start\n");
@@ -971,7 +1031,7 @@ void app_main(void)
         }
         const bool drawFrame = scheduled_draw && display_ready;
         z80_set_enabled(z80_run_enabled);
-        ym2612_set_lite_mode(gwenesis_audio_mode == GWENESIS_AUDIO_MODE_LITE_YM);
+        ym2612_set_lite_mode(false);
 
         int lines_per_frame = REG1_PAL ? LINES_PER_FRAME_PAL : LINES_PER_FRAME_NTSC;
         int hint_counter = gwenesis_vdp_regs[10];

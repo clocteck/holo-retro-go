@@ -140,6 +140,15 @@ set(ELF_SO_LINK_FLAGS
     "-Wl,-Map,${CMAKE_BINARY_DIR}/${HOLO_RETRO_MODULE_NAME}_so.map"
 )
 
+if(HOLO_RETRO_GWENESIS_ONLY)
+    list(APPEND ELF_SO_LINK_FLAGS
+        "-flto"
+        "-fuse-linker-plugin"
+        "-ffat-lto-objects"
+        "-flto-partition=one"
+    )
+endif()
+
 set(ELF_SO_OBJCOPY_FLAGS)
 
 include(elf_loader)

@@ -107,7 +107,7 @@ void z80_pulse_reset() {
 }
 static int current_timeslice = 0;
 
-void GWENESIS_IRAM_HOT z80_run(int target) {
+void GWENESIS_HOT z80_run(int target) {
 
   // we are in advance,nothind to do
 current_timeslice = 0;
@@ -133,7 +133,7 @@ current_timeslice = 0;
   zclk = target - rem * Z80_FREQ_DIVISOR;
 }
 
-void GWENESIS_IRAM_HOT z80_sync(void) {
+void GWENESIS_HOT z80_sync(void) {
   /*
   get M68K cycles 
   Execute cycles on z80 to sync with m68K
@@ -300,7 +300,7 @@ word LoopZ80(register Z80 *R)
     return 0;
 }
 
-byte GWENESIS_IRAM_HOT RdZ80(register word Addr) {
+byte GWENESIS_HOT RdZ80(register word Addr) {
 
   unsigned char *ram = z80_get_memory();
 
@@ -322,7 +322,7 @@ byte GWENESIS_IRAM_HOT RdZ80(register word Addr) {
 
 extern int system_clock;
 
-void GWENESIS_IRAM_HOT WrZ80(register word Addr, register byte Value) {
+void GWENESIS_HOT WrZ80(register word Addr, register byte Value) {
 
   unsigned char *ram = z80_get_memory();
 

@@ -46,7 +46,7 @@ __license__ = "GPLv3"
 
 #ifndef GWENESIS_AUDIO_ACCURATE
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_AUDIO_ACCURATE 1
+#define GWENESIS_AUDIO_ACCURATE 0
 #else
 #define GWENESIS_AUDIO_ACCURATE 1
 #endif

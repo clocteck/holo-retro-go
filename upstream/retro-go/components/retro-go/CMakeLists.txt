@@ -35,6 +35,15 @@ component_compile_options(
     -Os
     -Wno-unused-function
 )
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY OR HOLO_RETRO_GWENESIS_ONLY)
+    component_compile_options(
+        -flto=auto
+        -ffat-lto-objects
+        -flto-compression-level=9
+    )
+endif()
+
 set_source_files_properties(
     rg_audio.c rg_display.c rg_utils.c rg_surface.c libs/lodepng/lodepng.c
     PROPERTIES COMPILE_FLAGS

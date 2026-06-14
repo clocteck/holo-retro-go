@@ -25,8 +25,6 @@ if(NOT DEFINED HOLO_RETRO_MAIN_GWENESIS_ONLY)
     set(HOLO_RETRO_MAIN_GWENESIS_ONLY 0)
 endif()
 
-message(STATUS "main component profile: ${HOLO_RETRO_MAIN_PROFILE}; gwenesis-only: ${HOLO_RETRO_MAIN_GWENESIS_ONLY}")
-
 set(RETRO_CORE_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/retro-core/main/main.c"
     "${RG_UPSTREAM_DIR}/retro-core/main/main_launcher.c"
@@ -47,6 +45,8 @@ else()
         "${RG_UPSTREAM_DIR}/retro-core/main/main_snes.c"
     )
 endif()
+
+message(STATUS "main component profile: ${HOLO_RETRO_MAIN_PROFILE}; gwenesis-only: ${HOLO_RETRO_MAIN_GWENESIS_ONLY}")
 
 set(LAUNCHER_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/launcher/main/applications.c"
@@ -149,3 +149,11 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Wno-error=format
     -Wno-error=nonnull-compare
 )
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    target_compile_options(${COMPONENT_LIB} PRIVATE
+        -flto=auto
+        -ffat-lto-objects
+        -flto-compression-level=9
+    )
+endif()

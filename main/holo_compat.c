@@ -162,6 +162,73 @@ static int plausible_heap_ptr(const void *ptr)
     return p == 0 || (p >= 0x3C000000u && p < 0x60000000u);
 }
 
+static uint64_t holo_u64_divmod(uint64_t num, uint64_t den, uint64_t *rem)
+{
+    uint64_t quo = 0;
+
+    if (den == 0) {
+        if (rem) {
+            *rem = num;
+        }
+        return 0;
+    }
+
+    for (int bit = 63; bit >= 0; --bit) {
+        if ((num >> bit) >= den) {
+            num -= den << bit;
+            quo |= 1ULL << bit;
+        }
+    }
+
+    if (rem) {
+        *rem = num;
+    }
+    return quo;
+}
+
+static uint64_t holo_i64_abs_u64(int64_t value)
+{
+    uint64_t bits = (uint64_t)value;
+    return value < 0 ? (~bits + 1ULL) : bits;
+}
+
+uint64_t __udivdi3(uint64_t num, uint64_t den) __attribute__((used, noinline));
+uint64_t __umoddi3(uint64_t num, uint64_t den) __attribute__((used, noinline));
+int64_t __divdi3(int64_t num, int64_t den) __attribute__((used, noinline));
+int64_t __moddi3(int64_t num, int64_t den) __attribute__((used, noinline));
+
+uint64_t __udivdi3(uint64_t num, uint64_t den)
+{
+    return holo_u64_divmod(num, den, NULL);
+}
+
+uint64_t __umoddi3(uint64_t num, uint64_t den)
+{
+    uint64_t rem;
+    (void)holo_u64_divmod(num, den, &rem);
+    return rem;
+}
+
+int64_t __divdi3(int64_t num, int64_t den)
+{
+    const int negative = (num < 0) ^ (den < 0);
+    uint64_t quo = holo_u64_divmod(holo_i64_abs_u64(num), holo_i64_abs_u64(den), NULL);
+    if (negative) {
+        quo = ~quo + 1ULL;
+    }
+    return (int64_t)quo;
+}
+
+int64_t __moddi3(int64_t num, int64_t den)
+{
+    uint64_t rem;
+    (void)holo_u64_divmod(holo_i64_abs_u64(num), holo_i64_abs_u64(den), &rem);
+    if (num < 0) {
+        rem = ~rem + 1ULL;
+    }
+    return (int64_t)rem;
+}
+
 typedef struct holo_queue_t {
     uint32_t magic;
     UBaseType_t length;
