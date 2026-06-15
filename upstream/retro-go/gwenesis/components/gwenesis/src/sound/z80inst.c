@@ -56,6 +56,11 @@ static Z80 cpu;
 void ResetZ80(register Z80 *R);
 
 #define Z80_INST_DISABLE_LOGGING 1
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_Z80_YM_STATUS_FAST_READ 1
+#else
+#define GWENESIS_Z80_YM_STATUS_FAST_READ 0
+#endif
 
 #if !Z80_INST_DISABLE_LOGGING
 #include <stdarg.h>
@@ -308,7 +313,11 @@ byte GWENESIS_HOT RdZ80(register word Addr) {
     return ram ? ram[Addr & 0x1FFF] : 0xFF;
 
   if (Addr < 0x6000)
+#if GWENESIS_Z80_YM_STATUS_FAST_READ
+    return gwenesis_ym_async_status_mirror & 0x7f;
+#else
     return YM2612Read(zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR));
+#endif
 
   z80_log(__FUNCTION__, "addr= %x", Addr);
 

@@ -60,8 +60,12 @@ __license__ = "GPLv3"
 #endif
 #endif
 
-#define Z80_FREQ_DIVISOR 14     // Frequency divisor to Z80 clock
-#define VDP_CYCLES_PER_LINE 3420// VDP Cycles per Line
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define Z80_FREQ_DIVISOR 18 // Frequency divisor to Z80 clock
+#else
+#define Z80_FREQ_DIVISOR 14 // Frequency divisor to Z80 clock
+#endif
+#define VDP_CYCLES_PER_LINE 3420 // VDP Cycles per Line
 #define SCREEN_WIDTH 320
 
 #if defined(RG_TARGET_HOLO_DYNMOD)

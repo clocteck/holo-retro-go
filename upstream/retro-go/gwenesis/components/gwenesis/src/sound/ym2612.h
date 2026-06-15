@@ -17,6 +17,7 @@
 #define _H_YM2612_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 extern int16_t *gwenesis_ym2612_buffer;
 extern int ym2612_index;
@@ -38,6 +39,7 @@ extern unsigned int YM2612Read(int target);
 extern unsigned int YM2612ReadStatusDirect(void);
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+extern volatile uint32_t gwenesis_ym_async_status_mirror;
 bool gwenesis_ym2612_async_enabled(void);
 bool gwenesis_ym2612_async_write(unsigned int a, unsigned int v, int target);
 unsigned int gwenesis_ym2612_async_read(int target);
