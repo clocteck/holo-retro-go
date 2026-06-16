@@ -2113,6 +2113,11 @@ void rg_gui_about_menu(void)
         {0, _("Version"),        (char *)app->version,       RG_DIALOG_FLAG_NORMAL,                                           NULL},
         {0, _("Date"),           (char *)app->buildDate,     RG_DIALOG_FLAG_NORMAL,                                           NULL},
         {0, _("Target"),         (char *)RG_TARGET_NAME,     RG_DIALOG_FLAG_NORMAL,                                           NULL},
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        {0, "Port",              "Clocteck Holocubic",       RG_DIALOG_FLAG_NORMAL,                                           NULL},
+        {0, "Runtime",           "Lua dynmod",               RG_DIALOG_FLAG_NORMAL,                                           NULL},
+        {0, "Optimized",         "Holocubic-specific",       RG_DIALOG_FLAG_NORMAL,                                           NULL},
+#endif
         {0, _("Website"),        (char *)RG_PROJECT_WEBSITE, RG_DIALOG_FLAG_NORMAL,                                           NULL},
         RG_DIALOG_SEPARATOR,
         {4, _("Options"),        NULL,                       have_option_btn ? RG_DIALOG_FLAG_HIDDEN : RG_DIALOG_FLAG_NORMAL, NULL},

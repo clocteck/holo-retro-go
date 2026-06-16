@@ -162,7 +162,7 @@
 	extern unsigned int CART_SRAM_END;
 	extern unsigned char *M68K_RAM;
 #if defined(RETRO_GO)
-	extern unsigned char *M68K_RAM_PAGE_PTR[GWENESIS_M68K_RAM_PAGE_COUNT];
+	extern unsigned char **M68K_RAM_PAGE_PTR;
 #endif
 #else
 

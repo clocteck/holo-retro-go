@@ -140,11 +140,11 @@ static bool gwenesis_z80_enabled = true;
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 48
+#define GWENESIS_FRAME_TARGET_FPS 45
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static const int frame_min_yield_ms = 1;
-static const int frame_min_yield_interval_frames = 3;
+static const int frame_min_yield_interval_frames = 5;
 static const int frameskip_audio_off_debt_us = 9000;
 static const int frameskip_audio_off_force_debt_us = 13000;
 static const int frameskip_audio_off_min_draws = 2;
@@ -919,8 +919,14 @@ static void gwenesis_profiler_log_m68k_mem(void)
         if (--sample_logs_left <= 0)
         {
             gwenesis_m68k_ram_profile_enabled = 0;
-            hold_logs_left = 0;
+            hold_logs_left = GWENESIS_RAM_CACHE_HOLD_LOGS;
         }
+    }
+    else if (--hold_logs_left <= 0)
+    {
+        memset(&gwenesis_m68k_profile, 0, sizeof(gwenesis_m68k_profile));
+        gwenesis_m68k_ram_profile_enabled = GWENESIS_M68K_RAM_SAMPLE_DEFAULT;
+        sample_logs_left = GWENESIS_RAM_CACHE_SAMPLE_LOGS;
     }
 #endif
 #endif

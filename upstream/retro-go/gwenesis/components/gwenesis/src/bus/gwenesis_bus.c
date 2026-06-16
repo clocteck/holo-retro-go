@@ -59,7 +59,7 @@ __license__ = "GPLv3"
 gwenesis_m68k_profile_t gwenesis_m68k_profile;
 #endif
 #if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
-volatile uint8_t gwenesis_m68k_ram_profile_enabled = 0;
+volatile uint8_t gwenesis_m68k_ram_profile_enabled = GWENESIS_M68K_RAM_SAMPLE_DEFAULT;
 #endif
 
 #if !BUS_DISABLE_LOGGING
@@ -99,16 +99,27 @@ static unsigned int CART_SRAM_PARITY;
 static size_t CART_SRAM_SIZE;
 #if defined(RETRO_GO)
 unsigned char *M68K_RAM; // 68K RAM
-unsigned char *M68K_RAM_PAGE_PTR[GWENESIS_M68K_RAM_PAGE_COUNT];
-static unsigned char *m68k_ram_fast_slot[GWENESIS_M68K_RAM_FAST_SLOTS];
-static uint8_t m68k_ram_fast_page[GWENESIS_M68K_RAM_FAST_SLOTS] = {
-    GWENESIS_M68K_RAM_CACHE_EMPTY,
-    GWENESIS_M68K_RAM_CACHE_EMPTY,
-};
-static uint32_t m68k_ram_cache_score[GWENESIS_M68K_RAM_PAGE_COUNT];
-static uint32_t m68k_ram_cache_swaps;
-static uint32_t m68k_ram_cache_update_epoch;
-static uint32_t m68k_ram_cache_last_swap_epoch;
+
+typedef struct
+{
+    unsigned char *page_ptr[GWENESIS_M68K_RAM_PAGE_COUNT];
+    unsigned char *fast_slot[GWENESIS_M68K_RAM_FAST_SLOTS];
+    uint32_t cache_score[GWENESIS_M68K_RAM_PAGE_COUNT];
+    uint32_t cache_swaps;
+    uint32_t cache_update_epoch;
+    uint32_t cache_last_swap_epoch;
+    uint8_t fast_page[GWENESIS_M68K_RAM_FAST_SLOTS];
+} gwenesis_m68k_ram_cache_state_t;
+
+unsigned char **M68K_RAM_PAGE_PTR;
+static gwenesis_m68k_ram_cache_state_t *m68k_ram_cache_state;
+
+#define m68k_ram_fast_slot (m68k_ram_cache_state->fast_slot)
+#define m68k_ram_fast_page (m68k_ram_cache_state->fast_page)
+#define m68k_ram_cache_score (m68k_ram_cache_state->cache_score)
+#define m68k_ram_cache_swaps (m68k_ram_cache_state->cache_swaps)
+#define m68k_ram_cache_update_epoch (m68k_ram_cache_state->cache_update_epoch)
+#define m68k_ram_cache_last_swap_epoch (m68k_ram_cache_state->cache_last_swap_epoch)
 #else
 unsigned char M68K_RAM[MAX_RAM_SIZE];    // 68K RAM
 #endif
@@ -129,14 +140,61 @@ int tmss_state = 0;
 int tmss_count = 0;
 
 #if defined(RETRO_GO)
+static void gwenesis_m68k_ram_cache_reset_state(gwenesis_m68k_ram_cache_state_t *state)
+{
+    if (!state)
+        return;
+
+    memset(state, 0, sizeof(*state));
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+        state->fast_page[slot] = GWENESIS_M68K_RAM_CACHE_EMPTY;
+}
+
+static bool gwenesis_m68k_ram_cache_alloc_state(void)
+{
+    if (m68k_ram_cache_state)
+        return true;
+
+    gwenesis_m68k_ram_cache_state_t *state =
+        rg_alloc(sizeof(*state), MEM_FAST | MEM_NOPANIC);
+    if (state && PTR_IN_SPIRAM(state))
+    {
+        free(state);
+        state = NULL;
+    }
+    if (!state)
+    {
+        M68K_RAM_PAGE_PTR = NULL;
+        return false;
+    }
+
+    gwenesis_m68k_ram_cache_reset_state(state);
+    m68k_ram_cache_state = state;
+    M68K_RAM_PAGE_PTR = state->page_ptr;
+    return true;
+}
+
+static void gwenesis_m68k_ram_cache_free_state(void)
+{
+    free(m68k_ram_cache_state);
+    m68k_ram_cache_state = NULL;
+    M68K_RAM_PAGE_PTR = NULL;
+}
+
 static void gwenesis_m68k_ram_cache_bind_slow_pages(void)
 {
+    if (!m68k_ram_cache_state)
+        return;
+
     for (unsigned int page = 0; page < GWENESIS_M68K_RAM_PAGE_COUNT; ++page)
         M68K_RAM_PAGE_PTR[page] = M68K_RAM ? (M68K_RAM + page * GWENESIS_M68K_RAM_PAGE_SIZE) : NULL;
 }
 
 static bool gwenesis_m68k_ram_cache_page_loaded(uint8_t page)
 {
+    if (!m68k_ram_cache_state)
+        return false;
+
     for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
     {
         if (m68k_ram_fast_page[slot] == page)
@@ -147,7 +205,8 @@ static bool gwenesis_m68k_ram_cache_page_loaded(uint8_t page)
 
 static void gwenesis_m68k_ram_cache_sync_slot(unsigned int slot)
 {
-    if (!M68K_RAM || slot >= GWENESIS_M68K_RAM_FAST_SLOTS || !m68k_ram_fast_slot[slot])
+    if (!m68k_ram_cache_state || !M68K_RAM ||
+        slot >= GWENESIS_M68K_RAM_FAST_SLOTS || !m68k_ram_fast_slot[slot])
         return;
 
     uint8_t page = m68k_ram_fast_page[slot];
@@ -167,6 +226,9 @@ static void gwenesis_m68k_ram_cache_sync_all(void)
 
 static void gwenesis_m68k_ram_cache_reload_slots(void)
 {
+    if (!m68k_ram_cache_state)
+        return;
+
     gwenesis_m68k_ram_cache_bind_slow_pages();
 
     for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
@@ -184,7 +246,7 @@ static void gwenesis_m68k_ram_cache_reload_slots(void)
 
 static bool gwenesis_m68k_ram_cache_install(unsigned int slot, uint8_t page)
 {
-    if (!M68K_RAM || slot >= GWENESIS_M68K_RAM_FAST_SLOTS ||
+    if (!m68k_ram_cache_state || !M68K_RAM || slot >= GWENESIS_M68K_RAM_FAST_SLOTS ||
         !m68k_ram_fast_slot[slot] || page >= GWENESIS_M68K_RAM_PAGE_COUNT)
         return false;
 
@@ -211,6 +273,9 @@ static bool gwenesis_m68k_ram_cache_install(unsigned int slot, uint8_t page)
 
 static void gwenesis_m68k_ram_cache_reset_to_defaults(void)
 {
+    if (!m68k_ram_cache_state)
+        return;
+
     gwenesis_m68k_ram_cache_bind_slow_pages();
 
     for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
@@ -221,7 +286,7 @@ static void gwenesis_m68k_ram_cache_reset_to_defaults(void)
     m68k_ram_cache_update_epoch = 0;
     m68k_ram_cache_last_swap_epoch = 0;
 #if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
-    gwenesis_m68k_ram_profile_enabled = 0;
+    gwenesis_m68k_ram_profile_enabled = GWENESIS_M68K_RAM_SAMPLE_DEFAULT;
 #endif
 
     gwenesis_m68k_ram_cache_install(0, 0x0e);
@@ -234,6 +299,9 @@ static void gwenesis_m68k_ram_cache_clear(void)
     if (M68K_RAM)
         memset(M68K_RAM, 0, MAX_RAM_SIZE);
 
+    if (!m68k_ram_cache_state)
+        return;
+
     for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
     {
         if (m68k_ram_fast_slot[slot])
@@ -245,6 +313,9 @@ static void gwenesis_m68k_ram_cache_clear(void)
 
 static void gwenesis_m68k_ram_cache_alloc_slots(void)
 {
+    if (!m68k_ram_cache_state)
+        return;
+
     for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
     {
         if (m68k_ram_fast_slot[slot])
@@ -275,13 +346,16 @@ bool gwenesis_bus_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
     bool ram_was_missing = !M68K_RAM;
+    bool cache_state_was_missing = !m68k_ram_cache_state;
+    if (!gwenesis_m68k_ram_cache_alloc_state())
+        return false;
     if (!M68K_RAM)
         M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM);
     if (!ZRAM)
         ZRAM = rg_alloc(MAX_Z80_RAM_SIZE, GWENESIS_Z80_RAM_MEM);
     if (ZRAM)
         z80_set_memory(ZRAM);
-    if (M68K_RAM && ram_was_missing)
+    if (M68K_RAM && (ram_was_missing || cache_state_was_missing))
     {
         gwenesis_m68k_ram_cache_bind_slow_pages();
         gwenesis_m68k_ram_cache_alloc_slots();
@@ -300,17 +374,21 @@ void gwenesis_bus_deinit_fast_ram(void)
 #if defined(RETRO_GO)
     gwenesis_m68k_ram_cache_sync_all();
     z80_set_memory(NULL);
-    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    if (m68k_ram_cache_state)
     {
-        free(m68k_ram_fast_slot[slot]);
-        m68k_ram_fast_slot[slot] = NULL;
-        m68k_ram_fast_page[slot] = GWENESIS_M68K_RAM_CACHE_EMPTY;
+        for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+        {
+            free(m68k_ram_fast_slot[slot]);
+            m68k_ram_fast_slot[slot] = NULL;
+            m68k_ram_fast_page[slot] = GWENESIS_M68K_RAM_CACHE_EMPTY;
+        }
     }
     free(M68K_RAM);
     free(ZRAM);
     M68K_RAM = NULL;
     ZRAM = NULL;
     gwenesis_m68k_ram_cache_bind_slow_pages();
+    gwenesis_m68k_ram_cache_free_state();
 #endif
 }
 
@@ -1216,7 +1294,7 @@ unsigned int m68k_read_disassembler_32(unsigned int address)
 void gwenesis_bus_m68k_ram_cache_update(const uint32_t ram_reads[16], const uint32_t ram_writes[16])
 {
 #if defined(RETRO_GO)
-  if (!M68K_RAM)
+  if (!M68K_RAM || !m68k_ram_cache_state)
     return;
 
   ++m68k_ram_cache_update_epoch;
@@ -1275,6 +1353,12 @@ void gwenesis_bus_m68k_ram_cache_status(char *out, size_t out_size)
     return;
 
 #if defined(RETRO_GO)
+  if (!m68k_ram_cache_state)
+  {
+    snprintf(out, out_size, "off");
+    return;
+  }
+
   size_t used = 0;
   int written = snprintf(out, out_size, "slots=");
   if (written < 0)

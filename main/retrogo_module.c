@@ -10,11 +10,18 @@
 #define RETROGO_MODULE_EXPORT __attribute__((visibility("default"), used))
 #define RETROGO_VERSION "0.1.0"
 #define RETROGO_MIN_HOST_ABI MODULE_BOOTSTRAP_ABI_VERSION
+#define RETROGO_PORT_VENDOR "Clocteck"
+#define RETROGO_PORT_DEVICE "Holocubic"
+#define RETROGO_PORT_PLATFORM RETROGO_PORT_VENDOR " " RETROGO_PORT_DEVICE
+#define RETROGO_PORT_OPTIMIZATION "Holocubic-specific dynmod optimizations"
 #if HOLO_RETRO_GWENESIS_ONLY
 #define RETROGO_MODULE_NAME "gwenesis"
+#define RETROGO_MODULE_PROFILE "gwenesis"
 #else
 #define RETROGO_MODULE_NAME "retrogo"
+#define RETROGO_MODULE_PROFILE "retro-core"
 #endif
+#define RETROGO_MODULE_DESCRIPTION "Retro-Go dynamic module optimized for " RETROGO_PORT_PLATFORM
 #define RETROGO_LOG_PREFIX "[" RETROGO_MODULE_NAME ".so] "
 
 void retrogo_core_app_main(void);
@@ -42,7 +49,7 @@ static const module_manifest_t s_manifest = {
     sizeof(module_manifest_t),
     RETROGO_MODULE_NAME,
     RETROGO_VERSION,
-    "Retro-Go dynamic module for Holocubic",
+    RETROGO_MODULE_DESCRIPTION,
     0,
     RETROGO_MIN_HOST_ABI,
 };
@@ -453,8 +460,13 @@ static int l_info(lua_State *L)
     }
 
     holo_launch_get(&launch);
-    host->lua.createtable(L, 0, 12);
+    host->lua.createtable(L, 0, 18);
     set_string_field(L, host, "version", RETROGO_VERSION);
+    set_string_field(L, host, "description", RETROGO_MODULE_DESCRIPTION);
+    set_string_field(L, host, "profile", RETROGO_MODULE_PROFILE);
+    set_string_field(L, host, "vendor", RETROGO_PORT_VENDOR);
+    set_string_field(L, host, "platform", RETROGO_PORT_PLATFORM);
+    set_string_field(L, host, "optimization", RETROGO_PORT_OPTIMIZATION);
     set_string_field(L, host, "module_path", inst->module_path);
     set_string_field(L, host, "app", launch.config_ns);
     set_string_field(L, host, "rom", launch.rom_path);
@@ -527,8 +539,13 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
         return MODULE_ERR_INVALID_ARG;
     }
 
-    host->lua.createtable(L, 0, 20);
+    host->lua.createtable(L, 0, 26);
     set_string_field(L, host, "VERSION", RETROGO_VERSION);
+    set_string_field(L, host, "DESCRIPTION", RETROGO_MODULE_DESCRIPTION);
+    set_string_field(L, host, "PROFILE", RETROGO_MODULE_PROFILE);
+    set_string_field(L, host, "VENDOR", RETROGO_PORT_VENDOR);
+    set_string_field(L, host, "PLATFORM", RETROGO_PORT_PLATFORM);
+    set_string_field(L, host, "OPTIMIZATION", RETROGO_PORT_OPTIMIZATION);
     set_boolean_field(L, host, "CATALOG_BLOB", 1);
     set_boolean_field(L, host, "RETRO_GO_CORE", 1);
     set_gamepad_constants(L, host);

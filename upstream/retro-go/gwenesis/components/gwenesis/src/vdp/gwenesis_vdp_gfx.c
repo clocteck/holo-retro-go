@@ -88,9 +88,12 @@ static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 #endif
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+#define VDP_TILE_ROW_CACHE_ENABLED 0
+
 enum {
   VDP_SPRITE_VISIBLE_LINES = 240,
   VDP_SPRITE_LINE_MAX = 20,
+#if VDP_TILE_ROW_CACHE_ENABLED
   VDP_TILE_ROW_CACHE_ENTRIES = 512,
 };
 
@@ -101,10 +104,15 @@ typedef struct {
   uint8_t valid;
   uint8_t pad[2];
 } vdp_tile_row_cache_entry_t;
+#else
+};
+#endif
 
 static uint8_t *sprite_line_count;
 static uint8_t *sprite_line_table;
+#if VDP_TILE_ROW_CACHE_ENABLED
 static vdp_tile_row_cache_entry_t *tile_row_cache;
+#endif
 #endif
 
 // Define VIDEO MODE
@@ -145,11 +153,15 @@ bool gwenesis_vdp_gfx_init_fast_ram(void)
         sprite_line_count = rg_alloc(VDP_SPRITE_VISIBLE_LINES, MEM_FAST);
     if (!sprite_line_table)
         sprite_line_table = rg_alloc(VDP_SPRITE_VISIBLE_LINES * VDP_SPRITE_LINE_MAX, MEM_FAST);
+#if VDP_TILE_ROW_CACHE_ENABLED
     if (!tile_row_cache)
         tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST);
     if (tile_row_cache)
         memset(tile_row_cache, 0, sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES);
     return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
+#else
+    return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table;
+#endif
 #endif
 #endif
     return render_buffer && sprite_buffer;
@@ -163,14 +175,18 @@ void gwenesis_vdp_gfx_deinit_fast_ram(void)
 #if defined(RG_TARGET_HOLO_DYNMOD)
     free(sprite_line_count);
     free(sprite_line_table);
+#if VDP_TILE_ROW_CACHE_ENABLED
     free(tile_row_cache);
+#endif
 #endif
     render_buffer = NULL;
     sprite_buffer = NULL;
 #if defined(RG_TARGET_HOLO_DYNMOD)
     sprite_line_count = NULL;
     sprite_line_table = NULL;
+#if VDP_TILE_ROW_CACHE_ENABLED
     tile_row_cache = NULL;
+#endif
 #endif
 #endif
 }
@@ -233,7 +249,7 @@ void gwenesis_vdp_set_buffer(unsigned short *ptr_screen_buffer)
  #define PIX6(P) ( ((P) & 0xF0000000 ) >>  28 )
  #define PIX7(P) ( ((P) & 0x0F000000 ) >>  24 )
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
 static inline __attribute__((always_inline))
 const uint8_t *vdp_tile_row_pixels(uint32_t pattern, bool flip)
 {
@@ -279,7 +295,7 @@ void draw_pattern_nofliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, false);
   uint8_t px;
 
@@ -310,7 +326,7 @@ void draw_pattern_fliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, true);
   uint8_t px;
 
@@ -342,7 +358,7 @@ void draw_pattern_nofliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t a
 {
   if (p == 0) return; 
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, false);
   uint8_t px;
 
@@ -403,7 +419,7 @@ void draw_pattern_fliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t att
 {
   if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, true);
   uint8_t px;
 
@@ -488,7 +504,7 @@ draw_pattern_nofliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, false);
   uint8_t px;
 
@@ -531,7 +547,7 @@ draw_pattern_fliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, true);
   uint8_t px;
 
@@ -563,7 +579,7 @@ draw_pattern_nofliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
   if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
   const uint8_t *pix = vdp_tile_row_pixels(p, false);
   uint8_t px;
 
@@ -619,7 +635,7 @@ draw_pattern_fliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
     if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
     const uint8_t *pix = vdp_tile_row_pixels(p, true);
     uint8_t px;
 

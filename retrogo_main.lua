@@ -7,13 +7,13 @@ local APP = {
     {
       id = "retro-core",
       title = "Retro Core",
-      detail = "Multi ROMs",
+      detail = "Holocubic optimized",
       path = "/sd/modules/retrogo.so",
     },
     {
       id = "gwenesis",
       title = "Mega Drive",
-      detail = "Sega ROMs",
+      detail = "Holocubic optimized",
       path = "/sd/modules/gwenesis.so",
     },
   },
