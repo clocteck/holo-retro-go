@@ -102,6 +102,7 @@ unsigned char *M68K_RAM; // 68K RAM
 
 typedef struct
 {
+    unsigned char *rom_page_ptr[GWENESIS_ROM_PAGE_COUNT];
     unsigned char *page_ptr[GWENESIS_M68K_RAM_PAGE_COUNT];
     unsigned char *fast_slot[GWENESIS_M68K_RAM_FAST_SLOTS];
     uint32_t cache_score[GWENESIS_M68K_RAM_PAGE_COUNT];
@@ -111,6 +112,7 @@ typedef struct
     uint8_t fast_page[GWENESIS_M68K_RAM_FAST_SLOTS];
 } gwenesis_m68k_ram_cache_state_t;
 
+unsigned char **ROM_PAGE_PTR;
 unsigned char **M68K_RAM_PAGE_PTR;
 static gwenesis_m68k_ram_cache_state_t *m68k_ram_cache_state;
 
@@ -164,12 +166,14 @@ static bool gwenesis_m68k_ram_cache_alloc_state(void)
     }
     if (!state)
     {
+        ROM_PAGE_PTR = NULL;
         M68K_RAM_PAGE_PTR = NULL;
         return false;
     }
 
     gwenesis_m68k_ram_cache_reset_state(state);
     m68k_ram_cache_state = state;
+    ROM_PAGE_PTR = state->rom_page_ptr;
     M68K_RAM_PAGE_PTR = state->page_ptr;
     return true;
 }
@@ -178,7 +182,41 @@ static void gwenesis_m68k_ram_cache_free_state(void)
 {
     free(m68k_ram_cache_state);
     m68k_ram_cache_state = NULL;
+    ROM_PAGE_PTR = NULL;
     M68K_RAM_PAGE_PTR = NULL;
+}
+
+static void gwenesis_rom_page_table_clear(void)
+{
+    if (ROM_PAGE_PTR)
+        memset(ROM_PAGE_PTR, 0, sizeof(*ROM_PAGE_PTR) * GWENESIS_ROM_PAGE_COUNT);
+}
+
+static unsigned int gwenesis_rom_page_table_build(size_t size)
+{
+    gwenesis_rom_page_table_clear();
+
+    if (!ROM_PAGE_PTR || !ROM_DATA || size == 0)
+        return 0;
+
+    unsigned int direct_pages = 0;
+
+    for (unsigned int page = 0; page < GWENESIS_ROM_PAGE_COUNT; ++page)
+    {
+        const unsigned int page_address = page << GWENESIS_ROM_PAGE_SHIFT;
+        size_t mapped_offset = page_address & ROM_MASK;
+
+        if (mapped_offset >= size)
+            mapped_offset %= size;
+
+        if (mapped_offset + GWENESIS_ROM_PAGE_SIZE <= size)
+        {
+            ROM_PAGE_PTR[page] = ROM_DATA + mapped_offset;
+            direct_pages++;
+        }
+    }
+
+    return direct_pages;
 }
 
 static void gwenesis_m68k_ram_cache_bind_slow_pages(void)
@@ -391,7 +429,7 @@ bool gwenesis_bus_init_fast_ram(void)
     if (!gwenesis_m68k_ram_cache_alloc_state())
         return false;
     if (!M68K_RAM)
-        M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM);
+        M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM | MEM_NOPANIC);
     if (!ZRAM)
         ZRAM = gwenesis_bus_alloc_zram();
     if (ZRAM)
@@ -517,7 +555,7 @@ static void gwenesis_sram_configure(size_t rom_size)
         sram_size = 0x20000;
 
 #if defined(RETRO_GO)
-    CART_SRAM_DATA = rg_alloc(sram_size, MEM_SLOW);
+    CART_SRAM_DATA = rg_alloc(sram_size, MEM_SLOW | MEM_NOPANIC);
 #else
     CART_SRAM_DATA = malloc(sram_size);
 #endif
@@ -594,8 +632,17 @@ static void gwenesis_rom_finalize(size_t size)
     ROM_SIZE = (unsigned int)size;
     ROM_MASK = (unsigned int)(mirror_size - 1);
 
+#if defined(RETRO_GO)
+    const unsigned int direct_pages = gwenesis_rom_page_table_build(size);
+#endif
+
     printf("Genesis ROM size=%u virtual_mirror=%u mask=0x%06x\n",
            (unsigned)size, (unsigned)mirror_size, ROM_MASK);
+#if defined(RETRO_GO)
+    printf("Genesis ROM 64KB page table: %u/%u direct pages (%u bytes internal)\n",
+           direct_pages, GWENESIS_ROM_PAGE_COUNT,
+           (unsigned)(sizeof(*ROM_PAGE_PTR) * GWENESIS_ROM_PAGE_COUNT));
+#endif
 }
 
 void load_cartridge(unsigned char *buffer, size_t size)
@@ -666,6 +713,9 @@ void load_cartridge(unsigned char *buffer, size_t size)
 
 void unload_cartridge(void)
 {
+#if defined(RETRO_GO)
+    gwenesis_rom_page_table_clear();
+#endif
     if (ROM_DATA)
     {
         free(ROM_DATA);

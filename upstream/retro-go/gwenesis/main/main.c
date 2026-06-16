@@ -2081,37 +2081,41 @@ static void gwenesis_audio_task(void *arg)
 
 static bool gwenesis_audio_start(void)
 {
-    gwenesis_audio_mix_buffer = rg_alloc(sizeof(*gwenesis_audio_mix_buffer) * AUDIO_BUFFER_LENGTH, MEM_FAST);
+    gwenesis_audio_mix_buffer = rg_alloc(sizeof(*gwenesis_audio_mix_buffer) * AUDIO_BUFFER_LENGTH,
+                                         MEM_FAST | MEM_NOPANIC);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     gwenesis_audio_batch_buffer =
         rg_alloc(sizeof(*gwenesis_audio_batch_buffer) * GWENESIS_AUDIO_POSTPROCESS_BUFFER_LENGTH,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
     gwenesis_audio_ring_buffer =
         rg_alloc(sizeof(*gwenesis_audio_ring_buffer) * GWENESIS_AUDIO_RING_FRAMES,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
     gwenesis_audio_ring_drain_buffer =
         rg_alloc(sizeof(*gwenesis_audio_ring_drain_buffer) * GWENESIS_AUDIO_RING_SUBMIT_FRAMES,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
     gwenesis_audio_stretch_buffer =
         rg_alloc(sizeof(*gwenesis_audio_stretch_buffer) * GWENESIS_AUDIO_STRETCH_BUFFER_LENGTH,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
     gwenesis_audio_pitch_buffer =
         rg_alloc(sizeof(*gwenesis_audio_pitch_buffer) * GWENESIS_AUDIO_STRETCH_BUFFER_LENGTH,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
     gwenesis_audio_pitch_ring =
         rg_alloc(sizeof(*gwenesis_audio_pitch_ring) * GWENESIS_AUDIO_PITCH_RING_FRAMES,
-                 GWENESIS_AUDIO_STRETCH_MEM);
+                 GWENESIS_AUDIO_STRETCH_MEM | MEM_NOPANIC);
 #endif
 #if GWENESIS_YM_ASYNC_CORE0
-    gwenesis_ym_frame_queue = rg_alloc(sizeof(*gwenesis_ym_frame_queue) * GWENESIS_YM_QUEUE_PACKETS, GWENESIS_YM_QUEUE_MEM);
-    gwenesis_ym_pending_frame = rg_alloc(sizeof(*gwenesis_ym_pending_frame), GWENESIS_YM_PENDING_MEM);
+    gwenesis_ym_frame_queue = rg_alloc(sizeof(*gwenesis_ym_frame_queue) * GWENESIS_YM_QUEUE_PACKETS,
+                                       GWENESIS_YM_QUEUE_MEM | MEM_NOPANIC);
+    gwenesis_ym_pending_frame = rg_alloc(sizeof(*gwenesis_ym_pending_frame),
+                                         GWENESIS_YM_PENDING_MEM | MEM_NOPANIC);
     if (!gwenesis_audio_mix_buffer || !gwenesis_audio_batch_buffer ||
         !gwenesis_audio_ring_buffer || !gwenesis_audio_ring_drain_buffer ||
         !gwenesis_ym_frame_queue || !gwenesis_ym_pending_frame ||
         !gwenesis_audio_stretch_buffer || !gwenesis_audio_pitch_buffer || !gwenesis_audio_pitch_ring)
         goto fail;
 #else
-    gwenesis_audio_queue = rg_alloc(sizeof(*gwenesis_audio_queue) * GWENESIS_AUDIO_QUEUE_PACKETS, MEM_FAST);
+    gwenesis_audio_queue = rg_alloc(sizeof(*gwenesis_audio_queue) * GWENESIS_AUDIO_QUEUE_PACKETS,
+                                    MEM_FAST | MEM_NOPANIC);
     if (!gwenesis_audio_mix_buffer || !gwenesis_audio_queue)
         goto fail;
 
@@ -2643,18 +2647,21 @@ static void gwenesis_perf_overlay_draw(rg_surface_t *surface)
 }
 #endif
 
-void gwenesis_alloc_vram_fast(void)
+bool gwenesis_alloc_vram_fast(void)
 {
     if (VRAM)
-        return;
+        return true;
 
 #if defined(ESP_PLATFORM)
     size_t vram_internal_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t vram_spiram_before = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #endif
-    VRAM = rg_alloc(VRAM_MAX_SIZE, MEM_FAST);
+    VRAM = rg_alloc(VRAM_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!VRAM)
-        RG_PANIC("Genesis VRAM allocation failed!");
+    {
+        RG_LOGE("Genesis VRAM allocation failed!");
+        return false;
+    }
 #if defined(ESP_PLATFORM)
     size_t vram_internal_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t vram_spiram_after = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -2669,6 +2676,7 @@ void gwenesis_alloc_vram_fast(void)
             (unsigned)vram_internal_before, (unsigned)vram_internal_after,
             (unsigned)vram_spiram_before, (unsigned)vram_spiram_after);
 #endif
+    return true;
 }
 
 static void gwenesis_cleanup(void)
@@ -2711,11 +2719,39 @@ static void gwenesis_cleanup(void)
     gwenesis_vdp_mem_deinit_fast_ram();
     gwenesis_sn76489_deinit_fast_ram();
     gwenesis_ym2612_deinit_fast_ram();
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    gwenesis_m68k_core_deinit_fast_ram();
+#endif
 
 #if GNW_TARGET_MARIO == 0 && GNW_TARGET_ZELDA == 0
     unload_cartridge();
 #endif
     gwenesis_bus_deinit_fast_ram();
+}
+
+static void gwenesis_startup_error(const char *log_message, void **rom_data)
+{
+    if (rom_data && *rom_data)
+    {
+        free(*rom_data);
+        *rom_data = NULL;
+    }
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (log_message)
+        RG_LOGE("%s", log_message);
+    gwenesis_cleanup();
+    rg_display_clear(C_BLACK);
+    rg_gui_draw_message("%s",
+                        "Not enough internal RAM!\n"
+                        "Please restart the device\n"
+                        "and run this emulator again.");
+    rg_display_sync(true);
+    rg_task_delay(5000);
+    holo_runtime_request_switch("desktop", "", 0);
+#else
+    RG_PANIC(log_message ? log_message : "Genesis startup failed!");
+#endif
 }
 
 typedef struct
@@ -2919,7 +2955,8 @@ void app_main(void)
 #if defined(RG_TARGET_HOLO_DYNMOD)
     if (!holo_display_acquire(RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT))
         printf("[warn] gwenesis app_main: early display acquire failed\n");
-    gwenesis_alloc_vram_fast();
+    if (!VRAM && !gwenesis_alloc_vram_fast())
+        printf("[warn] gwenesis app_main: early VRAM allocation failed\n");
     app = rg_system_reinit(AUDIO_OUTPUT_SAMPLE_RATE, &handlers, NULL);
 #else
     app = rg_system_init(AUDIO_OUTPUT_SAMPLE_RATE, &handlers, NULL);
@@ -2947,6 +2984,12 @@ void app_main(void)
     RG_LOGI("Genesis start\n");
 #if !defined(RG_TARGET_HOLO_DYNMOD)
     gwenesis_alloc_vram_fast();
+#else
+    if (!VRAM && !gwenesis_alloc_vram_fast())
+    {
+        gwenesis_startup_error("Genesis VRAM allocation failed!", NULL);
+        return;
+    }
 #endif
 
     size_t rom_size = 0;
@@ -2955,22 +2998,29 @@ void app_main(void)
     if (rg_extension_match(app->romPath, "zip"))
     {
         if (!rg_storage_unzip_file(app->romPath, NULL, &rom_data, &rom_size, RG_FILE_ALIGN_64KB))
-            RG_PANIC("ROM file unzipping failed!");
+        {
+            gwenesis_startup_error("ROM file unzipping failed!", &rom_data);
+            return;
+        }
     }
     else if (!rg_storage_read_file(app->romPath, &rom_data, &rom_size, RG_FILE_ALIGN_64KB))
     {
-        RG_PANIC("ROM load failed!");
+        gwenesis_startup_error("ROM load failed!", &rom_data);
+        return;
     }
 
     updates[0] = rg_surface_create(GWENESIS_SURFACE_WIDTH, GWENESIS_SURFACE_HEIGHT,
-                                   GWENESIS_SURFACE_FORMAT, GWENESIS_SURFACE_MEM);
+                                   GWENESIS_SURFACE_FORMAT, GWENESIS_SURFACE_MEM | MEM_NOPANIC);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     updates[1] = rg_surface_create(GWENESIS_SURFACE_WIDTH, GWENESIS_SURFACE_HEIGHT,
-                                   GWENESIS_SURFACE_FORMAT, GWENESIS_SURFACE_MEM);
+                                   GWENESIS_SURFACE_FORMAT, GWENESIS_SURFACE_MEM | MEM_NOPANIC);
 #endif
     currentUpdate = updates[0];
     if (!currentUpdate)
-        RG_PANIC("Genesis video surface allocation failed!");
+    {
+        gwenesis_startup_error("Genesis video surface allocation failed!", &rom_data);
+        return;
+    }
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
     gwenesis_clear_surface();
@@ -2985,34 +3035,59 @@ void app_main(void)
     // updates[1]->height = 240;
 
     if (!gwenesis_bus_init_fast_ram())
-        RG_PANIC("Genesis fast RAM allocation failed!");
+    {
+        gwenesis_startup_error("Genesis fast RAM allocation failed!", &rom_data);
+        return;
+    }
 #if GWENESIS_AUDIO_EMULATION
     if (!gwenesis_ym2612_init_fast_ram() || !gwenesis_sn76489_init_fast_ram())
-        RG_PANIC("Genesis sound state fast memory allocation failed!");
+    {
+        gwenesis_startup_error("Genesis sound state fast memory allocation failed!", &rom_data);
+        return;
+    }
 #if GWENESIS_SN76489_RUN_ENABLED
-    gwenesis_sn76489_buffer = rg_alloc(sizeof(*gwenesis_sn76489_buffer) * AUDIO_BUFFER_LENGTH, MEM_FAST);
+    gwenesis_sn76489_buffer = rg_alloc(sizeof(*gwenesis_sn76489_buffer) * AUDIO_BUFFER_LENGTH, MEM_FAST | MEM_NOPANIC);
 #else
     gwenesis_sn76489_buffer = NULL;
 #endif
-    gwenesis_ym2612_buffer = rg_alloc(sizeof(*gwenesis_ym2612_buffer) * AUDIO_BUFFER_LENGTH, MEM_FAST);
+    gwenesis_ym2612_buffer = rg_alloc(sizeof(*gwenesis_ym2612_buffer) * AUDIO_BUFFER_LENGTH, MEM_FAST | MEM_NOPANIC);
     if (!gwenesis_ym2612_buffer || (GWENESIS_SN76489_RUN_ENABLED && !gwenesis_sn76489_buffer))
-        RG_PANIC("Genesis audio buffer allocation failed!");
+    {
+        gwenesis_startup_error("Genesis audio buffer allocation failed!", &rom_data);
+        return;
+    }
 #endif
 
     if (!gwenesis_vdp_mem_init_fast_ram())
-        RG_PANIC("Genesis VDP fast memory allocation failed!");
+    {
+        gwenesis_startup_error("Genesis VDP fast memory allocation failed!", &rom_data);
+        return;
+    }
     if (!gwenesis_vdp_gfx_init_fast_ram())
-        RG_PANIC("Genesis VDP gfx fast memory allocation failed!");
+    {
+        gwenesis_startup_error("Genesis VDP gfx fast memory allocation failed!", &rom_data);
+        return;
+    }
 #if GWENESIS_AUDIO_EMULATION
     if (!gwenesis_audio_start())
-        RG_PANIC("Genesis audio queue allocation failed!");
+    {
+        gwenesis_startup_error("Genesis audio queue allocation failed!", &rom_data);
+        return;
+    }
 #endif
 
     RG_LOGI("load_cartridge(%p, %d)\n", rom_data, rom_size);
     load_cartridge(rom_data, rom_size);
-    // free(rom_data); // load_cartridge takes ownership
+    rom_data = NULL; // load_cartridge takes ownership
 
     RG_LOGI("power_on()\n");
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_m68k_core_init_fast_ram())
+    {
+        gwenesis_startup_error("Genesis M68K core allocation failed!", NULL);
+        return;
+    }
+#endif
     power_on();
 
     RG_LOGI("reset_emulation()\n");

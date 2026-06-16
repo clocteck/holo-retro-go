@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -29,7 +30,7 @@ void retrogo_core_app_main(void);
 void rg_system_deinit_for_holo(void);
 #endif
 #if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
-void gwenesis_alloc_vram_fast(void);
+bool gwenesis_alloc_vram_fast(void);
 #endif
 
 typedef struct retrogo_instance_t
@@ -330,7 +331,10 @@ static void retrogo_task_entry(void *arg)
     {
         holo_port_log(RETROGO_LOG_PREFIX "early display acquire failed");
     }
-    gwenesis_alloc_vram_fast();
+    if (!gwenesis_alloc_vram_fast())
+    {
+        holo_port_log(RETROGO_LOG_PREFIX "early Genesis VRAM allocation failed");
+    }
 #endif
     retrogo_core_app_main();
 #if defined(RG_TARGET_HOLO_DYNMOD)

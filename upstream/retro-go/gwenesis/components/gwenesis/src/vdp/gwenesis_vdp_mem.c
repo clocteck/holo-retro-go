@@ -138,17 +138,17 @@ bool gwenesis_vdp_mem_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
     if (!CRAM)
-        CRAM = rg_alloc(sizeof(*CRAM) * CRAM_MAX_SIZE, MEM_FAST);
+        CRAM = rg_alloc(sizeof(*CRAM) * CRAM_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!SAT_CACHE)
-        SAT_CACHE = rg_alloc(SAT_CACHE_MAX_SIZE, MEM_FAST);
+        SAT_CACHE = rg_alloc(SAT_CACHE_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!gwenesis_vdp_regs)
-        gwenesis_vdp_regs = rg_alloc(REG_SIZE, MEM_FAST);
+        gwenesis_vdp_regs = rg_alloc(REG_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!fifo)
-        fifo = rg_alloc(sizeof(*fifo) * FIFO_SIZE, MEM_FAST);
+        fifo = rg_alloc(sizeof(*fifo) * FIFO_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!CRAM565)
-        CRAM565 = rg_alloc(sizeof(*CRAM565) * CRAM_MAX_SIZE * 4, MEM_FAST);
+        CRAM565 = rg_alloc(sizeof(*CRAM565) * CRAM_MAX_SIZE * 4, MEM_FAST | MEM_NOPANIC);
     if (!VSRAM)
-        VSRAM = rg_alloc(sizeof(*VSRAM) * VSRAM_MAX_SIZE, MEM_FAST);
+        VSRAM = rg_alloc(sizeof(*VSRAM) * VSRAM_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
 #endif
     return CRAM && SAT_CACHE && gwenesis_vdp_regs && fifo && CRAM565 && VSRAM;
 }

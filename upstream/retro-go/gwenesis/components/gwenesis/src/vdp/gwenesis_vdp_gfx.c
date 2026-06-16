@@ -32,6 +32,13 @@ __license__ = "GPLv3"
 //#include <assert.h>
 
 #define GWENESIS_HOT
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GW_FAST_MEMCPY(dst, src, n) __builtin_memcpy((dst), (src), (n))
+#define GW_FAST_MEMSET(dst, val, n) __builtin_memset((dst), (val), (n))
+#else
+#define GW_FAST_MEMCPY(dst, src, n) memcpy((dst), (src), (n))
+#define GW_FAST_MEMSET(dst, val, n) memset((dst), (val), (n))
+#endif
 
 #if GNW_TARGET_MARIO !=0 || GNW_TARGET_ZELDA!=0
   #pragma GCC optimize("Ofast")
@@ -145,17 +152,17 @@ bool gwenesis_vdp_gfx_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
     if (!render_buffer)
-        render_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
+        render_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!sprite_buffer)
-        sprite_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST);
+        sprite_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST | MEM_NOPANIC);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     if (!sprite_line_count)
-        sprite_line_count = rg_alloc(VDP_SPRITE_VISIBLE_LINES, MEM_FAST);
+        sprite_line_count = rg_alloc(VDP_SPRITE_VISIBLE_LINES, MEM_FAST | MEM_NOPANIC);
     if (!sprite_line_table)
-        sprite_line_table = rg_alloc(VDP_SPRITE_VISIBLE_LINES * VDP_SPRITE_LINE_MAX, MEM_FAST);
+        sprite_line_table = rg_alloc(VDP_SPRITE_VISIBLE_LINES * VDP_SPRITE_LINE_MAX, MEM_FAST | MEM_NOPANIC);
 #if VDP_TILE_ROW_CACHE_ENABLED
     if (!tile_row_cache)
-        tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST);
+        tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST | MEM_NOPANIC);
     if (tile_row_cache)
         memset(tile_row_cache, 0, sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES);
     return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
@@ -1554,7 +1561,7 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
   uint8_t *ps = &sprite_buffer[PIX_OVERFLOW];
 
   if (MODE_SHI)
-    memset(ps, 0, 320);
+    GW_FAST_MEMSET(ps, 0, 320);
 
   draw_line_b(line);
   draw_line_aw(line);
@@ -1627,20 +1634,8 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
       uint8_t sprite = ps[x];
 
       if ((plane & 0xC0) < (sprite & 0xC0)) {
-        switch (sprite & 0x3F) {
-        // Palette=3, Sprite=14 :> draw plane, force highlight
-        case 0x3E:
-          screen_buffer_line[x] = plane; // 0x8410 | CRAM565[plane] >> 1;
-          break;
-        // Palette=3, Sprite=15 :> draw plane, force shadow
-        case 0x3F:
-          screen_buffer_line[x] = plane; // CRAM565[plane] >> 1;
-          break;
-        // draw sprite, normal
-        default:
-          screen_buffer_line[x] = sprite;
-          break;
-        }
+        uint8_t s = sprite & 0x3F;
+        screen_buffer_line[x] = (s >= 0x3E) ? plane : sprite;
       } else {
         screen_buffer_line[x] = plane;
       }
@@ -1658,7 +1653,7 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
       *video_out++ = CRAM565[pb[x]] | CRAM565[pb[x+1]] << 16;
     }
 #else
-  memcpy(screen_buffer_line, pb, screen_width);
+  GW_FAST_MEMCPY(screen_buffer_line, pb, screen_width);
 #endif
   }
 

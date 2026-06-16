@@ -976,6 +976,10 @@ while true do
     local app_name = info.app or "launcher"
     local rom_path = info.rom or ""
     local flags = info.boot_flags or 0
+    if app_name == "desktop" or app_name == "__desktop" then
+      request_exit_to_home("module requested desktop")
+      break
+    end
     log("restart request", app_name, rom_path, flags)
     sleep_ms(80)
     if not start_retrogo(app_name, rom_path, flags) then

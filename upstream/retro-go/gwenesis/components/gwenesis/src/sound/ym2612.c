@@ -695,9 +695,9 @@ bool gwenesis_ym2612_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
   if (!OPNREGS)
-    OPNREGS = rg_alloc(OPNREGS_SIZE, MEM_FAST);
+    OPNREGS = rg_alloc(OPNREGS_SIZE, MEM_FAST | MEM_NOPANIC);
   if (!sin_tab)
-    sin_tab = rg_alloc(sizeof(*sin_tab) * SIN_LEN, MEM_FAST);
+    sin_tab = rg_alloc(sizeof(*sin_tab) * SIN_LEN, MEM_FAST | MEM_NOPANIC);
 
   return OPNREGS && sin_tab;
 #else

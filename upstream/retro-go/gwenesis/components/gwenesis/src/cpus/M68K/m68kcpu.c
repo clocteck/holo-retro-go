@@ -5,7 +5,9 @@
 extern int vdp_68k_irq_ack(int int_level);
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "rg_utils.h"
 #endif
 
@@ -45,16 +47,34 @@ static int irq_latency;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 m68ki_cpu_core *gwenesis_m68k_core;
 
-static void gwenesis_m68k_core_alloc_fast(void)
+bool gwenesis_m68k_core_init_fast_ram(void)
 {
   if (gwenesis_m68k_core)
-    return;
+    return true;
 
-  gwenesis_m68k_core = rg_alloc(sizeof(*gwenesis_m68k_core), MEM_FAST);
+  gwenesis_m68k_core = rg_alloc(sizeof(*gwenesis_m68k_core), MEM_FAST | MEM_NOPANIC);
+  if (gwenesis_m68k_core && PTR_IN_SPIRAM(gwenesis_m68k_core))
+  {
+    free(gwenesis_m68k_core);
+    gwenesis_m68k_core = NULL;
+  }
+  if (!gwenesis_m68k_core)
+  {
+    printf("[error] Genesis M68K core allocation failed size=%u requested=MEM_FAST\n",
+           (unsigned)sizeof(*gwenesis_m68k_core));
+    return false;
+  }
   printf("[info] Genesis M68K core: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
          gwenesis_m68k_core,
          (unsigned)sizeof(*gwenesis_m68k_core),
          PTR_IN_SPIRAM(gwenesis_m68k_core) ? "SPIRAM" : "internal");
+  return true;
+}
+
+void gwenesis_m68k_core_deinit_fast_ram(void)
+{
+  free(gwenesis_m68k_core);
+  gwenesis_m68k_core = NULL;
 }
 #else
 m68ki_cpu_core m68k;
@@ -359,7 +379,8 @@ int m68k_cycles_master(void)
 void m68k_init(void)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
-  gwenesis_m68k_core_alloc_fast();
+  if (!gwenesis_m68k_core_init_fast_ram())
+    return;
 #endif
 
 #ifdef BUILD_TABLES
