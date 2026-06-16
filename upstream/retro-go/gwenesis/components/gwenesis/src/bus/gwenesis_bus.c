@@ -59,7 +59,7 @@ __license__ = "GPLv3"
 gwenesis_m68k_profile_t gwenesis_m68k_profile;
 #endif
 #if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
-volatile uint8_t gwenesis_m68k_ram_profile_enabled = 1;
+volatile uint8_t gwenesis_m68k_ram_profile_enabled = 0;
 #endif
 
 #if !BUS_DISABLE_LOGGING
@@ -221,7 +221,7 @@ static void gwenesis_m68k_ram_cache_reset_to_defaults(void)
     m68k_ram_cache_update_epoch = 0;
     m68k_ram_cache_last_swap_epoch = 0;
 #if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
-    gwenesis_m68k_ram_profile_enabled = 1;
+    gwenesis_m68k_ram_profile_enabled = 0;
 #endif
 
     gwenesis_m68k_ram_cache_install(0, 0x0e);
@@ -813,45 +813,59 @@ static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_8(unsigned int 
  bus_log(__FUNCTION__,"read8  %x", address);
 
   if (gwenesis_sram_contains(address))
+  {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_SRAM);
     return gwenesis_sram_read_8(address);
+  }
 
   switch (gwenesis_bus_map_address(address)) {
   
   case VDP_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_VDP);
     return gwenesis_vdp_read_memory_8(address);
 
   case ROM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_ROM);
     return FETCH8ROM(address);
 
   case RAM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_R);
     return FETCH8RAM(address);
 
   case IO_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_IO);
     return gwenesis_io_read_ctrl(address & 0x1F);
 
   case Z80_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     return z80_read_ctrl(address & 0xFFFF);
 
   case Z80_RAM_ADDR:
   case Z80_RAM_ADDR1K:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     return ZRAM[address & 0x1FFF];
 
   case Z80_YM2612_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_YM2612);
     return YM2612Read(m68k_cycles_master());
 
   case Z80_SN76489_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
     return 0xff;
 
   case Z80_BANK_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     return 0xff;
 
   case TMSS_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_TMSS);
     bus_log(__FUNCTION__,"TMS");
     if (tmss_state == 0)
       return TMSS[address & 0x4];
     return 0xFF;
 
   default:
+     GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_OTHER);
      bus_log(__FUNCTION__," default read 8 %x", address);
     return 0x00;
   }
@@ -863,23 +877,31 @@ static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_16(unsigned int
    unsigned int ret_value;
 
   if (gwenesis_sram_overlaps(address, 2))
+  {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_SRAM);
     return (gwenesis_sram_read_8(address) << 8) | gwenesis_sram_read_8(address + 1);
+  }
 
   switch (gwenesis_bus_map_address(address)) {
 
   case VDP_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_VDP);
     return gwenesis_vdp_read_memory_16(address);
 
   case RAM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_R);
     return FETCH16RAM(address);
 
   case ROM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_ROM);
     return FETCH16ROM(address);
 
   case IO_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_IO);
     return gwenesis_io_read_ctrl(address & 0x1F);
 
   case Z80_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
   //  ret_value = z80_read_ctrl(address & 0xFFFF); 
    // return ret_value | ret_value << 8;
     address &=0xFFFF;
@@ -888,17 +910,21 @@ static inline unsigned int GWENESIS_HOT gwenesis_bus_read_memory_16(unsigned int
 
   case Z80_RAM_ADDR:
   case Z80_RAM_ADDR1K:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     return ZRAM[address & 0X1FFF] | (ZRAM[address & 0X1FFF] << 8);
 
   case Z80_YM2612_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_YM2612);
     ret_value = YM2612Read(m68k_cycles_master());
     return ret_value | ret_value << 8;
 
 
   case Z80_SN76489_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
     return 0xff;
 
   case Z80_BANK_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     return 0xff;
 
   default:
@@ -921,6 +947,7 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address
 
   if (gwenesis_sram_contains(address))
   {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_SRAM);
     gwenesis_sram_write_8(address, value);
     return;
   }
@@ -928,41 +955,50 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address
   switch (gwenesis_bus_map_address(address)) {
 
   case VDP_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_VDP);
     gwenesis_vdp_write_memory_16(address & ~1, (value << 8) | value);
     return;
 
   case RAM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
     WRITE8RAM(address, value);
     return;
 
   case IO_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_IO);
     gwenesis_io_write_ctrl(address & 0x1F, value);
     return;
 
   case Z80_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     z80_write_ctrl(address & 0x1FFF, value);
     return;
 
   case Z80_RAM_ADDR:
   case Z80_RAM_ADDR1K:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     ZRAM[address & 0x1FFF] = value;
     return;
 
   case Z80_YM2612_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_YM2612);
     bus_log(__FUNCTION__,"CPUZ80PSG8 ,m68kclk= %d", m68k_cycles_master());
     YM2612Write(address & 0x3, value & 0Xff,m68k_cycles_master());
     return;
 
   case Z80_SN76489_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
     bus_log(__FUNCTION__,"CPUZ80FM8  ,m68kclk= %d", m68k_cycles_master());
     gwenesis_SN76489_Write( value & 0Xff, m68k_cycles_master());
     return;
 
   case Z80_BANK_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
   //TODO
     return;
 
   case TMSS_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_TMSS);
 
     if (tmss_state == 0) {
       TMSS[address & 0x4] = value;
@@ -975,6 +1011,7 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address
 
 
   default:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_OTHER);
     //printf("write(%x, %x)\n", address, value);
     return;
   }
@@ -987,6 +1024,7 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
 
   if (gwenesis_sram_overlaps(address, 2))
   {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_SRAM);
     gwenesis_sram_write_8(address, (value >> 8) & 0xff);
     gwenesis_sram_write_8(address + 1, value & 0xff);
     return;
@@ -995,32 +1033,39 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
   switch (gwenesis_bus_map_address(address)) {
 
   case VDP_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_VDP);
     gwenesis_vdp_write_memory_16(address, value);
     return;
 
   case RAM_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
     WRITE16RAM(address, value);
     return;
 
   case Z80_RAM_ADDR:
   case Z80_RAM_ADDR1K:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     ZRAM[address & 0X1FFF]= value >> 8;
     return;
 
   case IO_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_IO);
     gwenesis_io_write_ctrl(address & 0x1F, value);
     return;
 
   case Z80_CTRL:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_Z80);
     z80_write_ctrl(address & 0xFFFF, value >> 8) ;
     return;
 
   case Z80_YM2612_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_YM2612);
     bus_log(__FUNCTION__,"CZYM16 ,mclk=%d",  m68k_cycles_master());
     YM2612Write(address & 0x3, value >> 8,m68k_cycles_master() );
     return;
 
   case Z80_SN76489_ADDR:
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
     bus_log(__FUNCTION__,"CZSN16 ,mclk=%d", m68k_cycles_master());
     gwenesis_SN76489_Write(value >> 8,m68k_cycles_master() );
     return;
@@ -1049,10 +1094,14 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
         if (CART_SRAM_TOUCHES(address, 1))
             return gwenesis_bus_read_memory_8(address);
         GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
+        GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_ROM);
         return FETCH8ROM(address);
     }
     if ((address & 0xE00000) == 0xE00000)
+    {
+        GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_R);
         return FETCH8RAM(address);
+    }
     return gwenesis_bus_read_memory_8(address);
 }
 
@@ -1070,10 +1119,14 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
         if (CART_SRAM_TOUCHES(address, 2))
             return gwenesis_bus_read_memory_16(address);
         GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
+        GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_ROM);
         return FETCH16ROM(address);
     }
     if ((address & 0xE00000) == 0xE00000)
+    {
+        GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_R);
         return FETCH16RAM(address);
+    }
     return gwenesis_bus_read_memory_16(address);
 }
 
@@ -1090,9 +1143,11 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
     if (CART_SRAM_TOUCHES(address, 4))
       return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
     GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_ROM);
     return FETCH32ROM(address);
   }
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_R);
     return (FETCH16RAM(address) << 16) | FETCH16RAM(address + 2);
   }
   return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
@@ -1106,6 +1161,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) {
   if ((address & 0xE00000) == 0xE00000) {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
     WRITE8RAM(address, value);
     return;
   }
@@ -1121,6 +1177,7 @@ void GWENESIS_HOT m68k_write_memory_8(unsigned int address, unsigned int value) 
  ******************************************************************************/
 void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value) {
   if ((address & 0xE00000) == 0xE00000) {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
     WRITE16RAM(address, value);
     return;
   }
@@ -1136,6 +1193,7 @@ void GWENESIS_HOT m68k_write_memory_16(unsigned int address, unsigned int value)
 void GWENESIS_HOT m68k_write_memory_32(unsigned int address, unsigned int value) {
 
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
+    GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
     WRITE16RAM(address, (value >> 16) & 0xffff);
     WRITE16RAM(address + 2, value & 0xffff);
     return;

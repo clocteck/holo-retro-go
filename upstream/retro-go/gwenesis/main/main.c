@@ -732,6 +732,71 @@ static void gwenesis_profiler_format_top_counts(char *out, size_t out_size,
         snprintf(out, out_size, "-");
 }
 
+#if GWENESIS_M68K_PROFILE
+static uint32_t gwenesis_profiler_sum_counts(const uint32_t *counts, size_t count)
+{
+    uint32_t total = 0;
+
+    for (size_t i = 0; i < count; ++i)
+        total += counts[i];
+
+    return total;
+}
+
+static int gwenesis_profiler_pct_u32(uint32_t part, uint32_t total)
+{
+    return total > 0 ? (int)(((uint64_t)part * 100 + (total / 2)) / total) : 0;
+}
+
+static void gwenesis_profiler_format_top_opcodes(char *out, size_t out_size,
+                                                 const gwenesis_m68k_profile_t *profile,
+                                                 int limit)
+{
+    uint8_t selected[GWENESIS_M68K_OP_SLOT_COUNT] = {0};
+    size_t used = 0;
+
+    if (!out || out_size == 0)
+        return;
+
+    out[0] = 0;
+
+    for (int rank = 0; rank < limit; ++rank)
+    {
+        size_t best = GWENESIS_M68K_OP_SLOT_COUNT;
+        uint32_t best_value = 0;
+
+        for (size_t i = 0; i < GWENESIS_M68K_OP_SLOT_COUNT; ++i)
+        {
+            if (!selected[i] && profile->op_slot_count[i] > best_value)
+            {
+                best = i;
+                best_value = profile->op_slot_count[i];
+            }
+        }
+
+        if (best == GWENESIS_M68K_OP_SLOT_COUNT || best_value == 0)
+            break;
+
+        selected[best] = 1;
+        int written = snprintf(out + used, out_size - used, "%s%04x:%u",
+                               used ? "," : "",
+                               (unsigned)profile->op_slot_code[best],
+                               (unsigned)best_value);
+        if (written < 0)
+            break;
+        if ((size_t)written >= out_size - used)
+        {
+            out[out_size - 1] = 0;
+            return;
+        }
+        used += (size_t)written;
+    }
+
+    if (used == 0)
+        snprintf(out, out_size, "-");
+}
+#endif
+
 static void gwenesis_profiler_log_m68k_mem(void)
 {
 #if GWENESIS_M68K_ANY_PROFILE
@@ -750,6 +815,7 @@ static void gwenesis_profiler_log_m68k_mem(void)
 #if GWENESIS_M68K_PROFILE
     char rom_pages[80];
     char op_hi[128];
+    char op_full[160];
 #endif
     char ram_reads[96];
     char ram_writes[96];
@@ -777,10 +843,16 @@ static void gwenesis_profiler_log_m68k_mem(void)
 #if GWENESIS_M68K_PROFILE
     gwenesis_profiler_format_top_counts(op_hi, sizeof(op_hi),
                                         profile.op_hi, GWENESIS_M68K_OP_HI_COUNT, 2, 6);
+    gwenesis_profiler_format_top_opcodes(op_full, sizeof(op_full), &profile, 8);
 #endif
     gwenesis_bus_m68k_ram_cache_status(ram_cache, sizeof(ram_cache));
 
 #if GWENESIS_M68K_PROFILE
+    const uint32_t mem_total = gwenesis_profiler_sum_counts(profile.mem_kind, GWENESIS_M68K_MEM_COUNT);
+    const uint32_t mem_direct = profile.mem_kind[GWENESIS_M68K_MEM_ROM] +
+                                profile.mem_kind[GWENESIS_M68K_MEM_RAM_R] +
+                                profile.mem_kind[GWENESIS_M68K_MEM_RAM_W];
+    const uint32_t mem_fallback = mem_total > mem_direct ? mem_total - mem_direct : 0;
     RG_LOGI("gwen mem: romkind op=%u imm=%u pc=%u data=%u rompg=%s ramr=%s ramw=%s",
             (unsigned)profile.rom_kind[GWENESIS_M68K_ROM_KIND_OPCODE],
             (unsigned)profile.rom_kind[GWENESIS_M68K_ROM_KIND_IMM],
@@ -789,7 +861,49 @@ static void gwenesis_profiler_log_m68k_mem(void)
             rom_pages,
             ram_reads,
             ram_writes);
-    RG_LOGI("gwen op: hi=%s", op_hi);
+    RG_LOGI("gwen op: hi=%s full=%s ovf=%u", op_hi, op_full,
+            (unsigned)profile.op_slot_overflow);
+    RG_LOGI("gwen ea-low: d=%u a=%u ai=%u pi=%u pd=%u di=%u ix=%u aw=%u al=%u pcdi=%u pcix=%u imm=%u br=%u db=%u oth=%u",
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_DREG],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_AREG],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_AI],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_PI],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_PD],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_DI],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_IX],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_AW],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_AL],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_PCDI],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_PCIX],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_IMM],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_BRANCH],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_DBCC],
+            (unsigned)profile.ea_low[GWENESIS_M68K_EA_OTHER]);
+    RG_LOGI("gwen ea-dst: d=%u a=%u ai=%u pi=%u pd=%u di=%u ix=%u aw=%u al=%u oth=%u",
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_DREG],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_AREG],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_AI],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_PI],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_PD],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_DI],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_IX],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_AW],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_AL],
+            (unsigned)profile.ea_dst[GWENESIS_M68K_EA_OTHER]);
+    RG_LOGI("gwen memmix: direct=%d%% fb=%d%% rom=%u ramr=%u ramw=%u sram=%u vdp=%u io=%u z80=%u ym=%u psg=%u tmss=%u other=%u",
+            gwenesis_profiler_pct_u32(mem_direct, mem_total),
+            gwenesis_profiler_pct_u32(mem_fallback, mem_total),
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_ROM],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_RAM_R],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_RAM_W],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_SRAM],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_VDP],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_IO],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_Z80],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_YM2612],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_PSG],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_TMSS],
+            (unsigned)profile.mem_kind[GWENESIS_M68K_MEM_OTHER]);
 #else
     RG_LOGI("gwen mem: ramr=%s ramw=%s mode=%s next=%d",
             ram_reads,
@@ -805,14 +919,8 @@ static void gwenesis_profiler_log_m68k_mem(void)
         if (--sample_logs_left <= 0)
         {
             gwenesis_m68k_ram_profile_enabled = 0;
-            hold_logs_left = GWENESIS_RAM_CACHE_HOLD_LOGS;
+            hold_logs_left = 0;
         }
-    }
-    else if (--hold_logs_left <= 0)
-    {
-        memset(&gwenesis_m68k_profile, 0, sizeof(gwenesis_m68k_profile));
-        gwenesis_m68k_ram_profile_enabled = 1;
-        sample_logs_left = GWENESIS_RAM_CACHE_SAMPLE_LOGS;
     }
 #endif
 #endif
