@@ -393,7 +393,7 @@ static int l_start(lua_State *L)
     if (host->task.create_ex)
     {
         if (host->task.create_ex(RETROGO_MODULE_NAME, retrogo_task_entry, inst, 9u * 1024u, 3u, 1,
-                                 MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
+                                 MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
         {
             inst->task = NULL;
         }

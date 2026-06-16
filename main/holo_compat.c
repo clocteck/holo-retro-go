@@ -1167,6 +1167,7 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void)
 static uint32_t task_stack_caps_for_name(const char *name)
 {
     if (name && (strcmp(name, "rg_input") == 0 || strcmp(name, "rg_sysmon") == 0 ||
+                 strcmp(name, "rg_display") == 0 || strcmp(name, "gwen_audio") == 0 ||
                  strcmp(name, "pce_sound") == 0)) {
         return MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT;
     }
