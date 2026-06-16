@@ -264,6 +264,15 @@ static inline unsigned int gwenesis_fetch32ram(unsigned int address)
 {
 	GWENESIS_M68K_RAM_PAGE_R_INC(address);
 #if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffc)
+	{
+		unsigned int value = *(unsigned int *)ptr;
+		return (value << 16) | (value >> 16);
+	}
 	return (gwenesis_fetch16ram_raw(address) << 16) | gwenesis_fetch16ram_raw(address + 2);
 #else
 	unsigned int value = *(unsigned int *)&M68K_RAM[address & 0xffff];
@@ -311,6 +320,15 @@ static inline void gwenesis_write32ram(unsigned int address, unsigned int value)
 {
 	GWENESIS_M68K_RAM_PAGE_W_INC(address);
 #if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffc)
+	{
+		*(unsigned int *)ptr = (value << 16) | (value >> 16);
+		return;
+	}
 	gwenesis_write16ram_raw(address, (value >> 16) & 0xffff);
 	gwenesis_write16ram_raw(address + 2, value & 0xffff);
 #else

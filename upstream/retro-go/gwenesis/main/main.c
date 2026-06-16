@@ -162,7 +162,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 50
+#define GWENESIS_FRAME_TARGET_FPS 48
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static const int frame_min_yield_ms = 1;
@@ -474,42 +474,45 @@ static int32_t gwenesis_clamp_i32(int32_t value, int32_t min_value, int32_t max_
 
 static int gwenesis_audio_stretch_target(int32_t level_frames, int32_t debt_us)
 {
-    const int32_t low_water = GWENESIS_AUDIO_RING_LOW_FRAMES;
+    const int32_t full_water = GWENESIS_AUDIO_RING_FRAMES;
+    const int32_t early_water = 1280;
+    const int32_t mid_water = 850;
+    const int32_t low_water = 650;
     const int32_t critical_water = GWENESIS_AUDIO_RING_CRITICAL_FRAMES;
-    const int32_t target_water = GWENESIS_AUDIO_RING_TARGET_FRAMES;
-    const int32_t stretch_water = GWENESIS_AUDIO_RING_STRETCH_FRAMES;
-    const int32_t high_water = GWENESIS_AUDIO_RING_HIGH_FRAMES;
     int target = 0;
 
     if (debt_us > 0)
         target += debt_us / GWENESIS_AUDIO_DEBT_US_PER_PERMILLE;
 
-    if (level_frames < stretch_water)
+    if (level_frames < full_water && level_frames > early_water)
     {
-        const int32_t deficit = stretch_water - level_frames;
-        target += 4 + (int)((deficit * 20) / stretch_water);
+        const int32_t deficit = full_water - level_frames;
+        target += (int)((deficit * 10) / full_water);
     }
 
-    if (level_frames < target_water)
+    if (level_frames < early_water)
     {
-        const int32_t deficit = target_water - level_frames;
-        target += (int)((deficit * 20) / target_water);
+        const int32_t deficit = early_water - level_frames;
+        target += (int)((deficit * 16) / early_water);
+    }
+
+    if (level_frames < mid_water)
+    {
+        const int32_t deficit = mid_water - level_frames;
+        target += (int)((deficit * 20) / mid_water);
     }
 
     if (level_frames < low_water)
     {
         const int32_t deficit = low_water - level_frames;
-        target += (int)((deficit * 32) / low_water);
+        target += (int)((deficit * 25) / low_water);
     }
 
     if (level_frames < critical_water)
     {
         const int32_t deficit = critical_water - level_frames;
-        target += (int)((deficit * 24) / critical_water);
+        target += (int)((deficit * 30) / critical_water);
     }
-
-    if (level_frames >= high_water && debt_us <= 0)
-        target = 0;
 
     if (target > GWENESIS_AUDIO_STRETCH_MAX_PERMILLE)
         target = GWENESIS_AUDIO_STRETCH_MAX_PERMILLE;
