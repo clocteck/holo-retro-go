@@ -42,7 +42,6 @@ static void lcd_sync(void)
 
 static void lcd_init(void)
 {
-    lcd_alloc_buffers();
     if (!holo_display_acquire(RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT)) {
         holo_port_log("[retrogo.so] display acquire failed");
     }

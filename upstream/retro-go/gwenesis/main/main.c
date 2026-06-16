@@ -2000,6 +2000,29 @@ static void gwenesis_force_native_display(void)
 }
 #endif
 
+static void gwenesis_alloc_vram_fast(void)
+{
+    if (VRAM)
+        return;
+
+#if defined(ESP_PLATFORM)
+    size_t vram_internal_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t vram_spiram_before = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#endif
+    VRAM = rg_alloc(VRAM_MAX_SIZE, MEM_FAST);
+    if (!VRAM)
+        RG_PANIC("Genesis VRAM allocation failed!");
+#if defined(ESP_PLATFORM)
+    size_t vram_internal_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t vram_spiram_after = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    RG_LOGW("Genesis VRAM: ptr=%p size=%u requested=MEM_FAST addr_guess=%s "
+            "largest_free internal %u->%u spiram %u->%u\n",
+            VRAM, (unsigned)VRAM_MAX_SIZE, PTR_IN_SPIRAM(VRAM) ? "SPIRAM" : "not-SPIRAM",
+            (unsigned)vram_internal_before, (unsigned)vram_internal_after,
+            (unsigned)vram_spiram_before, (unsigned)vram_spiram_after);
+#endif
+}
+
 static void gwenesis_cleanup(void)
 {
     if (gwenesis_cleaned_up)
@@ -2257,6 +2280,7 @@ void app_main(void)
 #endif
 
     RG_LOGI("Genesis start\n");
+    gwenesis_alloc_vram_fast();
 
     size_t rom_size = 0;
     void *rom_data = NULL;
@@ -2308,22 +2332,6 @@ void app_main(void)
         RG_PANIC("Genesis audio buffer allocation failed!");
 #endif
 
-#if defined(ESP_PLATFORM)
-    size_t vram_internal_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    size_t vram_spiram_before = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-#endif
-    VRAM = rg_alloc(VRAM_MAX_SIZE, MEM_FAST);
-    if (!VRAM)
-        RG_PANIC("Genesis VRAM allocation failed!");
-#if defined(ESP_PLATFORM)
-    size_t vram_internal_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    size_t vram_spiram_after = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    RG_LOGW("Genesis VRAM: ptr=%p size=%u requested=MEM_FAST addr_guess=%s "
-            "largest_free internal %u->%u spiram %u->%u\n",
-            VRAM, (unsigned)VRAM_MAX_SIZE, PTR_IN_SPIRAM(VRAM) ? "SPIRAM" : "not-SPIRAM",
-            (unsigned)vram_internal_before, (unsigned)vram_internal_after,
-            (unsigned)vram_spiram_before, (unsigned)vram_spiram_after);
-#endif
     if (!gwenesis_vdp_mem_init_fast_ram())
         RG_PANIC("Genesis VDP fast memory allocation failed!");
     if (!gwenesis_vdp_gfx_init_fast_ram())

@@ -773,7 +773,9 @@ void rg_display_init(void)
     display.screen.width -= display.screen.margins.left + display.screen.margins.right;
     display.screen.height -= display.screen.margins.top + display.screen.margins.bottom;
     lcd_init();
+#if !defined(RG_TARGET_HOLO_DYNMOD)
     rg_display_clear(C_BLACK);
+#endif
     rg_task_delay(
         80); // Wait for the screen be cleared before turning on the backlight (40ms doesn't seem to be enough...)
     lcd_set_backlight(config.backlight);
