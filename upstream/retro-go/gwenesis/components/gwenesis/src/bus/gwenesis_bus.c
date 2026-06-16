@@ -339,6 +339,43 @@ static void gwenesis_m68k_ram_clear(void)
 {
     gwenesis_m68k_ram_cache_clear();
 }
+
+static unsigned char *gwenesis_bus_alloc_zram(void)
+{
+#if defined(ESP_PLATFORM)
+    const size_t internal_before = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
+    unsigned char *ptr = rg_alloc(MAX_Z80_RAM_SIZE, GWENESIS_Z80_RAM_MEM | MEM_NOPANIC);
+#if defined(ESP_PLATFORM)
+    const size_t internal_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+#endif
+
+    if (ptr)
+    {
+#if defined(ESP_PLATFORM)
+        const char *location = PTR_IN_SPIRAM(ptr) ? "SPIRAM" : "internal";
+        printf("[info] Genesis Z80 RAM: %s ptr=%p size=%u requested=MEM_FAST largest_internal %u->%u\n",
+               location, ptr, (unsigned)MAX_Z80_RAM_SIZE,
+               (unsigned)internal_before, (unsigned)internal_after);
+        RG_LOGI("Genesis Z80 RAM: %s ptr=%p size=%u requested=MEM_FAST largest_internal %u->%u",
+                location, ptr, (unsigned)MAX_Z80_RAM_SIZE,
+                (unsigned)internal_before, (unsigned)internal_after);
+#else
+        RG_LOGI("Genesis Z80 RAM: ptr=%p size=%u", ptr, (unsigned)MAX_Z80_RAM_SIZE);
+#endif
+    }
+    else
+    {
+#if defined(ESP_PLATFORM)
+        RG_LOGW("Genesis Z80 RAM: internal allocation failed size=%u largest_internal_before=%u",
+                (unsigned)MAX_Z80_RAM_SIZE, (unsigned)internal_before);
+#else
+        RG_LOGW("Genesis Z80 RAM: allocation failed size=%u", (unsigned)MAX_Z80_RAM_SIZE);
+#endif
+    }
+
+    return ptr;
+}
 #else
 static void gwenesis_m68k_ram_clear(void)
 {
@@ -356,7 +393,7 @@ bool gwenesis_bus_init_fast_ram(void)
     if (!M68K_RAM)
         M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM);
     if (!ZRAM)
-        ZRAM = rg_alloc(MAX_Z80_RAM_SIZE, GWENESIS_Z80_RAM_MEM);
+        ZRAM = gwenesis_bus_alloc_zram();
     if (ZRAM)
         z80_set_memory(ZRAM);
     if (M68K_RAM && (ram_was_missing || cache_state_was_missing))

@@ -530,7 +530,12 @@ typedef struct
 } m68ki_cpu_core;
 
 /* CPU cores */
+#if defined(RG_TARGET_HOLO_DYNMOD)
+extern m68ki_cpu_core *gwenesis_m68k_core;
+#define m68k (*gwenesis_m68k_core)
+#else
 extern m68ki_cpu_core m68k;
+#endif
 
 /* ======================================================================== */
 /* ============================== CALLBACKS =============================== */

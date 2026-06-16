@@ -4,6 +4,11 @@
 
 extern int vdp_68k_irq_ack(int int_level);
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#include <stdio.h>
+#include "rg_utils.h"
+#endif
+
 #define m68ki_cpu m68k
 #define MUL (7)
 
@@ -37,7 +42,23 @@ static unsigned char m68ki_cycles[0x10000];
 
 static int irq_latency;
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+m68ki_cpu_core *gwenesis_m68k_core;
+
+static void gwenesis_m68k_core_alloc_fast(void)
+{
+  if (gwenesis_m68k_core)
+    return;
+
+  gwenesis_m68k_core = rg_alloc(sizeof(*gwenesis_m68k_core), MEM_FAST);
+  printf("[info] Genesis M68K core: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
+         gwenesis_m68k_core,
+         (unsigned)sizeof(*gwenesis_m68k_core),
+         PTR_IN_SPIRAM(gwenesis_m68k_core) ? "SPIRAM" : "internal");
+}
+#else
 m68ki_cpu_core m68k;
+#endif
 
 
 /* ======================================================================== */
@@ -337,6 +358,10 @@ int m68k_cycles_master(void)
 
 void m68k_init(void)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  gwenesis_m68k_core_alloc_fast();
+#endif
+
 #ifdef BUILD_TABLES
   static uint emulation_initialized = 0;
 
