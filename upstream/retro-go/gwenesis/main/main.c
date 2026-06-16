@@ -2000,7 +2000,7 @@ static void gwenesis_force_native_display(void)
 }
 #endif
 
-static void gwenesis_alloc_vram_fast(void)
+void gwenesis_alloc_vram_fast(void)
 {
     if (VRAM)
         return;

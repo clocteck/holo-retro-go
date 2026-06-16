@@ -28,6 +28,9 @@ void retrogo_core_app_main(void);
 #if defined(RG_TARGET_HOLO_DYNMOD)
 void rg_system_deinit_for_holo(void);
 #endif
+#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+void gwenesis_alloc_vram_fast(void);
+#endif
 
 typedef struct retrogo_instance_t
 {
@@ -322,6 +325,13 @@ static void retrogo_task_entry(void *arg)
     holo_port_log(RETROGO_LOG_PREFIX "task entry");
     holo_port_log(RETROGO_LOG_PREFIX "retro-go task start");
     holo_runtime_bind_task(&inst->running, &inst->task);
+#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+    if (!holo_display_acquire(320, 240))
+    {
+        holo_port_log(RETROGO_LOG_PREFIX "early display acquire failed");
+    }
+    gwenesis_alloc_vram_fast();
+#endif
     retrogo_core_app_main();
 #if defined(RG_TARGET_HOLO_DYNMOD)
     rg_system_deinit_for_holo();
