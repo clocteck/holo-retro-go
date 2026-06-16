@@ -2015,6 +2015,11 @@ static void gwenesis_alloc_vram_fast(void)
 #if defined(ESP_PLATFORM)
     size_t vram_internal_after = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t vram_spiram_after = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    printf("[warn] %s: Genesis VRAM: ptr=%p size=%u requested=MEM_FAST addr_guess=%s "
+           "largest_free internal %u->%u spiram %u->%u\n",
+           __func__, VRAM, (unsigned)VRAM_MAX_SIZE, PTR_IN_SPIRAM(VRAM) ? "SPIRAM" : "not-SPIRAM",
+           (unsigned)vram_internal_before, (unsigned)vram_internal_after,
+           (unsigned)vram_spiram_before, (unsigned)vram_spiram_after);
     RG_LOGW("Genesis VRAM: ptr=%p size=%u requested=MEM_FAST addr_guess=%s "
             "largest_free internal %u->%u spiram %u->%u\n",
             VRAM, (unsigned)VRAM_MAX_SIZE, PTR_IN_SPIRAM(VRAM) ? "SPIRAM" : "not-SPIRAM",
@@ -2256,6 +2261,9 @@ void app_main(void)
     };
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!holo_display_acquire(RG_SCREEN_WIDTH, RG_SCREEN_HEIGHT))
+        printf("[warn] gwenesis app_main: early display acquire failed\n");
+    gwenesis_alloc_vram_fast();
     app = rg_system_reinit(AUDIO_OUTPUT_SAMPLE_RATE, &handlers, NULL);
 #else
     app = rg_system_init(AUDIO_OUTPUT_SAMPLE_RATE, &handlers, NULL);
@@ -2280,7 +2288,9 @@ void app_main(void)
 #endif
 
     RG_LOGI("Genesis start\n");
+#if !defined(RG_TARGET_HOLO_DYNMOD)
     gwenesis_alloc_vram_fast();
+#endif
 
     size_t rom_size = 0;
     void *rom_data = NULL;
