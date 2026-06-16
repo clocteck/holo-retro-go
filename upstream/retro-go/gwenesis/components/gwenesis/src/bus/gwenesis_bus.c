@@ -50,6 +50,17 @@ __license__ = "GPLv3"
 #define BUS_DISABLE_LOGGING 1
 #define GWENESIS_M68K_RAM_MEM MEM_SLOW
 #define GWENESIS_Z80_RAM_MEM MEM_FAST
+#define GWENESIS_M68K_RAM_PAGE_SIZE 0x1000
+#define GWENESIS_M68K_RAM_FAST_SLOTS 2
+#define GWENESIS_M68K_RAM_CACHE_EMPTY 0xff
+#define GWENESIS_M68K_RAM_CACHE_MIN_SWAP_EPOCHS 2
+
+#if GWENESIS_M68K_ANY_PROFILE
+gwenesis_m68k_profile_t gwenesis_m68k_profile;
+#endif
+#if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
+volatile uint8_t gwenesis_m68k_ram_profile_enabled = 1;
+#endif
 
 #if !BUS_DISABLE_LOGGING
 #include <stdarg.h>
@@ -88,6 +99,16 @@ static unsigned int CART_SRAM_PARITY;
 static size_t CART_SRAM_SIZE;
 #if defined(RETRO_GO)
 unsigned char *M68K_RAM; // 68K RAM
+unsigned char *M68K_RAM_PAGE_PTR[GWENESIS_M68K_RAM_PAGE_COUNT];
+static unsigned char *m68k_ram_fast_slot[GWENESIS_M68K_RAM_FAST_SLOTS];
+static uint8_t m68k_ram_fast_page[GWENESIS_M68K_RAM_FAST_SLOTS] = {
+    GWENESIS_M68K_RAM_CACHE_EMPTY,
+    GWENESIS_M68K_RAM_CACHE_EMPTY,
+};
+static uint32_t m68k_ram_cache_score[GWENESIS_M68K_RAM_PAGE_COUNT];
+static uint32_t m68k_ram_cache_swaps;
+static uint32_t m68k_ram_cache_update_epoch;
+static uint32_t m68k_ram_cache_last_swap_epoch;
 #else
 unsigned char M68K_RAM[MAX_RAM_SIZE];    // 68K RAM
 #endif
@@ -107,15 +128,169 @@ extern unsigned short gwenesis_vdp_status;
 int tmss_state = 0;
 int tmss_count = 0;
 
+#if defined(RETRO_GO)
+static void gwenesis_m68k_ram_cache_bind_slow_pages(void)
+{
+    for (unsigned int page = 0; page < GWENESIS_M68K_RAM_PAGE_COUNT; ++page)
+        M68K_RAM_PAGE_PTR[page] = M68K_RAM ? (M68K_RAM + page * GWENESIS_M68K_RAM_PAGE_SIZE) : NULL;
+}
+
+static bool gwenesis_m68k_ram_cache_page_loaded(uint8_t page)
+{
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    {
+        if (m68k_ram_fast_page[slot] == page)
+            return true;
+    }
+    return false;
+}
+
+static void gwenesis_m68k_ram_cache_sync_slot(unsigned int slot)
+{
+    if (!M68K_RAM || slot >= GWENESIS_M68K_RAM_FAST_SLOTS || !m68k_ram_fast_slot[slot])
+        return;
+
+    uint8_t page = m68k_ram_fast_page[slot];
+    if (page >= GWENESIS_M68K_RAM_PAGE_COUNT)
+        return;
+
+    memcpy(M68K_RAM + page * GWENESIS_M68K_RAM_PAGE_SIZE,
+           m68k_ram_fast_slot[slot],
+           GWENESIS_M68K_RAM_PAGE_SIZE);
+}
+
+static void gwenesis_m68k_ram_cache_sync_all(void)
+{
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+        gwenesis_m68k_ram_cache_sync_slot(slot);
+}
+
+static void gwenesis_m68k_ram_cache_reload_slots(void)
+{
+    gwenesis_m68k_ram_cache_bind_slow_pages();
+
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    {
+        uint8_t page = m68k_ram_fast_page[slot];
+        if (!M68K_RAM || !m68k_ram_fast_slot[slot] || page >= GWENESIS_M68K_RAM_PAGE_COUNT)
+            continue;
+
+        memcpy(m68k_ram_fast_slot[slot],
+               M68K_RAM + page * GWENESIS_M68K_RAM_PAGE_SIZE,
+               GWENESIS_M68K_RAM_PAGE_SIZE);
+        M68K_RAM_PAGE_PTR[page] = m68k_ram_fast_slot[slot];
+    }
+}
+
+static bool gwenesis_m68k_ram_cache_install(unsigned int slot, uint8_t page)
+{
+    if (!M68K_RAM || slot >= GWENESIS_M68K_RAM_FAST_SLOTS ||
+        !m68k_ram_fast_slot[slot] || page >= GWENESIS_M68K_RAM_PAGE_COUNT)
+        return false;
+
+    if (m68k_ram_fast_page[slot] == page)
+        return false;
+    if (gwenesis_m68k_ram_cache_page_loaded(page))
+        return false;
+
+    uint8_t old_page = m68k_ram_fast_page[slot];
+    if (old_page < GWENESIS_M68K_RAM_PAGE_COUNT)
+    {
+        gwenesis_m68k_ram_cache_sync_slot(slot);
+        M68K_RAM_PAGE_PTR[old_page] = M68K_RAM + old_page * GWENESIS_M68K_RAM_PAGE_SIZE;
+    }
+
+    memcpy(m68k_ram_fast_slot[slot],
+           M68K_RAM + page * GWENESIS_M68K_RAM_PAGE_SIZE,
+           GWENESIS_M68K_RAM_PAGE_SIZE);
+    m68k_ram_fast_page[slot] = page;
+    M68K_RAM_PAGE_PTR[page] = m68k_ram_fast_slot[slot];
+    ++m68k_ram_cache_swaps;
+    return true;
+}
+
+static void gwenesis_m68k_ram_cache_reset_to_defaults(void)
+{
+    gwenesis_m68k_ram_cache_bind_slow_pages();
+
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+        m68k_ram_fast_page[slot] = GWENESIS_M68K_RAM_CACHE_EMPTY;
+
+    memset(m68k_ram_cache_score, 0, sizeof(m68k_ram_cache_score));
+    m68k_ram_cache_swaps = 0;
+    m68k_ram_cache_update_epoch = 0;
+    m68k_ram_cache_last_swap_epoch = 0;
+#if GWENESIS_M68K_RAM_PROFILE && !GWENESIS_M68K_PROFILE
+    gwenesis_m68k_ram_profile_enabled = 1;
+#endif
+
+    gwenesis_m68k_ram_cache_install(0, 0x0e);
+    gwenesis_m68k_ram_cache_install(1, 0x0f);
+    m68k_ram_cache_swaps = 0;
+}
+
+static void gwenesis_m68k_ram_cache_clear(void)
+{
+    if (M68K_RAM)
+        memset(M68K_RAM, 0, MAX_RAM_SIZE);
+
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    {
+        if (m68k_ram_fast_slot[slot])
+            memset(m68k_ram_fast_slot[slot], 0, GWENESIS_M68K_RAM_PAGE_SIZE);
+    }
+
+    gwenesis_m68k_ram_cache_reset_to_defaults();
+}
+
+static void gwenesis_m68k_ram_cache_alloc_slots(void)
+{
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    {
+        if (m68k_ram_fast_slot[slot])
+            continue;
+
+        void *ptr = rg_alloc(GWENESIS_M68K_RAM_PAGE_SIZE, MEM_FAST | MEM_NOPANIC);
+        if (ptr && PTR_IN_SPIRAM(ptr))
+        {
+            free(ptr);
+            ptr = NULL;
+        }
+        m68k_ram_fast_slot[slot] = ptr;
+    }
+}
+
+static void gwenesis_m68k_ram_clear(void)
+{
+    gwenesis_m68k_ram_cache_clear();
+}
+#else
+static void gwenesis_m68k_ram_clear(void)
+{
+    memset(M68K_RAM, 0, MAX_RAM_SIZE);
+}
+#endif
+
 bool gwenesis_bus_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
+    bool ram_was_missing = !M68K_RAM;
     if (!M68K_RAM)
         M68K_RAM = rg_alloc(MAX_RAM_SIZE, GWENESIS_M68K_RAM_MEM);
     if (!ZRAM)
         ZRAM = rg_alloc(MAX_Z80_RAM_SIZE, GWENESIS_Z80_RAM_MEM);
     if (ZRAM)
         z80_set_memory(ZRAM);
+    if (M68K_RAM && ram_was_missing)
+    {
+        gwenesis_m68k_ram_cache_bind_slow_pages();
+        gwenesis_m68k_ram_cache_alloc_slots();
+        gwenesis_m68k_ram_cache_reset_to_defaults();
+    }
+    else if (M68K_RAM)
+    {
+        gwenesis_m68k_ram_cache_alloc_slots();
+    }
 #endif
     return M68K_RAM != NULL && ZRAM != NULL;
 }
@@ -123,11 +298,19 @@ bool gwenesis_bus_init_fast_ram(void)
 void gwenesis_bus_deinit_fast_ram(void)
 {
 #if defined(RETRO_GO)
+    gwenesis_m68k_ram_cache_sync_all();
     z80_set_memory(NULL);
+    for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+    {
+        free(m68k_ram_fast_slot[slot]);
+        m68k_ram_fast_slot[slot] = NULL;
+        m68k_ram_fast_page[slot] = GWENESIS_M68K_RAM_CACHE_EMPTY;
+    }
     free(M68K_RAM);
     free(ZRAM);
     M68K_RAM = NULL;
     ZRAM = NULL;
+    gwenesis_m68k_ram_cache_bind_slow_pages();
 #endif
 }
 
@@ -146,7 +329,7 @@ void load_cartridge()
         return;
 
     // Clear all volatile memory
-    memset(M68K_RAM, 0, MAX_RAM_SIZE);
+    gwenesis_m68k_ram_clear();
     memset(ZRAM, 0, MAX_Z80_RAM_SIZE);
 
     // Set Z80 Memory as Z80_RAM
@@ -302,7 +485,7 @@ void load_cartridge(unsigned char *buffer, size_t size)
         return;
 
     // Clear all volatile memory
-    memset(M68K_RAM, 0, MAX_RAM_SIZE);
+    gwenesis_m68k_ram_clear();
     memset(ZRAM, 0, MAX_Z80_RAM_SIZE);
 
     // Set Z80 Memory as ZRAM
@@ -865,6 +1048,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_8(unsigned int address)
     {
         if (CART_SRAM_TOUCHES(address, 1))
             return gwenesis_bus_read_memory_8(address);
+        GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
         return FETCH8ROM(address);
     }
     if ((address & 0xE00000) == 0xE00000)
@@ -885,6 +1069,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_16(unsigned int address)
     {
         if (CART_SRAM_TOUCHES(address, 2))
             return gwenesis_bus_read_memory_16(address);
+        GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
         return FETCH16ROM(address);
     }
     if ((address & 0xE00000) == 0xE00000)
@@ -904,6 +1089,7 @@ unsigned int GWENESIS_HOT m68k_read_memory_32(unsigned int address)
   if (address < 0x800000 && (address + 3) < 0x800000) {
     if (CART_SRAM_TOUCHES(address, 4))
       return (gwenesis_bus_read_memory_16(address) << 16) | gwenesis_bus_read_memory_16(address + 2);
+    GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_DATA);
     return FETCH32ROM(address);
   }
   if ((address & 0xE00000) == 0xE00000 && ((address + 2) & 0xE00000) == 0xE00000) {
@@ -969,9 +1155,114 @@ unsigned int m68k_read_disassembler_32(unsigned int address)
     return m68k_read_memory_32(address);
 }
 
+void gwenesis_bus_m68k_ram_cache_update(const uint32_t ram_reads[16], const uint32_t ram_writes[16])
+{
+#if defined(RETRO_GO)
+  if (!M68K_RAM)
+    return;
+
+  ++m68k_ram_cache_update_epoch;
+
+  for (unsigned int page = 0; page < GWENESIS_M68K_RAM_PAGE_COUNT; ++page)
+    m68k_ram_cache_score[page] = ram_reads[page] + ram_writes[page] * 2;
+
+  unsigned int best_page = GWENESIS_M68K_RAM_PAGE_COUNT;
+  uint32_t best_score = 0;
+  for (unsigned int page = 0; page < GWENESIS_M68K_RAM_PAGE_COUNT; ++page)
+  {
+    if (!gwenesis_m68k_ram_cache_page_loaded(page) && m68k_ram_cache_score[page] > best_score)
+    {
+      best_page = page;
+      best_score = m68k_ram_cache_score[page];
+    }
+  }
+  if (best_page >= GWENESIS_M68K_RAM_PAGE_COUNT || best_score == 0)
+    return;
+
+  unsigned int cold_slot = GWENESIS_M68K_RAM_FAST_SLOTS;
+  uint32_t cold_score = 0xffffffffU;
+  for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS; ++slot)
+  {
+    if (!m68k_ram_fast_slot[slot])
+      continue;
+
+    uint8_t page = m68k_ram_fast_page[slot];
+    uint32_t score = page < GWENESIS_M68K_RAM_PAGE_COUNT ? m68k_ram_cache_score[page] : 0;
+    if (score < cold_score)
+    {
+      cold_slot = slot;
+      cold_score = score;
+    }
+  }
+  if (cold_slot >= GWENESIS_M68K_RAM_FAST_SLOTS)
+    return;
+
+  if (cold_score != 0 &&
+      m68k_ram_cache_update_epoch - m68k_ram_cache_last_swap_epoch < GWENESIS_M68K_RAM_CACHE_MIN_SWAP_EPOCHS)
+    return;
+  if (cold_score != 0 && best_score <= cold_score + cold_score / 2)
+    return;
+
+  if (gwenesis_m68k_ram_cache_install(cold_slot, best_page))
+    m68k_ram_cache_last_swap_epoch = m68k_ram_cache_update_epoch;
+#else
+  (void)ram_reads;
+  (void)ram_writes;
+#endif
+}
+
+void gwenesis_bus_m68k_ram_cache_status(char *out, size_t out_size)
+{
+  if (!out || out_size == 0)
+    return;
+
+#if defined(RETRO_GO)
+  size_t used = 0;
+  int written = snprintf(out, out_size, "slots=");
+  if (written < 0)
+  {
+    out[0] = 0;
+    return;
+  }
+  used = (size_t)written < out_size ? (size_t)written : out_size - 1;
+
+  for (unsigned int slot = 0; slot < GWENESIS_M68K_RAM_FAST_SLOTS && used < out_size; ++slot)
+  {
+    uint8_t page = m68k_ram_fast_page[slot];
+    if (m68k_ram_fast_slot[slot] && page < GWENESIS_M68K_RAM_PAGE_COUNT)
+      written = snprintf(out + used, out_size - used, "%s%u:%x:%u",
+                         slot ? "," : "", slot, page, (unsigned)m68k_ram_cache_score[page]);
+    else
+      written = snprintf(out + used, out_size - used, "%s%u:-",
+                         slot ? "," : "", slot);
+    if (written < 0)
+      break;
+    if ((size_t)written >= out_size - used)
+    {
+      out[out_size - 1] = 0;
+      return;
+    }
+    used += (size_t)written;
+  }
+
+  if (used < out_size)
+  {
+    written = snprintf(out + used, out_size - used, " swaps=%u",
+                       (unsigned)m68k_ram_cache_swaps);
+    if (written < 0 || (size_t)written >= out_size - used)
+      out[out_size - 1] = 0;
+  }
+#else
+  snprintf(out, out_size, "off");
+#endif
+}
+
 void gwenesis_bus_save_state() {
   SaveState* state;
   state = saveGwenesisStateOpenForWrite("bus");
+#if defined(RETRO_GO)
+  gwenesis_m68k_ram_cache_sync_all();
+#endif
   saveGwenesisStateSetBuffer(state, "M68K_RAM", M68K_RAM, MAX_RAM_SIZE);
   saveGwenesisStateSetBuffer(state, "ZRAM", ZRAM, MAX_Z80_RAM_SIZE);
   saveGwenesisStateSetBuffer(state, "TMSS", TMSS, sizeof(TMSS));
@@ -982,6 +1273,9 @@ void gwenesis_bus_save_state() {
 void gwenesis_bus_load_state() {
     SaveState* state = saveGwenesisStateOpenForRead("bus");
     saveGwenesisStateGetBuffer(state, "M68K_RAM", M68K_RAM, MAX_RAM_SIZE);
+#if defined(RETRO_GO)
+    gwenesis_m68k_ram_cache_reload_slots();
+#endif
     saveGwenesisStateGetBuffer(state, "ZRAM", ZRAM, MAX_Z80_RAM_SIZE);
     saveGwenesisStateGetBuffer(state, "TMSS", TMSS, sizeof(TMSS));
     tmss_state = saveGwenesisStateGet(state, "tmss_state");

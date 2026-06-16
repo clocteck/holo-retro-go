@@ -43,6 +43,7 @@
 
 #include <setjmp.h>
 #include "macros.h"
+#include "gwenesis_m68k_profile.h"
 #ifdef HOOK_CPU
 #include "cpuhook.h"
 #endif
@@ -160,6 +161,9 @@
 	extern unsigned int CART_SRAM_START;
 	extern unsigned int CART_SRAM_END;
 	extern unsigned char *M68K_RAM;
+#if defined(RETRO_GO)
+	extern unsigned char *M68K_RAM_PAGE_PTR[GWENESIS_M68K_RAM_PAGE_COUNT];
+#endif
 #else
 
 	extern unsigned char *ROM_DATA;
@@ -182,12 +186,14 @@ static inline unsigned char gwenesis_fetch_rom_byte(unsigned int offset)
 
 static inline unsigned int gwenesis_fetch8rom(unsigned int address)
 {
+	GWENESIS_M68K_ROM_PAGE_INC(address);
 	unsigned int offset = ((address & ROM_MASK) ^ 1);
 	return gwenesis_fetch_rom_byte(offset);
 }
 
 static inline unsigned int gwenesis_fetch16rom(unsigned int address)
 {
+	GWENESIS_M68K_ROM_PAGE_INC(address);
 	unsigned int offset = address & ROM_MASK;
 	if (ROM_SIZE != 0 && offset + 1 < ROM_SIZE)
 		return *(unsigned short *)&ROM_DATA[offset];
@@ -196,6 +202,7 @@ static inline unsigned int gwenesis_fetch16rom(unsigned int address)
 
 static inline unsigned int gwenesis_fetch32rom(unsigned int address)
 {
+	GWENESIS_M68K_ROM_PAGE_INC(address);
 	unsigned int offset = address & ROM_MASK;
 	if (ROM_SIZE != 0 && offset + 3 < ROM_SIZE)
 	{
@@ -221,22 +228,140 @@ static inline unsigned int gwenesis_fetch32rom(unsigned int address)
 #define WRITE32RAM(A, V) ((*(unsigned int   *)( (A)&0XFFFF))      = (((V) << 16) | ((V) >> 16)))
 #else
 
-#define FETCH8RAM(A) ((M68K_RAM[(A ^ 1) & 0xFFFF]))
-#define FETCH16RAM(A) ((*(unsigned short *)&M68K_RAM[(A)&0XFFFF]))
-#define FETCH32RAM(A) ( (*(unsigned int *)&M68K_RAM[(A&0XFFFF)] << 16) | (*(unsigned int *)&M68K_RAM[(A&0XFFFF)] >> 16) )
+static inline unsigned int gwenesis_fetch8ram(unsigned int address)
+{
+	GWENESIS_M68K_RAM_PAGE_R_INC(address);
+#if defined(RETRO_GO)
+	unsigned int ram_address = (address ^ 1) & 0xffff;
+	return M68K_RAM_PAGE_PTR[(ram_address >> 12) & 0x0f][ram_address & 0x0fff];
+#else
+	return M68K_RAM[(address ^ 1) & 0xffff];
+#endif
+}
 
-#define WRITE8RAM(A, V) (M68K_RAM[(A ^ 1) & 0xFFFF] = (V))
-#define WRITE16RAM(A, V) ((*(unsigned short *)&M68K_RAM[(A)&0XFFFF] = (V)))
-#define WRITE32RAM(A, V) ((*(unsigned int *)&M68K_RAM[(A)&0XFFFF] =( ((V) << 16) | ((V) >> 16) ) ))
+static inline unsigned int gwenesis_fetch16ram_raw(unsigned int address)
+{
+#if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffe)
+		return *(unsigned short *)ptr;
+	return ptr[0] | (M68K_RAM_PAGE_PTR[(page + 1) & 0x0f][0] << 8);
+#else
+	return *(unsigned short *)&M68K_RAM[address & 0xffff];
+#endif
+}
+
+static inline unsigned int gwenesis_fetch16ram(unsigned int address)
+{
+	GWENESIS_M68K_RAM_PAGE_R_INC(address);
+	return gwenesis_fetch16ram_raw(address);
+}
+
+static inline unsigned int gwenesis_fetch32ram(unsigned int address)
+{
+	GWENESIS_M68K_RAM_PAGE_R_INC(address);
+#if defined(RETRO_GO)
+	return (gwenesis_fetch16ram_raw(address) << 16) | gwenesis_fetch16ram_raw(address + 2);
+#else
+	unsigned int value = *(unsigned int *)&M68K_RAM[address & 0xffff];
+	return (value << 16) | (value >> 16);
+#endif
+}
+
+static inline void gwenesis_write8ram(unsigned int address, unsigned int value)
+{
+	GWENESIS_M68K_RAM_PAGE_W_INC(address);
+#if defined(RETRO_GO)
+	unsigned int ram_address = (address ^ 1) & 0xffff;
+	M68K_RAM_PAGE_PTR[(ram_address >> 12) & 0x0f][ram_address & 0x0fff] = value;
+#else
+	M68K_RAM[(address ^ 1) & 0xffff] = value;
+#endif
+}
+
+static inline void gwenesis_write16ram_raw(unsigned int address, unsigned int value)
+{
+#if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffe)
+	{
+		*(unsigned short *)ptr = value;
+		return;
+	}
+	ptr[0] = value & 0xff;
+	M68K_RAM_PAGE_PTR[(page + 1) & 0x0f][0] = value >> 8;
+#else
+	*(unsigned short *)&M68K_RAM[address & 0xffff] = value;
+#endif
+}
+
+static inline void gwenesis_write16ram(unsigned int address, unsigned int value)
+{
+	GWENESIS_M68K_RAM_PAGE_W_INC(address);
+	gwenesis_write16ram_raw(address, value);
+}
+
+static inline void gwenesis_write32ram(unsigned int address, unsigned int value)
+{
+	GWENESIS_M68K_RAM_PAGE_W_INC(address);
+#if defined(RETRO_GO)
+	gwenesis_write16ram_raw(address, (value >> 16) & 0xffff);
+	gwenesis_write16ram_raw(address + 2, value & 0xffff);
+#else
+	*(unsigned int *)&M68K_RAM[address & 0xffff] = (value << 16) | (value >> 16);
+#endif
+}
+
+#define FETCH8RAM(A) gwenesis_fetch8ram((A))
+#define FETCH16RAM(A) gwenesis_fetch16ram((A))
+#define FETCH32RAM(A) gwenesis_fetch32ram((A))
+
+#define WRITE8RAM(A, V) gwenesis_write8ram((A), (V))
+#define WRITE16RAM(A, V) gwenesis_write16ram((A), (V))
+#define WRITE32RAM(A, V) gwenesis_write32ram((A), (V))
 
 #endif
 
-#define m68k_read_immediate_16(A) ( ( (A) & 0x800000) ? FETCH16RAM((A)) : FETCH16ROM((A)) )
-#define m68k_read_immediate_32(A) ( ( (A) & 0x800000) ? FETCH32RAM((A)) : FETCH32ROM((A)) )
+static inline unsigned int gwenesis_m68k_read_immediate_16(unsigned int address)
+{
+	return (address & 0x800000) ? FETCH16RAM(address) : FETCH16ROM(address);
+}
 
-#define m68k_read_pcrelative_8(A) ( FETCH8ROM((A)) )
-#define m68k_read_pcrelative_16(A) ( FETCH16ROM((A)) )
-#define m68k_read_pcrelative_32(A) ( FETCH32ROM((A)) )
+static inline unsigned int gwenesis_m68k_read_immediate_32(unsigned int address)
+{
+	return (address & 0x800000) ? FETCH32RAM(address) : FETCH32ROM(address);
+}
+
+static inline unsigned int gwenesis_m68k_read_pcrelative_8(unsigned int address)
+{
+	GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_PCREL);
+	return FETCH8ROM(address);
+}
+
+static inline unsigned int gwenesis_m68k_read_pcrelative_16(unsigned int address)
+{
+	GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_PCREL);
+	return FETCH16ROM(address);
+}
+
+static inline unsigned int gwenesis_m68k_read_pcrelative_32(unsigned int address)
+{
+	GWENESIS_M68K_ROM_KIND_INC(GWENESIS_M68K_ROM_KIND_PCREL);
+	return FETCH32ROM(address);
+}
+
+#define m68k_read_immediate_16(A) gwenesis_m68k_read_immediate_16((A))
+#define m68k_read_immediate_32(A) gwenesis_m68k_read_immediate_32((A))
+
+#define m68k_read_pcrelative_8(A) gwenesis_m68k_read_pcrelative_8((A))
+#define m68k_read_pcrelative_16(A) gwenesis_m68k_read_pcrelative_16((A))
+#define m68k_read_pcrelative_32(A) gwenesis_m68k_read_pcrelative_32((A))
 
 /* Read from anywhere */
 unsigned int  m68k_read_memory_8(unsigned int address);

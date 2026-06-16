@@ -24,6 +24,7 @@ __license__ = "GPLv3"
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdint.h>
 
 #define MAX_ROM_SIZE 0x800000
 #define MAX_RAM_SIZE 0x10000
@@ -131,5 +132,7 @@ void gwenesis_bus_save_state();
 void gwenesis_bus_load_state();
 bool gwenesis_bus_init_fast_ram(void);
 void gwenesis_bus_deinit_fast_ram(void);
+void gwenesis_bus_m68k_ram_cache_update(const uint32_t ram_reads[16], const uint32_t ram_writes[16]);
+void gwenesis_bus_m68k_ram_cache_status(char *out, size_t out_size);
 
 #endif

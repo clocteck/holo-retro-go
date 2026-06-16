@@ -1,19 +1,19 @@
 local APP = {
-  VERSION = "2026-06-13-retrogo-split-core-v1",
+  VERSION = "2026-06-15-minimal-selector-v2",
   ROM_ROOT = "/sd/roms",
   POLL_DELAY_MS = 16,
   AXIS_THRESHOLD = 0.60,
   MODULES = {
     {
       id = "retro-core",
-      title = "RETRO CORE",
-      detail = "NES SNES GB GBC GW SMS PCE LYNX",
+      title = "Retro Core",
+      detail = "Multi ROMs",
       path = "/sd/modules/retrogo.so",
     },
     {
       id = "gwenesis",
-      title = "MEGA DRIVE",
-      detail = "MD GEN BIN ZIP",
+      title = "Mega Drive",
+      detail = "Sega ROMs",
       path = "/sd/modules/gwenesis.so",
     },
   },
@@ -331,6 +331,55 @@ local function lv_label(parent, text, x, y, w, h, color, font, align)
   return label
 end
 
+local function selector_gamepad_status(state, phase)
+  local status_connected = 0x34D17A
+  local status_connecting = 0x3C95FF
+  local status_waiting = 0xF2A23A
+  if phase == "connected" then
+    return "Pad Connect", status_connected
+  end
+  if phase == "connecting" then
+    return "BT CONNECTING", status_connecting
+  end
+  if phase == "waiting" then
+    return "BT NOT CONNECTED", status_waiting
+  end
+  if not gamepad or not gamepad.state then
+    return "BT NOT CONNECTED", status_waiting
+  end
+  if not state then
+    return "BT NOT CONNECTED", status_waiting
+  end
+  if state.connecting ~= nil and to_bool(state.connecting) then
+    return "BT CONNECTING", status_connecting
+  end
+  if state.connected ~= nil then
+    if to_bool(state.connected) then
+      return "Pad Connect", status_connected
+    end
+    return "BT NOT CONNECTED", status_waiting
+  end
+  if state.started ~= nil then
+    if to_bool(state.started) then
+      return "BT NOT CONNECTED", status_waiting
+    end
+    return "BT NOT CONNECTED", status_waiting
+  end
+  return "Pad Connect", status_connected
+end
+
+local function selector_update_gamepad_status(ui, state, phase)
+  if not ui or not ui.gamepad_status or not lv_label_set_text then
+    return
+  end
+  local text, color = selector_gamepad_status(state, phase)
+  if text ~= ui.gamepad_status_text then
+    pcall(lv_label_set_text, ui.gamepad_status, text)
+    lv_style(ui.gamepad_status, { color = color })
+    ui.gamepad_status_text = text
+  end
+end
+
 local function selector_make_ui()
   if not lv_scr_act or not lv_obj_create or not lv_label_create then
     log("selector ui unavailable")
@@ -342,54 +391,44 @@ local function selector_make_ui()
   if lv_obj_set_pos then pcall(lv_obj_set_pos, overlay, 0, 0) end
   if lv_obj_set_size then pcall(lv_obj_set_size, overlay, 320, 240) end
   lv_disable_scroll(overlay)
-  lv_style(overlay, { bg = 0x05070B, bg_opa = 255, border_w = 0, radius = 0, pad = 0 })
+  lv_style(overlay, { bg = 0x000000, bg_opa = 255, border_w = 0, radius = 0, pad = 0 })
 
-  local title = lv_label(overlay, "RETRO-GO", 0, 18, 320, 28, 0xF4F8FF, "LV_FONT_MONTSERRAT_20")
-  local subtitle = lv_label(overlay, "SELECT CORE", 0, 46, 320, 18, 0x7FA7D8, "LV_FONT_MONTSERRAT_12")
+  local rows = {
+    {
+      title = lv_label(overlay, "", 70, 64, 180, 22, 0xFFFFFF, "LV_FONT_MONTSERRAT_16"),
+      detail = lv_label(overlay, "", 70, 86, 180, 16, 0x9A9A9A, "LV_FONT_MONTSERRAT_12"),
+    },
+    {
+      title = lv_label(overlay, "", 70, 114, 180, 22, 0xFFFFFF, "LV_FONT_MONTSERRAT_16"),
+      detail = lv_label(overlay, "", 70, 136, 180, 16, 0x9A9A9A, "LV_FONT_MONTSERRAT_12"),
+    },
+  }
 
-  local left = lv_obj_create(overlay)
-  if lv_obj_set_pos then pcall(lv_obj_set_pos, left, 16, 82) end
-  if lv_obj_set_size then pcall(lv_obj_set_size, left, 136, 96) end
-  lv_disable_scroll(left)
-
-  local right = lv_obj_create(overlay)
-  if lv_obj_set_pos then pcall(lv_obj_set_pos, right, 168, 82) end
-  if lv_obj_set_size then pcall(lv_obj_set_size, right, 136, 96) end
-  lv_disable_scroll(right)
-
-  local hint = lv_label(overlay, "< / > CHANGE    UP / A START", 0, 199, 320, 18, 0x8C9AA8, "LV_FONT_MONTSERRAT_12")
-  local status = lv_label(overlay, "", 0, 218, 320, 16, 0x617083, "LV_FONT_MONTSERRAT_12")
+  local gamepad_status = lv_label(overlay, "", 0, 186, 320, 18, 0xF2A23A, "LV_FONT_MONTSERRAT_12")
+  local message = lv_label(overlay, "", 0, 212, 320, 16, 0x484848, "LV_FONT_MONTSERRAT_12")
 
   return {
     root = overlay,
-    title = title,
-    subtitle = subtitle,
-    cards = { { box = left }, { box = right } },
-    hint = hint,
-    status = status,
+    rows = rows,
+    gamepad_status = gamepad_status,
+    message = message,
   }
 end
 
-local function selector_card_text(card, mod, selected)
-  if not card or not card.box then
+local function selector_row_text(row, mod, selected)
+  if not row then
     return
   end
-  if not card.title then
-    card.title = lv_label(card.box, "", 8, 18, 120, 22, 0xFFFFFF, "LV_FONT_MONTSERRAT_16")
-    card.detail = lv_label(card.box, "", 8, 48, 120, 28, 0x9AA7B3, "LV_FONT_MONTSERRAT_12")
-  end
   if lv_label_set_text then
-    pcall(lv_label_set_text, card.title, mod.title)
-    pcall(lv_label_set_text, card.detail, mod.detail)
+    pcall(lv_label_set_text, row.title, mod.title)
+    pcall(lv_label_set_text, row.detail, mod.detail)
   end
   if selected then
-    lv_style(card.box, { bg = 0x14314C, bg_opa = 255, border = 0x5CA9FF, border_w = 2, radius = 8, pad = 0 })
-    lv_style(card.title, { color = 0xFFFFFF })
-    lv_style(card.detail, { color = 0xD8EAFF })
+    lv_style(row.title, { color = 0xFFFFFF })
+    lv_style(row.detail, { color = 0xD0D0D0 })
   else
-    lv_style(card.box, { bg = 0x111820, bg_opa = 255, border = 0x26313A, border_w = 1, radius = 8, pad = 0 })
-    lv_style(card.title, { color = 0xABB6C1 })
-    lv_style(card.detail, { color = 0x66727E })
+    lv_style(row.title, { color = 0x5F5F5F })
+    lv_style(row.detail, { color = 0x444444 })
   end
 end
 
@@ -397,10 +436,10 @@ local function selector_render(ui, index, status_text)
   if not ui then
     return
   end
-  selector_card_text(ui.cards[1], APP.MODULES[1], index == 1)
-  selector_card_text(ui.cards[2], APP.MODULES[2], index == 2)
-  if ui.status and lv_label_set_text then
-    pcall(lv_label_set_text, ui.status, status_text or APP.MODULES[index].path)
+  selector_row_text(ui.rows[1], APP.MODULES[1], index == 1)
+  selector_row_text(ui.rows[2], APP.MODULES[2], index == 2)
+  if ui.message and lv_label_set_text then
+    pcall(lv_label_set_text, ui.message, status_text or "")
   end
 end
 
@@ -454,6 +493,7 @@ local function choose_module()
   local chosen = false
   local canceled = false
   local ui = selector_make_ui()
+  local bt_phase = nil
   local key_codes = {}
 
   local function move(delta)
@@ -466,20 +506,50 @@ local function choose_module()
 
   local function confirm()
     chosen = true
-    selector_render(ui, index, "loading " .. APP.MODULES[index].id)
+    selector_render(ui, index, "LOADING " .. APP.MODULES[index].title)
   end
 
   local function cancel()
     canceled = true
-    selector_render(ui, index, "exit")
+    selector_render(ui, index, "EXIT")
   end
 
   selector_render(ui, index)
+  selector_update_gamepad_status(ui, read_gamepad_state())
 
   if gamepad and gamepad.start then
     pcall(function()
       if gamepad.off then gamepad.off() end
       gamepad.start({ clear_bonds = false, debug = false })
+    end)
+  end
+
+  if gamepad and gamepad.on then
+    local function set_bt_phase(phase)
+      bt_phase = phase
+      selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
+    end
+    pcall(function()
+      if gamepad.EVT_CONNECTING then
+        gamepad.on(gamepad.EVT_CONNECTING, function()
+          set_bt_phase("connecting")
+        end)
+      end
+      if gamepad.EVT_CONNECT_FAILED then
+        gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
+          set_bt_phase("waiting")
+        end)
+      end
+      if gamepad.EVT_CONNECTED then
+        gamepad.on(gamepad.EVT_CONNECTED, function()
+          set_bt_phase("connected")
+        end)
+      end
+      if gamepad.EVT_DISCONNECTED then
+        gamepad.on(gamepad.EVT_DISCONNECTED, function()
+          set_bt_phase("waiting")
+        end)
+      end
     end)
   end
 
@@ -509,7 +579,9 @@ local function choose_module()
       canceled = true
       break
     end
-    local nav = selector_gamepad_nav(read_gamepad_state())
+    local state = read_gamepad_state()
+    selector_update_gamepad_status(ui, state, bt_phase)
+    local nav = selector_gamepad_nav(state)
     if edge(nav, prev, "left") then
       move(-1)
     elseif edge(nav, prev, "right") then
@@ -525,7 +597,9 @@ local function choose_module()
     end
   end
 
-  selector_cleanup(ui, key_codes)
+  local cleanup_ui = ui
+  ui = nil
+  selector_cleanup(cleanup_ui, key_codes)
 
   if canceled then
     if app and app.exit then
