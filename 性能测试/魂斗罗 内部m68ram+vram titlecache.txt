@@ -1,0 +1,307 @@
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=20 avg=20672us debt=12806us fskip=29 hdraw=0 qdraw=7 m68k=9.88ms z80=3.11ms vdp=13.17ms ym=0.00ms ym0=4.48ms ymblk=32.06ms/32 aud=3% idle=1% other=0% dskip=0 df=20/19+0 dus=16572 blk=16
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10893 out=11190 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=32 empty=455 vb=493/928 lskip=0 str=297 ctl=4 adebt=-54131 clip=0 peak=23698
+[debug] STACK:8192, HEAP:33+1876 (15+1184), BUSY:98%, FPS:50 (S:30 R:0+20), BATT:0, avg:16334us debt:15675 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=20 avg=19899us debt=8917us fskip=30 hdraw=0 qdraw=0 m68k=9.29ms z80=3.46ms vdp=13.30ms ym=0.00ms ym0=4.45ms ymblk=13.18ms/12 aud=1% idle=1% other=0% dskip=0 df=20/20+0 dus=15311 blk=15
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11087 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=12 empty=622 vb=502/928 lskip=0 str=37 ctl=0 adebt=-70580 clip=0 peak=19202
+[debug] STACK:8192, HEAP:33+1882 (15+1184), BUSY:98%, FPS:50 (S:31 R:0+19), BATT:0, avg:12573us debt:10362 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=20 avg=19850us debt=9699us fskip=30 hdraw=0 qdraw=3 m68k=9.37ms z80=3.22ms vdp=12.96ms ym=0.00ms ym0=4.38ms ymblk=22.08ms/22 aud=2% idle=1% other=0% dskip=0 df=20/20+0 dus=15379 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=22 empty=576 vb=510/928 lskip=0 str=0 ctl=0 adebt=-70449 clip=0 peak=25928
+[debug] STACK:8192, HEAP:33+1882 (15+1184), BUSY:98%, FPS:50 (S:29 R:0+20), BATT:0, avg:26050us debt:7253 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=18 avg=19632us debt=11396us fskip=33 hdraw=0 qdraw=2 m68k=9.22ms z80=3.62ms vdp=12.96ms ym=0.00ms ym0=4.06ms ymblk=43.69ms/43 aud=3% idle=1% other=0% dskip=0 df=18/19+0 dus=15646 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11239 out=11239 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=43 empty=520 vb=589/928 lskip=0 str=0 ctl=0 adebt=-79569 clip=0 peak=22582
+[debug] STACK:8192, HEAP:33+1883 (15+1184), BUSY:98%, FPS:50 (S:31 R:0+19), BATT:0, avg:17961us debt:12086 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=19 avg=19967us debt=13559us fskip=31 hdraw=0 qdraw=10 m68k=9.24ms z80=3.43ms vdp=12.92ms ym=0.00ms ym0=4.51ms ymblk=53.63ms/54 aud=4% idle=1% other=0% dskip=0 df=19/18+0 dus=15292 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11068 out=11068 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=54 empty=520 vb=551/928 lskip=0 str=0 ctl=0 adebt=-73269 clip=0 peak=22490
+[usage] CPU0: 66, CPU1: 97 | RAM 264128/298676 (88%) | PSRAM 6494588/8375748 (77%)
+[debug] STACK:8192, HEAP:34+1888 (15+1184), BUSY:98%, FPS:49 (S:32 R:0+16), BATT:0, avg:26403us debt:22359 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=19987us debt=19729us fskip=34 hdraw=0 qdraw=10 m68k=9.43ms z80=3.46ms vdp=12.97ms ym=0.00ms ym0=4.41ms ymblk=79.94ms/77 aud=6% idle=1% other=0% dskip=0 df=16/17+0 dus=16442 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11064 out=11125 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=77 empty=430 vb=555/928 lskip=0 str=61 ctl=0 adebt=-72914 clip=0 peak=23508
+[debug] STACK:8192, HEAP:33+1869 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+16), BATT:0, avg:18785us debt:27203 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=19932us debt=24947us fskip=33 hdraw=0 qdraw=10 m68k=9.03ms z80=4.01ms vdp=13.31ms ym=0.00ms ym0=4.18ms ymblk=70.45ms/70 aud=4% idle=1% other=0% dskip=0 df=17/16+0 dus=15322 blk=21
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11073 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=70 empty=469 vb=549/928 lskip=0 str=23 ctl=0 adebt=-70352 clip=0 peak=26307
+[debug] STACK:8192, HEAP:33+1870 (15+1184), BUSY:98%, FPS:50 (S:32 R:0+17), BATT:0, avg:25549us debt:21152 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=18 avg=19773us debt=26944us fskip=33 hdraw=1 qdraw=13 m68k=9.24ms z80=3.62ms vdp=12.96ms ym=0.00ms ym0=3.98ms ymblk=72.89ms/74 aud=4% idle=1% other=0% dskip=0 df=18/19+0 dus=15697 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11274 out=11274 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=74 empty=498 vb=591/928 lskip=0 str=0 ctl=0 adebt=-75980 clip=0 peak=17534
+[debug] STACK:8192, HEAP:35+1912 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+18), BATT:0, avg:19623us debt:23382 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=17 avg=19963us debt=29628us fskip=34 hdraw=0 qdraw=11 m68k=9.11ms z80=3.78ms vdp=13.14ms ym=0.00ms ym0=4.31ms ymblk=79.63ms/79 aud=6% idle=1% other=0% dskip=0 df=17/16+0 dus=15435 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11297 out=11305 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=79 empty=469 vb=578/928 lskip=0 str=8 ctl=0 adebt=-70727 clip=0 peak=24589
+[debug] STACK:8192, HEAP:35+1915 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:13745us debt:27221 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=19 avg=20065us debt=22162us fskip=31 hdraw=0 qdraw=8 m68k=9.39ms z80=3.33ms vdp=13.09ms ym=0.00ms ym0=4.71ms ymblk=41.55ms/42 aud=4% idle=1% other=0% dskip=0 df=19/20+0 dus=15446 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11128 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=42 empty=470 vb=541/928 lskip=0 str=107 ctl=12 adebt=-64823 clip=0 peak=21998
+[usage] CPU0: 65, CPU1: 94 | RAM 261976/298676 (87%) | PSRAM 6441772/8375748 (76%)
+[debug] STACK:8192, HEAP:35+1920 (15+1184), BUSY:98%, FPS:47 (S:27 R:0+20), BATT:0, avg:16125us debt:37350 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=19944us debt=17904us fskip=33 hdraw=0 qdraw=5 m68k=9.44ms z80=3.84ms vdp=13.70ms ym=0.00ms ym0=4.60ms ymblk=49.81ms/48 aud=3% idle=1% other=0% dskip=0 df=17/17+0 dus=15262 blk=15
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11246 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=48 empty=489 vb=681/928 lskip=0 str=167 ctl=0 adebt=-78973 clip=0 peak=25758
+[debug] STACK:8192, HEAP:35+1928 (15+1184), BUSY:98%, FPS:51 (S:35 R:0+16), BATT:0, avg:17155us debt:27585 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=18 avg=20142us debt=22571us fskip=32 hdraw=0 qdraw=12 m68k=9.28ms z80=3.67ms vdp=13.15ms ym=0.00ms ym0=4.12ms ymblk=63.15ms/58 aud=4% idle=1% other=0% dskip=0 df=18/17+0 dus=15330 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11073 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=58 empty=477 vb=553/928 lskip=0 str=23 ctl=0 adebt=-69244 clip=0 peak=28764
+[debug] STACK:8192, HEAP:35+1908 (15+1184), BUSY:98%, FPS:50 (S:32 R:0+18), BATT:0, avg:11896us debt:28404 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=19824us debt=26061us fskip=34 hdraw=0 qdraw=11 m68k=9.44ms z80=3.60ms vdp=13.22ms ym=0.00ms ym0=4.34ms ymblk=58.84ms/52 aud=5% idle=1% other=0% dskip=0 df=16/17+0 dus=15395 blk=37
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11021 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=52 empty=510 vb=555/928 lskip=0 str=0 ctl=0 adebt=-74377 clip=0 peak=24441
+[debug] STACK:8192, HEAP:33+1870 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:17992us debt:30583 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19854us debt=27383us fskip=35 hdraw=0 qdraw=9 m68k=9.27ms z80=4.02ms vdp=13.51ms ym=0.00ms ym0=4.55ms ymblk=66.89ms/62 aud=3% idle=1% other=0% dskip=0 df=16/15+0 dus=15503 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11242 out=11283 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=62 empty=463 vb=547/928 lskip=0 str=12 ctl=0 adebt=-71289 clip=0 peak=23394
+[debug] STACK:8192, HEAP:33+1874 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+16), BATT:0, avg:24922us debt:28813 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=20 avg=20099us debt=15468us fskip=30 hdraw=0 qdraw=5 m68k=9.44ms z80=3.38ms vdp=13.03ms ym=0.00ms ym0=4.51ms ymblk=23.28ms/22 aud=2% idle=1% other=0% dskip=0 df=20/21+0 dus=15326 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11077 out=11209 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=22 empty=526 vb=576/928 lskip=0 str=132 ctl=0 adebt=-73236 clip=0 peak=23249
+[debug] STACK:8192, HEAP:34+1881 (15+1184), BUSY:98%, FPS:48 (S:28 R:0+21), BATT:0, avg:26767us debt:13817 ymc:0
+[usage] CPU0: 72, CPU1: 95 | RAM 263932/298676 (88%) | PSRAM 6488240/8375748 (77%)
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=18 avg=19874us debt=14604us fskip=32 hdraw=0 qdraw=5 m68k=9.61ms z80=3.26ms vdp=13.09ms ym=0.00ms ym0=4.47ms ymblk=39.47ms/35 aud=4% idle=1% other=0% dskip=0 df=18/18+0 dus=16118 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10959 out=11036 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=35 empty=491 vb=581/928 lskip=0 str=109 ctl=0 adebt=-76769 clip=0 peak=22771
+[debug] STACK:8192, HEAP:34+1887 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:17398us debt:16221 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=19815us debt=17562us fskip=34 hdraw=0 qdraw=10 m68k=9.18ms z80=3.55ms vdp=13.39ms ym=0.00ms ym0=4.27ms ymblk=84.74ms/86 aud=6% idle=1% other=0% dskip=0 df=16/16+0 dus=15298 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11124 out=11164 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=86 empty=493 vb=667/928 lskip=0 str=8 ctl=0 adebt=-80000 clip=0 peak=28948
+[debug] STACK:8192, HEAP:33+1866 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+16), BATT:0, avg:16781us debt:15438 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=18 avg=20260us debt=22302us fskip=32 hdraw=0 qdraw=11 m68k=9.21ms z80=3.60ms vdp=13.18ms ym=0.00ms ym0=4.52ms ymblk=67.81ms/68 aud=5% idle=1% other=0% dskip=0 df=18/17+0 dus=15292 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11040 out=11083 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=68 empty=490 vb=482/928 lskip=0 str=43 ctl=2 adebt=-66943 clip=0 peak=24620
+[debug] STACK:8192, HEAP:33+1874 (15+1184), BUSY:98%, FPS:49 (S:32 R:0+17), BATT:0, avg:18667us debt:28016 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=17 avg=19844us debt=26162us fskip=34 hdraw=0 qdraw=10 m68k=9.20ms z80=3.59ms vdp=13.77ms ym=0.00ms ym0=4.15ms ymblk=56.73ms/58 aud=4% idle=1% other=0% dskip=0 df=17/17+0 dus=15420 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11271 out=11272 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=58 empty=472 vb=488/928 lskip=0 str=1 ctl=0 adebt=-63001 clip=0 peak=26269
+[debug] STACK:8192, HEAP:34+1882 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:18355us debt:28519 ymc:0
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19803us debt=29155us fskip=35 hdraw=0 qdraw=9 m68k=9.50ms z80=3.86ms vdp=13.63ms ym=0.00ms ym0=4.59ms ymblk=45.74ms/45 aud=3% idle=1% other=0% dskip=0 df=16/17+0 dus=15437 blk=16
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11300 out=11271 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=45 empty=498 vb=529/928 lskip=0 str=0 ctl=0 adebt=-68304 clip=0 peak=29862
+[debug] STACK:8192, HEAP:34+1887 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:23723us debt:31464 ymc:0
+[usage] CPU0: 67, CPU1: 94 | RAM 263808/298676 (88%) | PSRAM 6482440/8375748 (77%)
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=15 avg=20361us debt=16438us fskip=34 hdraw=0 qdraw=1 m68k=10.46ms z80=3.59ms vdp=13.94ms ym=0.00ms ym0=5.14ms ymblk=30.11ms/29 aud=2% idle=1% other=0% dskip=0 df=15/15+0 dus=15527 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10810 out=11223 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=29 empty=369 vb=612/928 lskip=0 str=384 ctl=0 adebt=-57143 clip=0 peak=29790
+[debug] STACK:8192, HEAP:33+1875 (15+1184), BUSY:98%, FPS:47 (S:32 R:0+15), BATT:0, avg:28927us debt:14713 ymc:0
+[retrogo_app] input mask 128 mapped RIGHT raw 0 raw_buttons - aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=20010us debt=18356us fskip=35 hdraw=0 qdraw=4 m68k=9.86ms z80=3.77ms vdp=13.63ms ym=0.00ms ym0=5.22ms ymblk=48.25ms/47 aud=3% idle=1% other=0% dskip=0 df=15/15+0 dus=15810 blk=21
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10976 out=11059 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=47 empty=367 vb=538/928 lskip=0 str=115 ctl=0 adebt=-68711 clip=0 peak=22882
+[debug] STACK:8192, HEAP:34+1885 (15+1184), BUSY:98%, FPS:51 (S:36 R:0+15), BATT:0, avg:12043us debt:21466 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=20156us debt=24132us fskip=33 hdraw=0 qdraw=11 m68k=9.56ms z80=3.66ms vdp=13.20ms ym=0.00ms ym0=4.31ms ymblk=48.72ms/46 aud=4% idle=1% other=0% dskip=0 df=17/17+0 dus=15475 blk=25
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11114 out=11186 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=46 empty=505 vb=510/928 lskip=0 str=40 ctl=0 adebt=-68782 clip=0 peak=27077
+[debug] STACK:8192, HEAP:34+1885 (15+1184), BUSY:98%, FPS:49 (S:33 R:0+17), BATT:0, avg:16901us debt:27848 ymc:0
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=20007us debt=27614us fskip=34 hdraw=0 qdraw=8 m68k=9.76ms z80=3.57ms vdp=13.44ms ym=0.00ms ym0=4.83ms ymblk=55.86ms/49 aud=4% idle=1% other=0% dskip=0 df=16/15+0 dus=15335 blk=28
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11071 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=49 empty=495 vb=452/928 lskip=0 str=21 ctl=13 adebt=-63024 clip=0 peak=25105
+[retrogo_app] input mask 64 mapped LEFT raw 0 raw_buttons - aliases -
+[debug] STACK:8192, HEAP:33+1866 (15+1184), BUSY:98%, FPS:49 (S:32 R:0+16), BATT:0, avg:27712us debt:5928 ymc:0
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=13 avg=20707us debt=18495us fskip=35 hdraw=0 qdraw=0 m68k=11.11ms z80=3.42ms vdp=14.86ms ym=0.00ms ym0=5.28ms ymblk=24.29ms/17 aud=3% idle=1% other=0% dskip=0 df=13/13+0 dus=15487 blk=25
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10615 out=10911 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=17 empty=330 vb=290/928 lskip=0 str=328 ctl=52 adebt=-40444 clip=0 peak=26854
+[debug] STACK:8192, HEAP:34+1885 (15+1184), BUSY:98%, FPS:47 (S:36 R:0+12), BATT:0, avg:15053us debt:26447 ymc:0
+[usage] CPU0: 77, CPU1: 96 | RAM 263924/298676 (88%) | PSRAM 6488284/8375748 (77%)
+[info] gwenesis_profiler_maybe_log: gwen perf: f=42 d=13 avg=24045us debt=20984us fskip=29 hdraw=0 qdraw=0 m68k=12.37ms z80=3.84ms vdp=18.21ms ym=0.00ms ym0=5.97ms ymblk=20.60ms/21 aud=2% idle=1% other=0% dskip=0 df=13/14+0 dus=16295 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=9275 out=10372 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=21 empty=244 vb=298/928 lskip=0 str=1065 ctl=119 adebt=39811 clip=0 peak=22947
+[debug] STACK:8192, HEAP:34+1879 (15+1184), BUSY:98%, FPS:41 (S:28 R:0+13), BATT:0, avg:19196us debt:19845 ymc:0
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=47 d=13 avg=21123us debt=18829us fskip=34 hdraw=0 qdraw=1 m68k=11.29ms z80=3.77ms vdp=14.10ms ym=0.00ms ym0=6.04ms ymblk=23.94ms/19 aud=2% idle=1% other=0% dskip=0 df=13/13+0 dus=15466 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10331 out=11195 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=19 empty=192 vb=448/928 lskip=0 str=864 ctl=55 adebt=2848 clip=0 peak=24901
+[debug] STACK:8192, HEAP:33+1878 (15+1184), BUSY:98%, FPS:48 (S:35 R:0+13), BATT:0, avg:16817us debt:28008 ymc:0
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=14 avg=20510us debt=19022us fskip=35 hdraw=0 qdraw=0 m68k=10.73ms z80=3.73ms vdp=14.49ms ym=0.00ms ym0=6.06ms ymblk=12.59ms/12 aud=1% idle=1% other=0% dskip=0 df=14/13+0 dus=15410 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10885 out=11316 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=12 empty=302 vb=581/928 lskip=0 str=431 ctl=0 adebt=-14339 clip=2 peak=34493
+[debug] STACK:8192, HEAP:33+1867 (15+1184), BUSY:98%, FPS:49 (S:35 R:0+14), BATT:0, avg:13063us debt:13630 ymc:0
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=14 avg=21322us debt=15393us fskip=34 hdraw=0 qdraw=0 m68k=11.46ms z80=3.75ms vdp=14.44ms ym=0.00ms ym0=6.20ms ymblk=8.31ms/9 aud=1% idle=1% other=0% dskip=0 df=14/14+0 dus=15461 blk=14
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10615 out=10945 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=9 empty=443 vb=138/928 lskip=0 str=330 ctl=116 adebt=15333 clip=0 peak=26085
+[retrogo_app] input mask 161 mapped A+DOWN+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1883 (15+1184), BUSY:98%, FPS:45 (S:32 R:0+13), BATT:0, avg:35474us debt:11719 ymc:0
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 33 mapped A+DOWN raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 161 mapped A+DOWN+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=42 d=14 avg=24449us debt=19043us fskip=28 hdraw=0 qdraw=0 m68k=12.71ms z80=3.83ms vdp=17.03ms ym=0.00ms ym0=6.10ms ymblk=20.69ms/19 aud=2% idle=1% other=0% dskip=0 df=14/14+0 dus=15446 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=9275 out=10385 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=19 empty=248 vb=19/928 lskip=0 str=1110 ctl=120 adebt=94553 clip=0 peak=24553
+[debug] STACK:8192, HEAP:34+1881 (15+1184), BUSY:98%, FPS:41 (S:28 R:0+13), BATT:0, avg:17910us debt:20749 ymc:0
+[usage] CPU0: 88, CPU1: 98 | RAM 264052/298676 (88%) | PSRAM 6489164/8375748 (77%)
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 17 mapped A+UP raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 81 mapped A+UP+LEFT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=41 d=14 avg=24996us debt=19046us fskip=27 hdraw=0 qdraw=0 m68k=12.29ms z80=4.16ms vdp=18.67ms ym=0.00ms ym0=6.31ms ymblk=23.63ms/21 aud=2% idle=1% other=0% dskip=0 df=14/14+0 dus=15402 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=9061 out=10149 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=21 empty=242 vb=88/928 lskip=0 str=1088 ctl=120 adebt=116739 clip=1 peak=33368
+[debug] STACK:8192, HEAP:33+1875 (15+1184), BUSY:98%, FPS:39 (S:26 R:0+14), BATT:0, avg:15703us debt:19405 ymc:0
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=47 d=13 avg=21697us debt=21966us fskip=34 hdraw=0 qdraw=0 m68k=11.53ms z80=3.74ms vdp=15.23ms ym=0.00ms ym0=6.16ms ymblk=21.53ms/21 aud=2% idle=2% other=0% dskip=0 df=13/13+0 dus=15409 blk=25
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10392 out=11606 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=21 empty=218 vb=371/928 lskip=0 str=1214 ctl=120 adebt=70091 clip=1 peak=34986
+[debug] STACK:8192, HEAP:35+1912 (15+1184), BUSY:97%, FPS:45 (S:33 R:0+13), BATT:0, avg:20001us debt:25580 ymc:0
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=42 d=13 avg=23978us debt=19954us fskip=29 hdraw=0 qdraw=0 m68k=12.27ms z80=4.13ms vdp=17.60ms ym=0.00ms ym0=6.05ms ymblk=21.92ms/23 aud=2% idle=1% other=0% dskip=0 df=13/14+0 dus=15354 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=9277 out=10354 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=23 empty=229 vb=51/928 lskip=0 str=1113 ctl=120 adebt=118575 clip=1 peak=34528
+[debug] STACK:8192, HEAP:35+1907 (15+1184), BUSY:99%, FPS:41 (S:28 R:0+13), BATT:0, avg:21728us debt:30773 ymc:0
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=42 d=13 avg=23761us debt=21255us fskip=29 hdraw=0 qdraw=0 m68k=12.16ms z80=3.86ms vdp=17.13ms ym=0.00ms ym0=6.96ms ymblk=32.43ms/29 aud=3% idle=1% other=0% dskip=0 df=13/13+0 dus=15444 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=9268 out=10380 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=29 empty=211 vb=100/928 lskip=0 str=1108 ctl=120 adebt=114190 clip=0 peak=27640
+[debug] STACK:8192, HEAP:35+1904 (15+1184), BUSY:99%, FPS:42 (S:29 R:0+13), BATT:0, avg:16590us debt:24290 ymc:0
+[retrogo_app] input mask 81 mapped A+UP+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:35+1926 (15+1184), BUSY:98%, FPS:45 (S:32 R:0+13), BATT:0, avg:13641us debt:38770 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=46 d=13 avg=21912us debt=22505us fskip=33 hdraw=0 qdraw=1 m68k=11.28ms z80=3.94ms vdp=15.85ms ym=0.00ms ym0=6.15ms ymblk=29.64ms/23 aud=3% idle=1% other=0% dskip=0 df=13/13+0 dus=15440 blk=25
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10045 out=11278 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=23 empty=227 vb=419/928 lskip=0 str=1201 ctl=119 adebt=60909 clip=0 peak=24826
+[usage] CPU0: 92, CPU1: 98 | RAM 262072/298676 (87%) | PSRAM 6448052/8375748 (76%)
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 17 mapped A+UP raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1863 (15+1184), BUSY:98%, FPS:45 (S:30 R:0+14), BATT:0, avg:28186us debt:16632 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=45 d=15 avg=22280us debt=16998us fskip=30 hdraw=0 qdraw=4 m68k=10.96ms z80=3.90ms vdp=14.92ms ym=0.00ms ym0=6.09ms ymblk=40.42ms/39 aud=3% idle=1% other=0% dskip=0 df=15/15+0 dus=15784 blk=36
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10073 out=11140 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=39 empty=196 vb=484/928 lskip=0 str=1103 ctl=100 adebt=53190 clip=0 peak=23604
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1874 (15+1184), BUSY:98%, FPS:45 (S:28 R:0+17), BATT:0, avg:31465us debt:26815 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=46 d=17 avg=21971us debt=15460us fskip=29 hdraw=0 qdraw=6 m68k=10.48ms z80=3.78ms vdp=14.15ms ym=0.00ms ym0=5.89ms ymblk=25.59ms/24 aud=2% idle=2% other=0% dskip=0 df=17/17+0 dus=15807 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10202 out=11213 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=24 empty=230 vb=494/928 lskip=1 str=972 ctl=100 adebt=38631 clip=8 peak=36089
+[debug] STACK:8192, HEAP:33+1867 (15+1184), BUSY:97%, FPS:47 (S:32 R:0+16), BATT:0, avg:14558us debt:11281 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=47 d=16 avg=21204us debt=15049us fskip=31 hdraw=0 qdraw=4 m68k=10.55ms z80=3.53ms vdp=14.25ms ym=0.00ms ym0=5.93ms ymblk=27.75ms/28 aud=3% idle=1% other=0% dskip=0 df=16/16+0 dus=15403 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10326 out=11086 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=28 empty=258 vb=469/928 lskip=0 str=760 ctl=34 adebt=13723 clip=0 peak=26578
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:34+1883 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+14), BATT:0, avg:17652us debt:16228 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=14 avg=19710us debt=19148us fskip=37 hdraw=1 qdraw=5 m68k=10.40ms z80=3.70ms vdp=13.29ms ym=0.00ms ym0=5.41ms ymblk=27.25ms/27 aud=2% idle=1% other=0% dskip=0 df=14/14+0 dus=15270 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11240 out=11382 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=27 empty=423 vb=663/928 lskip=0 str=142 ctl=0 adebt=-22908 clip=0 peak=21056
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:32+1862 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:19024us debt:22340 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=15 avg=20295us debt=21181us fskip=34 hdraw=1 qdraw=7 m68k=10.66ms z80=3.29ms vdp=14.63ms ym=0.00ms ym0=4.58ms ymblk=12.52ms/9 aud=1% idle=1% other=0% dskip=0 df=15/15+0 dus=15370 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10892 out=10892 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=9 empty=556 vb=488/928 lskip=0 str=0 ctl=0 adebt=-18527 clip=0 peak=23214
+[usage] CPU0: 92, CPU1: 97 | RAM 263984/298676 (88%) | PSRAM 6490964/8375748 (77%)
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:34+1878 (15+1184), BUSY:98%, FPS:48 (S:35 R:0+13), BATT:0, avg:18415us debt:27843 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=13 avg=20665us debt=19688us fskip=35 hdraw=0 qdraw=1 m68k=11.16ms z80=3.42ms vdp=14.73ms ym=0.00ms ym0=5.91ms ymblk=22.55ms/23 aud=2% idle=1% other=0% dskip=0 df=13/12+0 dus=15337 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10637 out=10952 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=23 empty=339 vb=403/928 lskip=0 str=344 ctl=28 adebt=-6927 clip=0 peak=27723
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 17 mapped A+UP raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:34+1885 (15+1184), BUSY:98%, FPS:50 (S:36 R:0+14), BATT:0, avg:12465us debt:25789 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=14 avg=19525us debt=22332us fskip=37 hdraw=1 qdraw=5 m68k=10.24ms z80=3.31ms vdp=13.92ms ym=0.00ms ym0=4.98ms ymblk=31.39ms/26 aud=3% idle=1% other=0% dskip=0 df=14/15+0 dus=15355 blk=16
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11245 out=11290 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=26 empty=510 vb=610/928 lskip=0 str=50 ctl=0 adebt=-43778 clip=0 peak=18506
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 145 mapped A+UP+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1869 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:18680us debt:28655 ymc:0
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=19997us debt=23578us fskip=35 hdraw=2 qdraw=6 m68k=10.44ms z80=3.36ms vdp=13.89ms ym=0.00ms ym0=5.11ms ymblk=20.85ms/20 aud=2% idle=1% other=0% dskip=0 df=15/15+0 dus=15352 blk=23
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11047 out=11081 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=518 vb=568/928 lskip=0 str=0 ctl=0 adebt=-57319 clip=0 peak=25854
+[debug] STACK:8192, HEAP:34+1882 (15+1184), BUSY:98%, FPS:48 (S:34 R:0+14), BATT:0, avg:13179us debt:13772 ymc:0
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=15 avg=20755us debt=18703us fskip=34 hdraw=0 qdraw=2 m68k=10.94ms z80=3.54ms vdp=14.54ms ym=0.00ms ym0=5.45ms ymblk=7.62ms/7 aud=1% idle=1% other=0% dskip=0 df=15/14+0 dus=15412 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10829 out=11149 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=7 empty=412 vb=401/928 lskip=0 str=320 ctl=31 adebt=-33543 clip=0 peak=19964
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1867 (15+1184), BUSY:98%, FPS:50 (S:37 R:0+13), BATT:0, avg:26227us debt:11663 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=13 avg=19919us debt=17731us fskip=37 hdraw=0 qdraw=3 m68k=10.79ms z80=3.52ms vdp=14.35ms ym=0.00ms ym0=5.47ms ymblk=19.90ms/18 aud=2% idle=1% other=0% dskip=0 df=13/14+0 dus=15366 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11157 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=18 empty=435 vb=479/928 lskip=0 str=107 ctl=11 adebt=-49475 clip=0 peak=17637
+[usage] CPU0: 79, CPU1: 98 | RAM 263852/298676 (88%) | PSRAM 6486144/8375748 (77%)
+[retrogo_app] input mask 17 mapped A+UP raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 81 mapped A+UP+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:34+1882 (15+1184), BUSY:98%, FPS:47 (S:33 R:0+14), BATT:0, avg:13501us debt:24849 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=14 avg=21050us debt=18658us fskip=34 hdraw=0 qdraw=1 m68k=10.93ms z80=3.88ms vdp=14.56ms ym=0.00ms ym0=5.97ms ymblk=20.22ms/19 aud=2% idle=1% other=0% dskip=0 df=14/13+0 dus=15449 blk=27
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10608 out=11129 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=19 empty=280 vb=404/928 lskip=0 str=521 ctl=34 adebt=-10935 clip=0 peak=22875
+[retrogo_app] input mask 17 mapped A+UP raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 81 mapped A+UP+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 129 mapped A+RIGHT raw 16 raw_buttons A aliases -
+[debug] STACK:8192, HEAP:33+1877 (15+1184), BUSY:98%, FPS:47 (S:34 R:0+12), BATT:0, avg:33151us debt:16954 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=13 avg=20840us debt=20001us fskip=36 hdraw=0 qdraw=0 m68k=10.79ms z80=3.75ms vdp=15.54ms ym=0.00ms ym0=6.24ms ymblk=31.96ms/33 aud=3% idle=1% other=0% dskip=0 df=13/13+0 dus=15994 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10829 out=11328 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=33 empty=248 vb=375/928 lskip=0 str=499 ctl=49 adebt=5171 clip=0 peak=28068
+[retrogo_app] input mask 1 mapped A raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 65 mapped A+LEFT raw 16 raw_buttons A aliases -
+[retrogo_app] input mask 64 mapped LEFT raw 0 raw_buttons - aliases -
+[debug] STACK:8192, HEAP:33+1864 (15+1184), BUSY:98%, FPS:49 (S:35 R:0+15), BATT:0, avg:19605us debt:13217 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=20136us debt=14938us fskip=35 hdraw=0 qdraw=2 m68k=10.47ms z80=3.54ms vdp=14.12ms ym=0.00ms ym0=5.28ms ymblk=13.04ms/12 aud=1% idle=1% other=0% dskip=0 df=15/15+0 dus=15452 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11397 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=12 empty=450 vb=569/928 lskip=0 str=347 ctl=0 adebt=-23275 clip=0 peak=25632
+[debug] STACK:8192, HEAP:33+1876 (15+1184), BUSY:98%, FPS:50 (S:36 R:0+14), BATT:0, avg:13329us debt:13000 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=15 avg=19762us debt=15930us fskip=36 hdraw=0 qdraw=2 m68k=10.17ms z80=3.69ms vdp=14.24ms ym=0.00ms ym0=4.58ms ymblk=3.93ms/4 aud=0% idle=1% other=0% dskip=0 df=15/15+0 dus=15430 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11271 out=11298 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=4 empty=597 vb=640/928 lskip=0 str=27 ctl=0 adebt=-48678 clip=0 peak=29511
+[retrogo_app] input mask 1024 mapped L raw 256 raw_buttons - aliases -
+[debug] STACK:8192, HEAP:34+1879 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:16650us debt:13094 ymc:0
+[usage] CPU0: 80, CPU1: 98 | RAM 263852/298676 (88%) | PSRAM 6485836/8375748 (77%)
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=20209us debt=13314us fskip=33 hdraw=2 qdraw=5 m68k=10.30ms z80=3.53ms vdp=12.99ms ym=0.00ms ym0=4.36ms ymblk=19.79ms/20 aud=2% idle=1% other=0% dskip=0 df=17/17+0 dus=16070 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=550 vb=441/928 lskip=0 str=0 ctl=14 adebt=-48428 clip=0 peak=25482
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=15 avg=19448us debt=20479us fskip=36 hdraw=2 qdraw=5 m68k=10.25ms z80=3.38ms vdp=13.58ms ym=0.00ms ym0=4.98ms ymblk=17.24ms/18 aud=1% idle=1% other=0% dskip=0 df=15/15+0 dus=15349 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11242 out=11278 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=18 empty=559 vb=706/928 lskip=0 str=7 ctl=0 adebt=-78184 clip=0 peak=27484
+[debug] STACK:8192, HEAP:34+1876 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+15), BATT:0, avg:26722us debt:14340 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=20004us debt=20491us fskip=34 hdraw=3 qdraw=8 m68k=10.04ms z80=3.22ms vdp=13.49ms ym=0.00ms ym0=4.67ms ymblk=43.36ms/44 aud=4% idle=1% other=0% dskip=0 df=16/15+0 dus=15773 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=44 empty=558 vb=613/928 lskip=0 str=0 ctl=0 adebt=-70475 clip=0 peak=25174
+[debug] STACK:8192, HEAP:33+1853 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+16), BATT:0, avg:27584us debt:16721 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=17 avg=20281us debt=10136us fskip=32 hdraw=0 qdraw=1 m68k=10.36ms z80=3.29ms vdp=13.61ms ym=0.00ms ym0=4.66ms ymblk=11.44ms/6 aud=1% idle=1% other=0% dskip=0 df=17/18+0 dus=15219 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10829 out=11048 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=6 empty=543 vb=601/928 lskip=0 str=219 ctl=0 adebt=-69285 clip=0 peak=26238
+[debug] STACK:8192, HEAP:33+1862 (15+1184), BUSY:98%, FPS:49 (S:32 R:0+17), BATT:0, avg:12390us debt:11814 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=18 avg=19984us debt=10140us fskip=32 hdraw=0 qdraw=0 m68k=10.08ms z80=3.32ms vdp=13.39ms ym=0.00ms ym0=4.81ms ymblk=0.00ms/0 aud=0% idle=1% other=0% dskip=0 df=18/18+0 dus=15350 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11058 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=0 empty=707 vb=547/928 lskip=0 str=8 ctl=0 adebt=-70907 clip=0 peak=25886
+[debug] STACK:8192, HEAP:33+1871 (15+1184), BUSY:98%, FPS:50 (S:32 R:0+18), BATT:0, avg:17431us debt:14723 ymc:0
+[usage] CPU0: 69, CPU1: 98 | RAM 264260/298676 (88%) | PSRAM 6511932/8375748 (77%)
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=15 avg=19584us debt=14751us fskip=36 hdraw=0 qdraw=2 m68k=10.37ms z80=3.40ms vdp=13.62ms ym=0.00ms ym0=5.05ms ymblk=11.98ms/9 aud=1% idle=1% other=0% dskip=0 df=15/15+0 dus=16880 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11256 out=11315 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=9 empty=554 vb=728/928 lskip=0 str=59 ctl=0 adebt=-80000 clip=0 peak=26074
+[debug] STACK:8192, HEAP:33+1853 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:12339us debt:9735 ymc:0
+[debug] STACK:8192, HEAP:33+1862 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+16), BATT:0, avg:16812us debt:15627 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=20176us debt=12018us fskip=33 hdraw=2 qdraw=1 m68k=10.16ms z80=3.29ms vdp=13.98ms ym=0.00ms ym0=5.09ms ymblk=11.10ms/10 aud=1% idle=1% other=0% dskip=0 df=17/16+0 dus=15317 blk=21
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11078 out=11078 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=10 empty=532 vb=572/928 lskip=0 str=0 ctl=0 adebt=-65076 clip=0 peak=23328
+[debug] STACK:8192, HEAP:33+1868 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+16), BATT:0, avg:18743us debt:13474 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19732us debt=14645us fskip=35 hdraw=2 qdraw=6 m68k=10.10ms z80=3.25ms vdp=13.62ms ym=0.00ms ym0=4.32ms ymblk=27.53ms/27 aud=3% idle=1% other=0% dskip=0 df=16/17+0 dus=15288 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11287 out=11287 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=27 empty=576 vb=647/928 lskip=0 str=0 ctl=0 adebt=-71487 clip=0 peak=28216
+[debug] STACK:8192, HEAP:33+1872 (15+1184), BUSY:98%, FPS:50 (S:32 R:0+17), BATT:0, avg:25961us debt:9114 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=18 avg=19972us debt=15302us fskip=32 hdraw=5 qdraw=7 m68k=9.97ms z80=3.18ms vdp=13.27ms ym=0.00ms ym0=4.16ms ymblk=29.35ms/28 aud=2% idle=1% other=0% dskip=0 df=18/17+0 dus=15784 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=28 empty=560 vb=587/928 lskip=0 str=0 ctl=0 adebt=-64207 clip=0 peak=16300
+[debug] STACK:8192, HEAP:34+1876 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+17), BATT:0, avg:17516us debt:22132 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19750us debt=22009us fskip=35 hdraw=3 qdraw=6 m68k=10.06ms z80=3.46ms vdp=13.72ms ym=0.00ms ym0=4.16ms ymblk=22.87ms/20 aud=2% idle=1% other=0% dskip=0 df=16/17+0 dus=15286 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11242 out=11261 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=588 vb=637/928 lskip=0 str=19 ctl=0 adebt=-74602 clip=0 peak=24960
+[usage] CPU0: 68, CPU1: 98 | RAM 264104/298676 (88%) | PSRAM 6503452/8375748 (77%)
+[debug] STACK:8192, HEAP:33+1858 (15+1184), BUSY:98%, FPS:48 (S:32 R:0+16), BATT:0, avg:12374us debt:14042 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=16 avg=20500us debt=14978us fskip=33 hdraw=1 qdraw=5 m68k=10.26ms z80=3.52ms vdp=14.60ms ym=0.00ms ym0=5.45ms ymblk=21.74ms/20 aud=2% idle=1% other=0% dskip=0 df=16/16+0 dus=15377 blk=28
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10854 out=11143 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=422 vb=609/928 lskip=0 str=289 ctl=15 adebt=-48910 clip=0 peak=27441
+[debug] STACK:8192, HEAP:35+1910 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+15), BATT:0, avg:12954us debt:20015 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=20323us debt=12670us fskip=34 hdraw=0 qdraw=0 m68k=10.71ms z80=3.23ms vdp=13.88ms ym=0.00ms ym0=5.64ms ymblk=10.59ms/10 aud=1% idle=1% other=0% dskip=0 df=16/15+0 dus=15403 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11025 out=11121 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=10 empty=560 vb=423/928 lskip=0 str=96 ctl=29 adebt=-45789 clip=0 peak=20081
+[debug] STACK:8192, HEAP:35+1895 (15+1184), BUSY:98%, FPS:50 (S:36 R:0+14), BATT:0, avg:15776us debt:16147 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=14 avg=19560us debt=18701us fskip=37 hdraw=2 qdraw=2 m68k=10.37ms z80=3.57ms vdp=13.84ms ym=0.00ms ym0=4.76ms ymblk=16.49ms/16 aud=1% idle=1% other=0% dskip=0 df=14/15+0 dus=15382 blk=24
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11271 out=11334 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=16 empty=502 vb=647/928 lskip=0 str=63 ctl=0 adebt=-73105 clip=0 peak=25622
+[debug] STACK:8192, HEAP:35+1901 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+15), BATT:0, avg:30159us debt:8994 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=16 avg=20009us debt=18432us fskip=34 hdraw=4 qdraw=6 m68k=10.37ms z80=3.13ms vdp=13.54ms ym=0.00ms ym0=4.58ms ymblk=34.46ms/32 aud=3% idle=1% other=0% dskip=0 df=16/15+0 dus=15987 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11079 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=32 empty=604 vb=569/928 lskip=0 str=0 ctl=0 adebt=-64733 clip=0 peak=23462
+[debug] STACK:8192, HEAP:35+1910 (15+1184), BUSY:98%, FPS:50 (S:36 R:0+15), BATT:0, avg:13468us debt:19347 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=19816us debt=22017us fskip=35 hdraw=1 qdraw=6 m68k=10.31ms z80=3.26ms vdp=13.46ms ym=0.00ms ym0=4.51ms ymblk=39.47ms/39 aud=3% idle=1% other=0% dskip=0 df=15/15+0 dus=15362 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11021 out=11063 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=39 empty=544 vb=605/928 lskip=0 str=13 ctl=0 adebt=-68385 clip=0 peak=25023
+[usage] CPU0: 71, CPU1: 98 | RAM 261968/298676 (87%) | PSRAM 6450520/8375748 (77%)
+[debug] STACK:8192, HEAP:35+1913 (15+1184), BUSY:98%, FPS:50 (S:34 R:0+16), BATT:0, avg:12061us debt:22942 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=49 d=16 avg=20250us debt=22767us fskip=33 hdraw=6 qdraw=6 m68k=10.27ms z80=3.50ms vdp=13.83ms ym=0.00ms ym0=4.84ms ymblk=16.34ms/16 aud=1% idle=1% other=0% dskip=0 df=16/17+0 dus=16060 blk=21
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10797 out=10811 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=16 empty=557 vb=356/928 lskip=0 str=14 ctl=45 adebt=-45826 clip=0 peak=22198
+[debug] STACK:8192, HEAP:33+1863 (15+1184), BUSY:98%, FPS:48 (S:33 R:0+14), BATT:0, avg:29044us debt:14070 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=13 avg=19820us debt=17346us fskip=37 hdraw=0 qdraw=1 m68k=10.36ms z80=3.78ms vdp=14.56ms ym=0.00ms ym0=5.09ms ymblk=20.84ms/20 aud=1% idle=1% other=0% dskip=0 df=13/13+0 dus=15905 blk=21
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11087 out=11340 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=446 vb=656/928 lskip=0 str=253 ctl=4 adebt=-67040 clip=0 peak=25810
+[debug] STACK:8192, HEAP:33+1867 (15+1184), BUSY:98%, FPS:51 (S:38 R:0+14), BATT:0, avg:26739us debt:4550 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=19867us debt=13774us fskip=35 hdraw=1 qdraw=2 m68k=10.20ms z80=3.51ms vdp=13.66ms ym=0.00ms ym0=4.77ms ymblk=22.25ms/20 aud=2% idle=1% other=0% dskip=0 df=15/14+0 dus=15491 blk=40
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11058 out=11059 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=20 empty=628 vb=656/928 lskip=0 str=1 ctl=0 adebt=-71628 clip=0 peak=24344
+[debug] STACK:8192, HEAP:33+1851 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:10887us debt:17671 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=17 avg=19832us debt=14640us fskip=34 hdraw=2 qdraw=5 m68k=10.01ms z80=3.28ms vdp=13.57ms ym=0.00ms ym0=4.88ms ymblk=14.62ms/15 aud=1% idle=1% other=0% dskip=0 df=17/17+0 dus=15255 blk=18
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11287 out=11287 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=15 empty=612 vb=690/928 lskip=0 str=0 ctl=0 adebt=-72575 clip=0 peak=22576
+[debug] STACK:8192, HEAP:33+1857 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:13623us debt:14806 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=15 avg=19950us debt=17434us fskip=35 hdraw=4 qdraw=3 m68k=10.50ms z80=3.20ms vdp=13.68ms ym=0.00ms ym0=4.69ms ymblk=27.99ms/27 aud=3% idle=1% other=0% dskip=0 df=15/15+0 dus=15315 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11050 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=27 empty=618 vb=633/928 lskip=0 str=0 ctl=0 adebt=-70212 clip=0 peak=25434
+[usage] CPU0: 76, CPU1: 98 | RAM 264084/298676 (88%) | PSRAM 6505840/8375748 (77%)
+[debug] STACK:8192, HEAP:33+1865 (15+1184), BUSY:98%, FPS:48 (S:31 R:0+16), BATT:0, avg:29175us debt:3271 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=15 avg=20803us debt=14025us fskip=33 hdraw=1 qdraw=3 m68k=10.59ms z80=3.70ms vdp=14.00ms ym=0.00ms ym0=5.46ms ymblk=27.16ms/23 aud=3% idle=1% other=0% dskip=0 df=15/15+0 dus=16169 blk=19
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10579 out=10817 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=23 empty=433 vb=340/928 lskip=0 str=238 ctl=38 adebt=-33732 clip=0 peak=27090
+[debug] STACK:8192, HEAP:34+1874 (15+1184), BUSY:98%, FPS:50 (S:35 R:0+15), BATT:0, avg:12698us debt:14181 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19524us debt=15131us fskip=35 hdraw=0 qdraw=2 m68k=10.25ms z80=3.27ms vdp=13.82ms ym=0.00ms ym0=4.66ms ymblk=5.89ms/5 aud=1% idle=1% other=0% dskip=0 df=16/17+0 dus=15299 blk=15
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11271 out=11330 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=5 empty=599 vb=587/928 lskip=0 str=91 ctl=0 adebt=-69514 clip=0 peak=24694
+[debug] STACK:8192, HEAP:33+1851 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:17716us debt:11744 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=18 avg=19981us debt=12871us fskip=33 hdraw=1 qdraw=1 m68k=10.08ms z80=3.33ms vdp=13.51ms ym=0.00ms ym0=4.70ms ymblk=9.65ms/10 aud=1% idle=1% other=0% dskip=0 df=18/17+0 dus=15358 blk=22
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11300 out=11352 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=10 empty=562 vb=617/928 lskip=0 str=20 ctl=2 adebt=-68697 clip=0 peak=23427
+[debug] STACK:8192, HEAP:33+1853 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:13294us debt:13259 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=50 d=17 avg=20010us debt=17466us fskip=33 hdraw=4 qdraw=7 m68k=10.04ms z80=3.34ms vdp=13.52ms ym=0.00ms ym0=4.30ms ymblk=18.33ms/15 aud=2% idle=1% other=0% dskip=0 df=17/17+0 dus=15334 blk=17
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11050 out=11055 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=15 empty=593 vb=525/928 lskip=0 str=5 ctl=9 adebt=-59652 clip=0 peak=27066
+[debug] STACK:8192, HEAP:33+1856 (15+1184), BUSY:98%, FPS:50 (S:33 R:0+17), BATT:0, avg:17664us debt:18712 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=51 d=16 avg=19507us debt=20255us fskip=35 hdraw=6 qdraw=6 m68k=10.05ms z80=3.16ms vdp=13.28ms ym=0.00ms ym0=4.33ms ymblk=34.08ms/27 aud=3% idle=1% other=0% dskip=0 df=16/17+0 dus=15352 blk=16
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=11242 out=11247 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=27 empty=602 vb=693/928 lskip=0 str=5 ctl=0 adebt=-77191 clip=0 peak=16752
+[usage] CPU0: 70, CPU1: 98 | RAM 264152/298676 (88%) | PSRAM 6508876/8375748 (77%)
+[debug] STACK:8192, HEAP:33+1868 (15+1184), BUSY:98%, FPS:49 (S:33 R:0+16), BATT:0, avg:11900us debt:10687 ymc:0
+[info] gwenesis_profiler_maybe_log: gwen perf: f=48 d=16 avg=20828us debt=14866us fskip=32 hdraw=3 qdraw=2 m68k=10.54ms z80=3.73ms vdp=13.86ms ym=0.00ms ym0=5.61ms ymblk=18.86ms/19 aud=1% idle=1% other=0% dskip=0 df=16/16+0 dus=15488 blk=20
+[info] gwenesis_profiler_maybe_log: gwen aud: ym=10610 out=10817 ymev=0 ymov=0 ymrd=0 aq=0-24 wait=19 empty=377 vb=394/928 lskip=0 str=240 ctl=33 adebt=-44942 clip=0 peak=26894

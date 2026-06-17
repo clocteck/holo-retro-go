@@ -86,7 +86,7 @@ bool gwenesis_sn76489_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
     if (!gwenesis_SN76489_ptr)
-        gwenesis_SN76489_ptr = rg_alloc(sizeof(*gwenesis_SN76489_ptr), MEM_FAST);
+        gwenesis_SN76489_ptr = rg_alloc(sizeof(*gwenesis_SN76489_ptr), MEM_FAST | MEM_NOPANIC);
     return gwenesis_SN76489_ptr != NULL;
 #else
     return true;

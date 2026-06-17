@@ -1,6 +1,10 @@
 #ifndef M68K__HEADER
 #define M68K__HEADER
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#include <stdbool.h>
+#endif
+
 /* ======================================================================== */
 /* ========================= LICENSING & COPYRIGHT ======================== */
 /* ======================================================================== */
@@ -152,6 +156,11 @@
 
 // 16/32 bits acces to RAM/ROM
 
+#define GWENESIS_ROM_PAGE_SHIFT 16
+#define GWENESIS_ROM_PAGE_SIZE (1U << GWENESIS_ROM_PAGE_SHIFT)
+#define GWENESIS_ROM_PAGE_MASK (GWENESIS_ROM_PAGE_SIZE - 1)
+#define GWENESIS_ROM_PAGE_COUNT 128
+
 #if GNW_TARGET_MARIO != 0 | GNW_TARGET_ZELDA != 0 || defined(RETRO_GO)
 
 	extern unsigned char *ROM_DATA;
@@ -162,6 +171,7 @@
 	extern unsigned int CART_SRAM_END;
 	extern unsigned char *M68K_RAM;
 #if defined(RETRO_GO)
+	extern unsigned char **ROM_PAGE_PTR;
 	extern unsigned char **M68K_RAM_PAGE_PTR;
 #endif
 #else
@@ -184,9 +194,21 @@ static inline unsigned char gwenesis_fetch_rom_byte(unsigned int offset)
 	return ROM_DATA[offset < ROM_SIZE ? offset : (offset % ROM_SIZE)];
 }
 
+#if defined(RETRO_GO)
+static inline unsigned char *gwenesis_rom_page_ptr(unsigned int address)
+{
+	return ROM_PAGE_PTR[(address >> GWENESIS_ROM_PAGE_SHIFT) & (GWENESIS_ROM_PAGE_COUNT - 1)];
+}
+#endif
+
 static inline unsigned int gwenesis_fetch8rom(unsigned int address)
 {
 	GWENESIS_M68K_ROM_PAGE_INC(address);
+#if defined(RETRO_GO)
+	unsigned char *page = gwenesis_rom_page_ptr(address);
+	if (__builtin_expect(page != NULL, 1))
+		return page[(address ^ 1) & GWENESIS_ROM_PAGE_MASK];
+#endif
 	unsigned int offset = ((address & ROM_MASK) ^ 1);
 	return gwenesis_fetch_rom_byte(offset);
 }
@@ -194,6 +216,12 @@ static inline unsigned int gwenesis_fetch8rom(unsigned int address)
 static inline unsigned int gwenesis_fetch16rom(unsigned int address)
 {
 	GWENESIS_M68K_ROM_PAGE_INC(address);
+#if defined(RETRO_GO)
+	unsigned char *page = gwenesis_rom_page_ptr(address);
+	unsigned int page_offset = address & GWENESIS_ROM_PAGE_MASK;
+	if (__builtin_expect(page != NULL && page_offset <= GWENESIS_ROM_PAGE_MASK - 1, 1))
+		return *(unsigned short *)&page[page_offset];
+#endif
 	unsigned int offset = address & ROM_MASK;
 	if (ROM_SIZE != 0 && offset + 1 < ROM_SIZE)
 		return *(unsigned short *)&ROM_DATA[offset];
@@ -203,6 +231,15 @@ static inline unsigned int gwenesis_fetch16rom(unsigned int address)
 static inline unsigned int gwenesis_fetch32rom(unsigned int address)
 {
 	GWENESIS_M68K_ROM_PAGE_INC(address);
+#if defined(RETRO_GO)
+	unsigned char *page = gwenesis_rom_page_ptr(address);
+	unsigned int page_offset = address & GWENESIS_ROM_PAGE_MASK;
+	if (__builtin_expect(page != NULL && page_offset <= GWENESIS_ROM_PAGE_MASK - 3, 1))
+	{
+		unsigned int value = *(unsigned int *)&page[page_offset];
+		return (value << 16) | (value >> 16);
+	}
+#endif
 	unsigned int offset = address & ROM_MASK;
 	if (ROM_SIZE != 0 && offset + 3 < ROM_SIZE)
 	{
@@ -264,6 +301,15 @@ static inline unsigned int gwenesis_fetch32ram(unsigned int address)
 {
 	GWENESIS_M68K_RAM_PAGE_R_INC(address);
 #if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffc)
+	{
+		unsigned int value = *(unsigned int *)ptr;
+		return (value << 16) | (value >> 16);
+	}
 	return (gwenesis_fetch16ram_raw(address) << 16) | gwenesis_fetch16ram_raw(address + 2);
 #else
 	unsigned int value = *(unsigned int *)&M68K_RAM[address & 0xffff];
@@ -311,6 +357,15 @@ static inline void gwenesis_write32ram(unsigned int address, unsigned int value)
 {
 	GWENESIS_M68K_RAM_PAGE_W_INC(address);
 #if defined(RETRO_GO)
+	unsigned int ram_address = address & 0xffff;
+	unsigned int page = (ram_address >> 12) & 0x0f;
+	unsigned int offset = ram_address & 0x0fff;
+	unsigned char *ptr = M68K_RAM_PAGE_PTR[page] + offset;
+	if (offset <= 0x0ffc)
+	{
+		*(unsigned int *)ptr = (value << 16) | (value >> 16);
+		return;
+	}
 	gwenesis_write16ram_raw(address, (value >> 16) & 0xffff);
 	gwenesis_write16ram_raw(address + 2, value & 0xffff);
 #else
@@ -530,7 +585,14 @@ typedef struct
 } m68ki_cpu_core;
 
 /* CPU cores */
+#if defined(RG_TARGET_HOLO_DYNMOD)
+extern m68ki_cpu_core *gwenesis_m68k_core;
+#define m68k (*gwenesis_m68k_core)
+extern bool gwenesis_m68k_core_init_fast_ram(void);
+extern void gwenesis_m68k_core_deinit_fast_ram(void);
+#else
 extern m68ki_cpu_core m68k;
+#endif
 
 /* ======================================================================== */
 /* ============================== CALLBACKS =============================== */

@@ -377,8 +377,13 @@ void rg_input_init(void)
 void rg_input_deinit(void)
 {
     input_task_running = false;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    for (int retry = 0; gamepad_state != (uint32_t)-1 && retry < 100; ++retry)
+        rg_task_delay(1);
+#else
     // while (gamepad_state != -1)
     //     rg_task_yield();
+#endif
     RG_LOGI("Input terminated.\n");
 }
 
