@@ -141,8 +141,8 @@ static bool gwenesis_perf_overlay_enabled;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #define GWENESIS_AUDIO_TASK_STACK (3 * 1024)
 #define GWENESIS_AUDIO_OUTPUT_TASK_STACK (2 * 1024 + 512)
-#define GWENESIS_AUDIO_TASK_CORE 1
-#define GWENESIS_AUDIO_OUTPUT_TASK_CORE 1
+#define GWENESIS_AUDIO_TASK_CORE 0
+#define GWENESIS_AUDIO_OUTPUT_TASK_CORE 0
 #define GWENESIS_VDP_ASYNC_TASK_CORE 0
 #define GWENESIS_VRAM_MEM MEM_SLOW
 #define GWENESIS_VRAM_MEM_NAME "MEM_SLOW"
@@ -181,7 +181,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_RAM_CACHE_SAMPLE_LOGS 2
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 #if GWENESIS_VDP_ASYNC_ENABLED
-#define GWENESIS_VDP_ASYNC_JOBS 3
+#define GWENESIS_VDP_ASYNC_JOBS 2
 #define GWENESIS_VDP_ASYNC_TASK_STACK (6 * 1024)
 #define GWENESIS_VDP_ASYNC_UNSAFE_FRAMES 8
 #endif
@@ -2535,8 +2535,10 @@ static void gwenesis_display_flip_surface(void)
 {
 #if GWENESIS_VDP_ASYNC_ENABLED
     if (updates[2])
-        currentUpdate = (currentUpdate == updates[0]) ? updates[1] :
-                        (currentUpdate == updates[1]) ? updates[2] : updates[0];
+    {
+        currentUpdate = updates[2];
+        return;
+    }
     else
 #endif
     if (gwenesis_display_double_buffered())
@@ -2858,8 +2860,40 @@ static bool gwenesis_vdp_async_can_submit_frame(void)
     return true;
 }
 
+static bool gwenesis_vdp_async_any_inflight(void)
+{
+    for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
+    {
+        gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
+        const uint32_t state = __atomic_load_n(&job->state, __ATOMIC_ACQUIRE);
+        if (state == GWENESIS_VDP_JOB_PREPARING ||
+            state == GWENESIS_VDP_JOB_FILLING ||
+            state == GWENESIS_VDP_JOB_READY ||
+            state == GWENESIS_VDP_JOB_RENDERING)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void gwenesis_vdp_async_release_displayed_jobs(void)
+{
+    if (!rg_display_sync(false))
+        return;
+
+    for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
+    {
+        gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
+        if (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_HELD)
+            __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
+    }
+}
+
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_acquire_job(void)
 {
+    gwenesis_vdp_async_release_displayed_jobs();
+
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
         gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
@@ -2872,12 +2906,12 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_acquire_job(void)
     return NULL;
 }
 
-static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_snapshot_job(void)
+static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_ready_job(void)
 {
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
         gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
-        if (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_FILLING)
+        if (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_READY)
             return job;
     }
     return NULL;
@@ -2905,6 +2939,14 @@ static bool gwenesis_vdp_async_fill_job(gwenesis_vdp_async_job_t *job)
 
 static bool gwenesis_vdp_async_submit_snapshot(uint32_t frame_id, int frame_width, int frame_height)
 {
+    if (gwenesis_vdp_async_any_inflight())
+    {
+#if GWENESIS_PROFILER_DETAILED
+        gwenesis_vdp_async_drop_count++;
+#endif
+        return false;
+    }
+
     gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_acquire_job();
     if (!job)
     {
@@ -2921,23 +2963,17 @@ static bool gwenesis_vdp_async_submit_snapshot(uint32_t frame_id, int frame_widt
     job->render_us = 0;
     __atomic_store_n(&job->discard, 0, __ATOMIC_RELEASE);
 
+    if (!gwenesis_vdp_async_fill_job(job))
+    {
+        __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
+        return false;
+    }
+
 #if GWENESIS_PROFILER_DETAILED
     gwenesis_vdp_async_submit_count++;
 #endif
-    __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FILLING, __ATOMIC_RELEASE);
-
-    int waited = 0;
-    while (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_FILLING)
-    {
-        if (waited++ == 500)
-            RG_LOGW("Waiting for Genesis VDP async snapshot on worker\n");
-        rg_task_yield();
-    }
-
-    const uint32_t state = __atomic_load_n(&job->state, __ATOMIC_ACQUIRE);
-    return state == GWENESIS_VDP_JOB_RENDERING ||
-           state == GWENESIS_VDP_JOB_DONE ||
-           state == GWENESIS_VDP_JOB_HELD;
+    __atomic_store_n(&job->state, GWENESIS_VDP_JOB_READY, __ATOMIC_RELEASE);
+    return true;
 }
 
 static void gwenesis_vdp_async_worker_task(void *arg)
@@ -2946,18 +2982,13 @@ static void gwenesis_vdp_async_worker_task(void *arg)
 
     while (__atomic_load_n(&gwenesis_vdp_async_task_running, __ATOMIC_ACQUIRE))
     {
-        gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_take_snapshot_job();
+        gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_take_ready_job();
         if (!job)
         {
             rg_task_delay(1);
             continue;
         }
 
-        if (!gwenesis_vdp_async_fill_job(job))
-        {
-            __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
-            continue;
-        }
         if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         {
 #if GWENESIS_PROFILER_DETAILED
@@ -3088,7 +3119,7 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_latest_done_job(void)
     {
         gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
         const uint32_t state = __atomic_load_n(&job->state, __ATOMIC_ACQUIRE);
-        if (job != best && (state == GWENESIS_VDP_JOB_DONE || state == GWENESIS_VDP_JOB_HELD))
+        if (job != best && state == GWENESIS_VDP_JOB_DONE)
             __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
     }
 
@@ -3097,6 +3128,10 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_latest_done_job(void)
 
 static bool gwenesis_vdp_async_display_latest(void)
 {
+    gwenesis_vdp_async_release_displayed_jobs();
+    if (!rg_display_sync(false))
+        return false;
+
     gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_take_latest_done_job();
     if (!job)
     {
@@ -3144,9 +3179,9 @@ static bool gwenesis_vdp_async_start(void)
         }
 
         job->vram = rg_alloc(VRAM_MAX_SIZE, MEM_SLOW | MEM_NOPANIC);
-        job->vsram = rg_alloc(sizeof(*job->vsram) * VSRAM_MAX_SIZE, MEM_SLOW | MEM_NOPANIC);
-        job->cram565 = rg_alloc(sizeof(*job->cram565) * CRAM_MAX_SIZE * 4, MEM_SLOW | MEM_NOPANIC);
-        job->sat_cache = rg_alloc(SAT_CACHE_MAX_SIZE, MEM_SLOW | MEM_NOPANIC);
+        job->vsram = rg_alloc(sizeof(*job->vsram) * VSRAM_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
+        job->cram565 = rg_alloc(sizeof(*job->cram565) * CRAM_MAX_SIZE * 4, MEM_FAST | MEM_NOPANIC);
+        job->sat_cache = rg_alloc(SAT_CACHE_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
         if (!job->vram || !job->vsram || !job->cram565 || !job->sat_cache)
         {
             RG_LOGW("Genesis VDP async disabled: snapshot allocation failed\n");
@@ -3683,7 +3718,8 @@ void app_main(void)
     }
 
 #if GWENESIS_VDP_ASYNC_ENABLED
-    gwenesis_vdp_async_start();
+    if (gwenesis_vdp_async_start() && GWENESIS_VDP_ASYNC_JOBS < GWENESIS_SURFACE_COUNT)
+        currentUpdate = updates[GWENESIS_VDP_ASYNC_JOBS];
 #endif
 
     rg_system_set_tick_rate(GWENESIS_FRAME_TARGET_FPS);
@@ -3847,7 +3883,7 @@ void app_main(void)
 #endif
         gwenesis_frameskip_note_frame(drawFrame);
 #if GWENESIS_VDP_ASYNC_ENABLED
-        bool async_vdp_wanted = false;
+        bool async_vdp_path = false;
         bool sync_vdp_frame = drawFrame;
 #else
         const bool sync_vdp_frame = drawFrame;
@@ -3889,19 +3925,12 @@ void app_main(void)
         gwenesis_vdp_async_begin_frame(async_vdp_frame_id);
         if (drawFrame)
         {
-            async_vdp_wanted = gwenesis_vdp_async_can_submit_frame();
-            if (async_vdp_wanted)
+            if (gwenesis_vdp_async_can_submit_frame())
             {
-                if (gwenesis_vdp_async_submit_snapshot(async_vdp_frame_id, screen_width, screen_height))
-                    sync_vdp_frame = false;
-                else
-                    sync_vdp_frame = false;
+                gwenesis_vdp_async_submit_snapshot(async_vdp_frame_id, screen_width, screen_height);
             }
-            else
-            {
-                sync_vdp_frame = true;
-                gwenesis_vdp_async_wait_idle_for_sync();
-            }
+            sync_vdp_frame = false;
+            async_vdp_path = true;
         }
 #endif
 
@@ -4060,7 +4089,7 @@ void app_main(void)
             int64_t prof_start = gwenesis_profiler_now();
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #if GWENESIS_VDP_ASYNC_ENABLED
-            if (async_vdp_wanted)
+            if (async_vdp_path)
             {
                 gwenesis_vdp_async_display_latest();
             }

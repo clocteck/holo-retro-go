@@ -26,25 +26,42 @@ Lua app entry path on the device:
 ## Build Environment
 
 - Target chip: ESP32-S3
-- ESP-IDF path: `C:\Users\wzh\Documents\nodemcu-firmware\sdk\esp32-esp-idf`
+- Workspace path: `E:\cubicsrc\holo-retro-go`
+- PlatformIO Core: `C:\Users\72751\.platformio\penv\Scripts\pio.exe`
+- ESP-IDF path: `C:\Users\72751\.platformio\packages\framework-espidf`
+- ESP-IDF tools path: `C:\Users\72751\.espressif`
+- `idf.py` path: `C:\Users\72751\.platformio\packages\framework-espidf\tools`
+- `ninja` path: `C:\Users\72751\.espressif\tools\ninja\1.12.1`
+- `ccache` path: `C:\Users\72751\.espressif\tools\ccache\4.12.1\ccache-4.12.1-windows-x86_64`
+- `cmake` path: `C:\Users\72751\.espressif\tools\cmake\3.30.2\bin`
+- Xtensa toolchain path: `C:\Users\72751\.espressif\tools\xtensa-esp-elf\esp-14.2.0_20251107\xtensa-esp-elf\bin`
 - Default Retro-Go build dir: `build`
 - Gwenesis-only build dir: `build-gwenesis`
 - Shared object target: `so`
 
-PowerShell may block `export.ps1`, so use `-ExecutionPolicy Bypass` for one-shot build commands.
+This repository is not a standalone PlatformIO project and has no
+`platformio.ini`; do not use `pio run` from this directory. PlatformIO provides
+the ESP-IDF package and toolchain, but the module build is still driven by
+`idf.py`/`ninja`.
+
+The current user environment should include these paths in `Path`, plus
+`IDF_PATH=C:\Users\72751\.platformio\packages\framework-espidf` and
+`IDF_TOOLS_PATH=C:\Users\72751\.espressif`. If a fresh shell cannot find
+`idf.py`, `ninja`, `ccache`, `cmake`, or `xtensa-esp32s3-elf-gcc`, add the
+paths above to `Path` for that shell.
 
 ## Build retro-core
 
 Reconfigure when CMake files or profile selection changed:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Users\wzh\Documents\nodemcu-firmware\sdk\esp32-esp-idf\export.ps1'; idf.py -B build -DHOLO_RETRO_MODULE_PROFILE=retro-core reconfigure; ninja -C build so"
+powershell -NoProfile -Command "$env:IDF_PATH='C:\Users\72751\.platformio\packages\framework-espidf'; $env:IDF_TOOLS_PATH='C:\Users\72751\.espressif'; idf.py -B build -DHOLO_RETRO_MODULE_PROFILE=retro-core reconfigure; ninja -C build so"
 ```
 
 For incremental rebuilds after the build dir is already configured:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Users\wzh\Documents\nodemcu-firmware\sdk\esp32-esp-idf\export.ps1'; ninja -C build so"
+powershell -NoProfile -Command "ninja -C build so"
 ```
 
 Expected output:
@@ -57,7 +74,13 @@ Linking retrogo.so completed
 ## Build gwenesis
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command ". 'C:\Users\wzh\Documents\nodemcu-firmware\sdk\esp32-esp-idf\export.ps1'; idf.py -B build-gwenesis -DHOLO_RETRO_MODULE_PROFILE=gwenesis reconfigure; ninja -C build-gwenesis so"
+powershell -NoProfile -Command "$env:IDF_PATH='C:\Users\72751\.platformio\packages\framework-espidf'; $env:IDF_TOOLS_PATH='C:\Users\72751\.espressif'; idf.py -B build-gwenesis -DHOLO_RETRO_MODULE_PROFILE=gwenesis reconfigure; ninja -C build-gwenesis so"
+```
+
+For incremental rebuilds after `build-gwenesis` is already configured:
+
+```powershell
+powershell -NoProfile -Command "ninja -C build-gwenesis so"
 ```
 
 Expected output:
@@ -78,7 +101,7 @@ http://192.168.31.197/
 Upload `retrogo.so`:
 
 ```powershell
-$path='C:\Users\wzh\Documents\PlatformIO\Projects\holo-retro-go\build\retrogo.so'
+$path='E:\cubicsrc\holo-retro-go\build\retrogo.so'
 $bytes=[System.IO.File]::ReadAllBytes($path)
 $uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/modules/retrogo.so')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/octet-stream' -UseBasicParsing -TimeoutSec 90
@@ -87,7 +110,7 @@ Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/o
 Upload `gwenesis.so`:
 
 ```powershell
-$path='C:\Users\wzh\Documents\PlatformIO\Projects\holo-retro-go\build-gwenesis\gwenesis.so'
+$path='E:\cubicsrc\holo-retro-go\build-gwenesis\gwenesis.so'
 $bytes=[System.IO.File]::ReadAllBytes($path)
 $uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/modules/gwenesis.so')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/octet-stream' -UseBasicParsing -TimeoutSec 90
@@ -96,7 +119,7 @@ Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/o
 Upload the Lua app entry:
 
 ```powershell
-$path='C:\Users\wzh\Documents\PlatformIO\Projects\holo-retro-go\retrogo_main.lua'
+$path='E:\cubicsrc\holo-retro-go\retrogo_main.lua'
 $bytes=[System.IO.File]::ReadAllBytes($path)
 $uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/retrogo/main.lua')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'text/plain; charset=utf-8' -UseBasicParsing -TimeoutSec 90
@@ -175,7 +198,7 @@ rg "\.mod_iram|small_hot_function" build-gwenesis/gwenesis_so.map
 - Gwenesis also allocates hot VDP state/buffers with `MEM_FAST`: CRAM, CRAM565, VSRAM, SAT cache, VDP registers/FIFO, and the per-line plane/sprite render buffers. These are released by the MD cleanup path.
 - Gwenesis Z80 RAM is dynamically allocated as `ZRAM` in `MEM_FAST`; `gwenesis_bus_init_fast_ram()` rebinds it with `z80_set_memory()`, and `RdZ80/WrZ80` guard against a missing pointer to avoid null+offset crashes.
 - Gwenesis keeps the 64KB M68K RAM in `MEM_SLOW` because it is too large for the remaining internal RAM budget on Holo dynmod builds. Prefer keeping smaller hot blocks in `MEM_FAST`: Z80 RAM, VDP registers/CRAM/SAT/fifo/line buffers, YM/SN source buffers, the mixed audio buffer, and the audio ring.
-- Gwenesis audio uses `MEM_FAST` for the YM2612/SN76489 source buffers, a mixed stereo buffer, and a 2048-frame audio ring. A `gwen_audio` task pinned to Core 0 drains that ring through Retro-Go audio so host audio pacing does not block the MD emulation loop. SN76489 stays off by default and the YM-only path bypasses the mixer for performance; enable SN76489 only when PSG accuracy matters more than speed.
+- Gwenesis audio uses `MEM_FAST` for the YM2612/SN76489 source buffers, a mixed stereo buffer, and a 2048-frame audio ring. Current Holo dynmod experiment pins async VDP, `rg_display`, `gwen_audio`/YM compute, and `gwen_aout` host-audio drain to Core 0 (`ymc:0`) to keep main emulation on Core 1. VDP async uses `GWENESIS_VDP_ASYNC_JOBS=2` and a latest-frame/drop policy: no READY/RENDERING backlog, no hot-path sync fallback, and no waiting for CPU0 to go idle. SN76489 stays off by default and the YM-only path bypasses the mixer for performance; enable SN76489 only when PSG accuracy matters more than speed.
 - Gwenesis currently uses fixed MD frameskip: draw 1 frame, then skip 2 frames. The Retro-Go global system-monitor frameskip is disabled for this core so it cannot overwrite the local policy.
 - Prefer compatibility fixes in upstream cores. Avoid ROM-specific hacks unless explicitly requested.
 - 不用管非 Holo dynmod 构建
