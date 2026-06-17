@@ -51,7 +51,7 @@ __license__ = "GPLv3"
 #define GWENESIS_M68K_RAM_MEM MEM_SLOW
 #define GWENESIS_Z80_RAM_MEM MEM_FAST
 #define GWENESIS_M68K_RAM_PAGE_SIZE 0x1000
-#define GWENESIS_M68K_RAM_FAST_SLOTS 6
+#define GWENESIS_M68K_RAM_FAST_SLOTS 4
 #define GWENESIS_M68K_RAM_CACHE_EMPTY 0xff
 #define GWENESIS_M68K_RAM_CACHE_MIN_SWAP_EPOCHS 2
 
@@ -328,11 +328,9 @@ static void gwenesis_m68k_ram_cache_reset_to_defaults(void)
 #endif
 
     gwenesis_m68k_ram_cache_install(0, 0x0a);
-    gwenesis_m68k_ram_cache_install(1, 0x0b);
-    gwenesis_m68k_ram_cache_install(2, 0x0c);
-    gwenesis_m68k_ram_cache_install(3, 0x0d);
-    gwenesis_m68k_ram_cache_install(4, 0x0e);
-    gwenesis_m68k_ram_cache_install(5, 0x0f);
+    gwenesis_m68k_ram_cache_install(1, 0x0d);
+    gwenesis_m68k_ram_cache_install(2, 0x0e);
+    gwenesis_m68k_ram_cache_install(3, 0x0f);
     m68k_ram_cache_swaps = 0;
 }
 
