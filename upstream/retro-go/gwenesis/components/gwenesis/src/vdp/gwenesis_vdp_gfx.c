@@ -134,6 +134,98 @@ int gwenesis_H32upscaler;
 int sprite_overflow;
 bool sprite_collision;
 
+#if GWENESIS_VDP_ASYNC_ENABLED
+static const gwenesis_vdp_render_context_t *gwenesis_vdp_gfx_render_ctx;
+static int gwenesis_vdp_gfx_ctx_sprite_overflow;
+
+static inline unsigned char *gwenesis_vdp_gfx_vram(void)
+{
+  return (unsigned char *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->vram : VRAM);
+}
+
+static inline unsigned short *gwenesis_vdp_gfx_vsram(void)
+{
+  return (unsigned short *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->vsram : VSRAM);
+}
+
+static inline unsigned short *gwenesis_vdp_gfx_cram565(void)
+{
+  return (unsigned short *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->cram565 : CRAM565);
+}
+
+static inline unsigned char *gwenesis_vdp_gfx_sat_cache(void)
+{
+  return (unsigned char *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->sat_cache : SAT_CACHE);
+}
+
+static inline unsigned char *gwenesis_vdp_gfx_regs(void)
+{
+  return (unsigned char *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->regs : gwenesis_vdp_regs);
+}
+
+static inline int gwenesis_vdp_gfx_screen_width(void)
+{
+  return gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->screen_width : screen_width;
+}
+
+static inline int gwenesis_vdp_gfx_screen_height(void)
+{
+  return gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->screen_height : screen_height;
+}
+
+static inline bool gwenesis_vdp_gfx_has_render_context(void)
+{
+  return gwenesis_vdp_gfx_render_ctx != NULL;
+}
+
+static inline int gwenesis_vdp_gfx_sprite_overflow(void)
+{
+  return gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_ctx_sprite_overflow : sprite_overflow;
+}
+
+static inline void gwenesis_vdp_gfx_set_sprite_overflow(int line)
+{
+  if (gwenesis_vdp_gfx_render_ctx)
+    gwenesis_vdp_gfx_ctx_sprite_overflow = line;
+  else
+    sprite_overflow = line;
+}
+
+void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ctx)
+{
+  gwenesis_vdp_gfx_render_ctx = ctx;
+  gwenesis_vdp_gfx_ctx_sprite_overflow = 0;
+}
+
+#define VRAM gwenesis_vdp_gfx_vram()
+#define VSRAM gwenesis_vdp_gfx_vsram()
+#define CRAM565 gwenesis_vdp_gfx_cram565()
+#define SAT_CACHE gwenesis_vdp_gfx_sat_cache()
+#define gwenesis_vdp_regs gwenesis_vdp_gfx_regs()
+#define screen_width gwenesis_vdp_gfx_screen_width()
+#define screen_height gwenesis_vdp_gfx_screen_height()
+#else
+static inline int gwenesis_vdp_gfx_sprite_overflow(void)
+{
+  return sprite_overflow;
+}
+
+static inline void gwenesis_vdp_gfx_set_sprite_overflow(int line)
+{
+  sprite_overflow = line;
+}
+
+static inline bool gwenesis_vdp_gfx_has_render_context(void)
+{
+  return false;
+}
+
+void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ctx)
+{
+  (void)ctx;
+}
+#endif
+
 // Window Plane and A plane spearation
 static int base_w;
 static int PlanA_firstcol;
@@ -1209,7 +1301,7 @@ void draw_sprites_over_planes(int line)
         sy -= 128;
         if (sx == 0)
         {
-          if (one_sprite_nonzero || (sprite_overflow == line - 1))
+          if (one_sprite_nonzero || (gwenesis_vdp_gfx_sprite_overflow() == line - 1))
             masking = true;
         }
         else
@@ -1250,7 +1342,7 @@ void draw_sprites_over_planes(int line)
 
         if (num_pixels >= MAX_PIXELS_PER_LINE)
         {
-          sprite_overflow = line;
+          gwenesis_vdp_gfx_set_sprite_overflow(line);
           break;
         }
         if (++num_sprites >= MAX_SPRITES_PER_LINE)
@@ -1293,7 +1385,7 @@ void draw_sprites_over_planes(int line)
             // on next line).
             if (sx == 0)
             {
-                if (one_sprite_nonzero || (sprite_overflow == line-1))
+                if (one_sprite_nonzero || (gwenesis_vdp_gfx_sprite_overflow() == line-1))
                     masking = true;
             }
             else
@@ -1333,7 +1425,7 @@ void draw_sprites_over_planes(int line)
 
             if (num_pixels >= MAX_PIXELS_PER_LINE)
             {
-                sprite_overflow = line;
+                gwenesis_vdp_gfx_set_sprite_overflow(line);
                 break;
             }
             if (++num_sprites >= MAX_SPRITES_PER_LINE)
@@ -1390,7 +1482,7 @@ void draw_sprites(int line)
       sy -= 128;
       if (sx == 0)
       {
-        if (one_sprite_nonzero || sprite_overflow == line - 1)
+        if (one_sprite_nonzero || gwenesis_vdp_gfx_sprite_overflow() == line - 1)
           masking = true;
       }
       else
@@ -1431,7 +1523,7 @@ void draw_sprites(int line)
 
       if (num_pixels >= MAX_PIXELS_PER_LINE)
       {
-        sprite_overflow = line;
+        gwenesis_vdp_gfx_set_sprite_overflow(line);
         break;
       }
       if (++num_sprites >= MAX_SPRITES_PER_LINE)
@@ -1470,7 +1562,7 @@ void draw_sprites(int line)
       // to see if we reach a pixel overflow (because it would affect masking
       // on next line).
       if (sx == 0) {
-        if (one_sprite_nonzero || sprite_overflow == line - 1)
+        if (one_sprite_nonzero || gwenesis_vdp_gfx_sprite_overflow() == line - 1)
           masking = true;
       } else
         one_sprite_nonzero = true;
@@ -1505,7 +1597,7 @@ void draw_sprites(int line)
         num_pixels += sw * 8;
 
       if (num_pixels >= MAX_PIXELS_PER_LINE) {
-        sprite_overflow = line;
+        gwenesis_vdp_gfx_set_sprite_overflow(line);
         break;
       }
       if (++num_sprites >= MAX_SPRITES_PER_LINE)
@@ -1529,8 +1621,12 @@ void draw_sprites(int line)
 
 void GWENESIS_HOT gwenesis_vdp_render_config()
 {
-    mode_h40 = REG12_MODE_H40;
-    mode_pal = REG1_PAL;
+    const int render_mode_h40 = REG12_MODE_H40;
+    if (!gwenesis_vdp_gfx_has_render_context())
+    {
+      mode_h40 = render_mode_h40;
+      mode_pal = REG1_PAL;
+    }
 
     int ntwidth = BITS(gwenesis_vdp_regs[16], 0, 2);
     int ntheight = BITS(gwenesis_vdp_regs[16], 4, 2);
@@ -1542,7 +1638,7 @@ void GWENESIS_HOT gwenesis_vdp_render_config()
 
     // Window & A planes separation
 
-    if (mode_h40)
+    if (render_mode_h40)
         base_w = ((REG3_NAMETABLE_W & 0x1e) << 11);
     else
         base_w = ((REG3_NAMETABLE_W & 0x1f) << 11);
@@ -1622,7 +1718,8 @@ blit_4to5_line(uint16_t *in, uint16_t *out) {
 
 void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 {
-  mode_h40 = REG12_MODE_H40;
+  if (!gwenesis_vdp_gfx_has_render_context())
+    mode_h40 = REG12_MODE_H40;
   //mode_pal = REG1_PAL;
 
   vdpg_log(__FUNCTION__,": %3d",line);

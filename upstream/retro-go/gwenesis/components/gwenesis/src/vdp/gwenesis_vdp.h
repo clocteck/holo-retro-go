@@ -23,6 +23,14 @@ __license__ = "GPLv3"
 
 #include <stdbool.h>
 
+#ifndef GWENESIS_VDP_ASYNC_ENABLED
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_VDP_ASYNC_ENABLED 1
+#else
+#define GWENESIS_VDP_ASYNC_ENABLED 0
+#endif
+#endif
+
 #define BIT(v, idx) (((v) >> (idx)) & 1)
 #define BITS(v, idx, n) (((v) >> (idx)) & ((1 << (n)) - 1))
 
@@ -115,6 +123,17 @@ __license__ = "GPLv3"
 #define SHI_IS_SHADOW(x)     (!((x) & 0x80))
 #define SHI_IS_HIGHLIGHT(x)  ((x) & 0x40)
 
+typedef struct
+{
+    const unsigned char *vram;
+    const unsigned short *vsram;
+    const unsigned short *cram565;
+    const unsigned char *sat_cache;
+    const unsigned char *regs;
+    int screen_width;
+    int screen_height;
+} gwenesis_vdp_render_context_t;
+
 void gwenesis_vdp_reset();
 void gwenesis_vdp_set_hblank();
 void gwenesis_vdp_clear_hblank();
@@ -155,7 +174,9 @@ bool gwenesis_vdp_mem_init_fast_ram(void);
 void gwenesis_vdp_mem_deinit_fast_ram(void);
 bool gwenesis_vdp_gfx_init_fast_ram(void);
 void gwenesis_vdp_gfx_deinit_fast_ram(void);
+void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ctx);
 void gwenesis_vdp_gfx_invalidate_vram(unsigned int address);
 void gwenesis_vdp_gfx_invalidate_tile_cache(void);
+void gwenesis_vdp_async_mark_midframe_write(void);
 
 #endif

@@ -344,6 +344,7 @@ static inline __attribute__((always_inline)) void gwenesis_vdp_register_w(int re
     if ((BIT(gwenesis_vdp_regs[0x1], 2)==0) && reg > 0xA)
         return;
 
+    gwenesis_vdp_async_mark_midframe_write();
     gwenesis_vdp_regs[reg] = value;
     vdpm_log(__FUNCTION__, "reg:%02d <- %02x", reg, value);
 
@@ -395,6 +396,7 @@ void push_fifo(unsigned int value)
 static inline __attribute__((always_inline))
 void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 {
+  gwenesis_vdp_async_mark_midframe_write();
   VRAM[address] = value;
   gwenesis_vdp_gfx_invalidate_vram(address);
 
@@ -468,6 +470,7 @@ unsigned int gwenesis_vdp_get_reg(int reg)
 static inline __attribute__((always_inline)) 
 void gwenesis_vdp_dma_fill(unsigned short value)
 {
+  gwenesis_vdp_async_mark_midframe_write();
   //vdpm_log(__FUNCTION__,"@%x len:%x val:%x",REG21_DMA_SRCADDR_LOW,REG19_DMA_LENGTH,value);
   int dma_length = REG19_DMA_LENGTH;
 
@@ -551,6 +554,7 @@ void gwenesis_vdp_dma_fill(unsigned short value)
 static inline __attribute__((always_inline)) 
 void gwenesis_vdp_dma_m68k()
 {
+    gwenesis_vdp_async_mark_midframe_write();
 
     int dma_length = REG19_DMA_LENGTH;
 
@@ -715,6 +719,7 @@ void gwenesis_vdp_dma_m68k()
 static inline __attribute__((always_inline))
 void gwenesis_vdp_dma_copy()
 {
+    gwenesis_vdp_async_mark_midframe_write();
    // DMA_RUN=1;
 
     int dma_length = REG19_DMA_LENGTH;
@@ -900,6 +905,7 @@ void gwenesis_vdp_write_data_port_16(unsigned int value)
 
             break;
         case 0x3: /* CRAM write */
+            gwenesis_vdp_async_mark_midframe_write();
             //vdpm_log(__FUNCTION__,"CRAM write : addr:%x increment:%d value:%04x",
              // address_reg, REG15_DMA_INCREMENT, value);
             CRAM[(address_reg & 0x7f) >> 1] = value;
@@ -925,6 +931,7 @@ void gwenesis_vdp_write_data_port_16(unsigned int value)
 
             break;
         case 0x5: /* VSRAM write */
+            gwenesis_vdp_async_mark_midframe_write();
             //vdpm_log(__FUNCTION__,"VSRAM write : addr:%x increment:%d value:%04x",
             //  address_reg, REG15_DMA_INCREMENT, value);
            // printf("write dataport 16: VSRAM@%04x:%04x\n",address_reg,value);
