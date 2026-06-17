@@ -88,7 +88,7 @@ static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 #endif
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define VDP_TILE_ROW_CACHE_ENABLED 1
+#define VDP_TILE_ROW_CACHE_ENABLED 0
 #else
 #define VDP_TILE_ROW_CACHE_ENABLED 0
 #endif
