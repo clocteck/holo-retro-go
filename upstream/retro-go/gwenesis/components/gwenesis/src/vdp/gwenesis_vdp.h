@@ -155,5 +155,7 @@ bool gwenesis_vdp_mem_init_fast_ram(void);
 void gwenesis_vdp_mem_deinit_fast_ram(void);
 bool gwenesis_vdp_gfx_init_fast_ram(void);
 void gwenesis_vdp_gfx_deinit_fast_ram(void);
+void gwenesis_vdp_gfx_invalidate_vram(unsigned int address);
+void gwenesis_vdp_gfx_invalidate_tile_cache(void);
 
 #endif

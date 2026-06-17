@@ -47,9 +47,8 @@ static int initialized = 0;
 static bool z80_emulation_enabled = true;
 
 unsigned char *Z80_RAM;
-#if defined(RETRO_GO)
-extern unsigned char *ZRAM;
-#endif
+static unsigned char *Z80_BANK_ROM_BASE;
+static unsigned int Z80_BANK_BASE;
 
 static Z80 cpu;
 
@@ -84,6 +83,27 @@ void z80_log(const char *subs, const char *fmt, ...) {
 // Bank register used by Z80 to access M68K Memory space 1 BANK=32KByte
 int Z80_BANK;
 
+void z80_refresh_banked_rom_fast_path(void)
+{
+    Z80_BANK_BASE = (unsigned int)Z80_BANK << 15;
+    Z80_BANK_ROM_BASE = NULL;
+
+#if GNW_TARGET_MARIO == 0 && GNW_TARGET_ZELDA == 0
+    if (!ROM_DATA || ROM_SIZE == 0)
+        return;
+
+    unsigned int offset = Z80_BANK_BASE & ROM_MASK;
+    if (Z80_BANK_BASE >= 0x800000)
+        return;
+    if (CART_SRAM_TOUCHES(Z80_BANK_BASE, 0x8000))
+        return;
+    if (offset + 0x8000 > ROM_SIZE)
+        return;
+
+    Z80_BANK_ROM_BASE = ROM_DATA + offset;
+#endif
+}
+
 
 void z80_start() {
     cpu.IPeriod = 1;
@@ -95,6 +115,7 @@ void z80_start() {
     reset_once=0;
     bus_ack=0;
     zclk=0;
+    z80_refresh_banked_rom_fast_path();
 }
 
 void z80_set_enabled(bool enabled)
@@ -155,10 +176,6 @@ void z80_set_memory(unsigned char *buffer)
 
 static inline unsigned char *z80_get_memory(void)
 {
-#if defined(RETRO_GO)
-    if (!Z80_RAM && ZRAM)
-        Z80_RAM = ZRAM;
-#endif
     return Z80_RAM;
 }
 
@@ -261,15 +278,18 @@ unsigned int zbankreg_mem_r8(unsigned int address)
 static inline void GWENESIS_HOT zbankreg_mem_w8(unsigned int value) {
   Z80_BANK >>= 1;
   Z80_BANK |= (value & 1) << 8;
+  z80_refresh_banked_rom_fast_path();
   z80_log(__FUNCTION__,"Z80 bank points to: %06x", Z80_BANK << 15);
   return;
 }
 
 static inline unsigned int GWENESIS_HOT zbank_mem_r8(unsigned int address)
 {
-    address &= 0x7FFF;
-    address |= (Z80_BANK << 15);
+    unsigned int offset = address & 0x7FFF;
+    if (Z80_BANK_ROM_BASE)
+        return Z80_BANK_ROM_BASE[offset ^ 1];
 
+    address = Z80_BANK_BASE | offset;
     z80_log(__FUNCTION__,"Z80 bank read: %06x", address);
     return m68k_read_memory_8(address);
 }
@@ -401,6 +421,7 @@ void gwenesis_z80inst_load_state() {
     initialized = saveGwenesisStateGet(state, "initialized");
     Z80_BANK = saveGwenesisStateGet(state, "Z80_BANK");
     current_timeslice = saveGwenesisStateGet(state, "current_timeslice");
+    z80_refresh_banked_rom_fast_path();
 
 }
 

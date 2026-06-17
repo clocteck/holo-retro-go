@@ -34,6 +34,7 @@ void gwenesis_z80inst_save_state();
 void gwenesis_z80inst_load_state();
 
 void z80_set_memory(unsigned char *buffer);
+void z80_refresh_banked_rom_fast_path(void);
 
 void z80_write_memory_8(unsigned int address, unsigned int value);
 void z80_write_memory_16(unsigned int address, unsigned int value);

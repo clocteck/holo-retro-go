@@ -208,6 +208,7 @@ int GWENESIS_HOT m68k_irq_acked(int irq) {
 
 void gwenesis_vdp_reset() {
   memset(VRAM, 0, VRAM_MAX_SIZE);
+  gwenesis_vdp_gfx_invalidate_tile_cache();
   memset(SAT_CACHE, 0, SAT_CACHE_MAX_SIZE);
   memset(CRAM, 0, sizeof(*CRAM) * CRAM_MAX_SIZE);
   memset(CRAM565, 0, sizeof(*CRAM565) * CRAM_MAX_SIZE * 4);
@@ -395,6 +396,7 @@ static inline __attribute__((always_inline))
 void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 {
   VRAM[address] = value;
+  gwenesis_vdp_gfx_invalidate_vram(address);
 
   // Update internal SAT Cache
   // used in Castlevania Bloodlines
@@ -1073,6 +1075,7 @@ void gwenesis_vdp_mem_load_state() {
   SaveState* state = saveGwenesisStateOpenForRead("vdp_mem");
 
   saveGwenesisStateGetBuffer(state, "VRAM", VRAM, VRAM_MAX_SIZE);
+  gwenesis_vdp_gfx_invalidate_tile_cache();
   saveGwenesisStateGetBuffer(state, "CRAM", CRAM, sizeof(*CRAM) * CRAM_MAX_SIZE);
   saveGwenesisStateGetBuffer(state, "SAT_CACHE", SAT_CACHE, SAT_CACHE_MAX_SIZE);
   saveGwenesisStateGetBuffer(state, "gwenesis_vdp_regs", gwenesis_vdp_regs, REG_SIZE);

@@ -88,8 +88,12 @@ static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 #endif
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+#define VDP_TILE_ROW_CACHE_ENABLED 1
+#else
 #define VDP_TILE_ROW_CACHE_ENABLED 0
+#endif
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
 enum {
   VDP_SPRITE_VISIBLE_LINES = 240,
   VDP_SPRITE_LINE_MAX = 20,
@@ -98,11 +102,11 @@ enum {
 };
 
 typedef struct {
-  uint32_t pattern;
-  uint8_t pixels[8];
-  uint8_t flip;
-  uint8_t valid;
-  uint8_t pad[2];
+  uint16_t key;
+  uint8_t opaque_mask;
+  uint8_t flags;
+  uint32_t pix_lo;
+  uint32_t pix_hi;
 } vdp_tile_row_cache_entry_t;
 #else
 };
@@ -112,6 +116,8 @@ static uint8_t *sprite_line_count;
 static uint8_t *sprite_line_table;
 #if VDP_TILE_ROW_CACHE_ENABLED
 static vdp_tile_row_cache_entry_t *tile_row_cache;
+static void vdp_tile_row_cache_clear(void);
+typedef char vdp_tile_row_cache_entry_size_must_be_12[(sizeof(vdp_tile_row_cache_entry_t) == 12) ? 1 : -1];
 #endif
 #endif
 
@@ -157,7 +163,7 @@ bool gwenesis_vdp_gfx_init_fast_ram(void)
     if (!tile_row_cache)
         tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST);
     if (tile_row_cache)
-        memset(tile_row_cache, 0, sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES);
+        vdp_tile_row_cache_clear();
     return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
 #else
     return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table;
@@ -249,44 +255,288 @@ void gwenesis_vdp_set_buffer(unsigned short *ptr_screen_buffer)
  #define PIX6(P) ( ((P) & 0xF0000000 ) >>  28 )
  #define PIX7(P) ( ((P) & 0x0F000000 ) >>  24 )
 
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+typedef uint32_t vdp_u32_alias_t __attribute__((may_alias));
+
 static inline __attribute__((always_inline))
-const uint8_t *vdp_tile_row_pixels(uint32_t pattern, bool flip)
+bool vdp_u32_aligned_ptr(const void *ptr)
 {
-  const uint32_t hash = pattern ^ (pattern >> 11) ^ (pattern >> 21) ^ (flip ? 0x1ffU : 0U);
-  vdp_tile_row_cache_entry_t *entry = &tile_row_cache[hash & (VDP_TILE_ROW_CACHE_ENTRIES - 1)];
+  return (((uintptr_t)ptr & 3U) == 0);
+}
 
-  if (!entry->valid || entry->pattern != pattern || entry->flip != (uint8_t)flip)
+static inline __attribute__((always_inline))
+uint32_t vdp_load_u32_aligned(const void *src)
+{
+  return *(const vdp_u32_alias_t *)src;
+}
+
+static inline __attribute__((always_inline))
+void vdp_store_u32_aligned(void *dst, uint32_t value)
+{
+  *(vdp_u32_alias_t *)dst = value;
+}
+
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+#define VDP_TILE_ROW_CACHE_INVALID_KEY 0xFFFFU
+#define VDP_BYTE_WORD(V) ((uint32_t)(uint8_t)(V) * 0x01010101U)
+
+static const uint32_t vdp_mask4_to_32[16] = {
+  0x00000000U, 0x000000FFU, 0x0000FF00U, 0x0000FFFFU,
+  0x00FF0000U, 0x00FF00FFU, 0x00FFFF00U, 0x00FFFFFFU,
+  0xFF000000U, 0xFF0000FFU, 0xFF00FF00U, 0xFF00FFFFU,
+  0xFFFF0000U, 0xFFFF00FFU, 0xFFFFFF00U, 0xFFFFFFFFU,
+};
+
+static inline __attribute__((always_inline))
+uint32_t vdp_load_u32(const void *src)
+{
+  uint32_t value;
+  memcpy(&value, src, sizeof(value));
+  return value;
+}
+
+static inline __attribute__((always_inline))
+void vdp_store_u32(void *dst, uint32_t value)
+{
+  memcpy(dst, &value, sizeof(value));
+}
+
+static inline __attribute__((always_inline))
+uint16_t vdp_tile_row_cache_key(uint16_t tile, uint8_t row, bool hflip)
+{
+  return (uint16_t)(((tile & 0x07FFU) << 4) | ((row & 7U) << 1) | (hflip ? 1U : 0U));
+}
+
+static inline __attribute__((always_inline))
+unsigned int vdp_tile_row_cache_index(uint16_t key)
+{
+  uint32_t hash = (uint32_t)key * 2654435761U;
+  hash ^= hash >> 16;
+  return hash & (VDP_TILE_ROW_CACHE_ENTRIES - 1);
+}
+
+static inline __attribute__((always_inline))
+uint32_t vdp_pack4(uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3)
+{
+  return (uint32_t)p0 | ((uint32_t)p1 << 8) | ((uint32_t)p2 << 16) | ((uint32_t)p3 << 24);
+}
+
+static inline __attribute__((always_inline))
+uint8_t vdp_opaque_mask8(uint8_t p0, uint8_t p1, uint8_t p2, uint8_t p3,
+                         uint8_t p4, uint8_t p5, uint8_t p6, uint8_t p7)
+{
+  return (uint8_t)(((p0 != 0) << 0) | ((p1 != 0) << 1) |
+                   ((p2 != 0) << 2) | ((p3 != 0) << 3) |
+                   ((p4 != 0) << 4) | ((p5 != 0) << 5) |
+                   ((p6 != 0) << 6) | ((p7 != 0) << 7));
+}
+
+static inline __attribute__((always_inline))
+uint32_t vdp_fetch_tile_row_pattern(uint16_t tile, uint8_t row)
+{
+  return *(const uint32_t *)(VRAM + ((uint32_t)tile << 5) + ((uint32_t)(row & 7U) << 2));
+}
+
+static void vdp_tile_row_cache_clear(void)
+{
+  if (!tile_row_cache)
+    return;
+
+  for (unsigned int i = 0; i < VDP_TILE_ROW_CACHE_ENTRIES; ++i)
   {
-    entry->pattern = pattern;
-    entry->flip = (uint8_t)flip;
-    entry->valid = 1;
+    tile_row_cache[i].key = VDP_TILE_ROW_CACHE_INVALID_KEY;
+    tile_row_cache[i].opaque_mask = 0;
+    tile_row_cache[i].flags = 0;
+  }
+}
 
-    if (flip)
+void gwenesis_vdp_gfx_invalidate_tile_cache(void)
+{
+  vdp_tile_row_cache_clear();
+}
+
+void gwenesis_vdp_gfx_invalidate_vram(unsigned int address)
+{
+  if (!tile_row_cache)
+    return;
+
+  const uint16_t tile = (uint16_t)((address & 0xFFFFU) >> 5);
+  const uint8_t row = (uint8_t)((address >> 2) & 7U);
+  const uint16_t key = vdp_tile_row_cache_key(tile, row, false);
+  const uint16_t hflip_key = (uint16_t)(key | 1U);
+  vdp_tile_row_cache_entry_t *entry = &tile_row_cache[vdp_tile_row_cache_index(key)];
+  vdp_tile_row_cache_entry_t *hflip_entry = &tile_row_cache[vdp_tile_row_cache_index(hflip_key)];
+
+  if (entry->key == key)
+    entry->key = VDP_TILE_ROW_CACHE_INVALID_KEY;
+  if (hflip_entry->key == hflip_key)
+    hflip_entry->key = VDP_TILE_ROW_CACHE_INVALID_KEY;
+}
+
+static inline __attribute__((always_inline))
+const vdp_tile_row_cache_entry_t *vdp_tile_row_cache_get(uint16_t name, int paty)
+{
+  const uint16_t tile = name & 0x07FFU;
+  const uint8_t row = (name & 0x1000U) ? (uint8_t)(7 - (paty & 7)) : (uint8_t)(paty & 7);
+  const bool hflip = (name & 0x0800U) != 0;
+  const uint16_t key = vdp_tile_row_cache_key(tile, row, hflip);
+  vdp_tile_row_cache_entry_t *entry = &tile_row_cache[vdp_tile_row_cache_index(key)];
+
+  if (entry->key != key)
+  {
+    const uint32_t pattern = vdp_fetch_tile_row_pattern(tile, row);
+    const uint8_t p0 = PIX0(pattern);
+    const uint8_t p1 = PIX1(pattern);
+    const uint8_t p2 = PIX2(pattern);
+    const uint8_t p3 = PIX3(pattern);
+    const uint8_t p4 = PIX4(pattern);
+    const uint8_t p5 = PIX5(pattern);
+    const uint8_t p6 = PIX6(pattern);
+    const uint8_t p7 = PIX7(pattern);
+
+    if (hflip)
     {
-      entry->pixels[0] = PIX7(pattern);
-      entry->pixels[1] = PIX6(pattern);
-      entry->pixels[2] = PIX5(pattern);
-      entry->pixels[3] = PIX4(pattern);
-      entry->pixels[4] = PIX3(pattern);
-      entry->pixels[5] = PIX2(pattern);
-      entry->pixels[6] = PIX1(pattern);
-      entry->pixels[7] = PIX0(pattern);
+      entry->pix_lo = vdp_pack4(p7, p6, p5, p4);
+      entry->pix_hi = vdp_pack4(p3, p2, p1, p0);
+      entry->opaque_mask = vdp_opaque_mask8(p7, p6, p5, p4, p3, p2, p1, p0);
     }
     else
     {
-      entry->pixels[0] = PIX0(pattern);
-      entry->pixels[1] = PIX1(pattern);
-      entry->pixels[2] = PIX2(pattern);
-      entry->pixels[3] = PIX3(pattern);
-      entry->pixels[4] = PIX4(pattern);
-      entry->pixels[5] = PIX5(pattern);
-      entry->pixels[6] = PIX6(pattern);
-      entry->pixels[7] = PIX7(pattern);
+      entry->pix_lo = vdp_pack4(p0, p1, p2, p3);
+      entry->pix_hi = vdp_pack4(p4, p5, p6, p7);
+      entry->opaque_mask = vdp_opaque_mask8(p0, p1, p2, p3, p4, p5, p6, p7);
     }
+
+    entry->flags = 0;
+    entry->key = key;
   }
 
-  return entry->pixels;
+  return entry;
+}
+
+static inline __attribute__((always_inline))
+uint8_t vdp_u32_byte_any_mask4(uint32_t value, uint8_t bits)
+{
+  const uint32_t masked = value & VDP_BYTE_WORD(bits);
+  return (uint8_t)(((masked & 0x000000FFU) ? 0x1U : 0U) |
+                   ((masked & 0x0000FF00U) ? 0x2U : 0U) |
+                   ((masked & 0x00FF0000U) ? 0x4U : 0U) |
+                   ((masked & 0xFF000000U) ? 0x8U : 0U));
+}
+
+static inline __attribute__((always_inline))
+void vdp_blend_cached_4(uint8_t *scr, uint32_t pix, uint8_t opaque_bits,
+                        uint32_t attr_word, uint8_t block_bits)
+{
+  if (!opaque_bits)
+    return;
+
+  const uint32_t dst = vdp_load_u32(scr);
+  uint8_t draw_bits = opaque_bits;
+
+  if (block_bits)
+    draw_bits &= (uint8_t)~vdp_u32_byte_any_mask4(dst, block_bits);
+  if (!draw_bits)
+    return;
+
+  const uint32_t mask = vdp_mask4_to_32[draw_bits & 0x0F];
+  const uint32_t src = pix | (attr_word & mask);
+  vdp_store_u32(scr, (dst & ~mask) | (src & mask));
+}
+
+static inline __attribute__((always_inline))
+void vdp_store_plane_b_cached_4(uint8_t *scr, uint32_t pix, uint8_t opaque_bits,
+                                uint32_t attr_word, uint32_t back_word)
+{
+  const uint32_t mask = vdp_mask4_to_32[opaque_bits & 0x0F];
+  const uint32_t src = pix | (attr_word & mask);
+  vdp_store_u32(scr, (back_word & ~mask) | (src & mask));
+}
+
+static inline __attribute__((always_inline))
+bool vdp_try_store_opaque_cached_8(uint8_t *scr, const vdp_tile_row_cache_entry_t *row,
+                                   uint32_t attr_word, uint8_t block_bits)
+{
+  if (row->opaque_mask != 0xFF || !vdp_u32_aligned_ptr(scr))
+    return false;
+
+  if (block_bits)
+  {
+    const uint32_t dst_lo = vdp_load_u32_aligned(scr);
+    const uint32_t dst_hi = vdp_load_u32_aligned(scr + 4);
+    if (vdp_u32_byte_any_mask4(dst_lo, block_bits) ||
+        vdp_u32_byte_any_mask4(dst_hi, block_bits))
+      return false;
+  }
+
+  vdp_store_u32_aligned(scr, row->pix_lo | attr_word);
+  vdp_store_u32_aligned(scr + 4, row->pix_hi | attr_word);
+  return true;
+}
+
+static inline __attribute__((always_inline))
+void draw_cached_pattern_sprite(uint8_t *scr, const vdp_tile_row_cache_entry_t *row, uint8_t attrs)
+{
+  const uint8_t opaque = row->opaque_mask;
+  const uint32_t attr_word = VDP_BYTE_WORD(attrs);
+
+  if (!opaque)
+    return;
+
+  vdp_blend_cached_4(scr, row->pix_lo, opaque & 0x0F, attr_word, PIXATTR_SPRITE);
+  vdp_blend_cached_4(scr + 4, row->pix_hi, opaque >> 4, attr_word, PIXATTR_SPRITE);
+}
+
+static inline __attribute__((always_inline))
+void draw_cached_pattern_sprite_over_planes(uint8_t *scr, const vdp_tile_row_cache_entry_t *row, uint8_t attrs)
+{
+  const uint8_t opaque = row->opaque_mask;
+  const uint8_t block_bits = (attrs & PIXATTR_HIPRI) ? PIXATTR_SPRITE : PIXATTR_SPRITE_HIPRI;
+  const uint32_t attr_word = VDP_BYTE_WORD(attrs);
+
+  if (!opaque)
+    return;
+
+  vdp_blend_cached_4(scr, row->pix_lo, opaque & 0x0F, attr_word, block_bits);
+  vdp_blend_cached_4(scr + 4, row->pix_hi, opaque >> 4, attr_word, block_bits);
+}
+
+static inline __attribute__((always_inline))
+void draw_cached_pattern_planeB(uint8_t *scr, const vdp_tile_row_cache_entry_t *row, uint8_t attrs)
+{
+  const uint8_t opaque = row->opaque_mask;
+  const uint32_t attr_word = VDP_BYTE_WORD(attrs);
+  const uint32_t back_word = VDP_BYTE_WORD(gwenesis_vdp_regs[7]);
+
+  if (vdp_try_store_opaque_cached_8(scr, row, attr_word, 0))
+    return;
+
+  vdp_store_plane_b_cached_4(scr, row->pix_lo, opaque & 0x0F, attr_word, back_word);
+  vdp_store_plane_b_cached_4(scr + 4, row->pix_hi, opaque >> 4, attr_word, back_word);
+}
+
+static inline __attribute__((always_inline))
+void draw_cached_pattern_planeAoverB(uint8_t *scr, const vdp_tile_row_cache_entry_t *row, uint8_t attrs)
+{
+  const uint8_t opaque = row->opaque_mask;
+  const uint8_t block_bits = (attrs & PIXATTR_HIPRI) ? 0 : PIXATTR_HIPRI;
+  const uint32_t attr_word = VDP_BYTE_WORD(attrs);
+
+  if (!opaque)
+    return;
+  if ((attrs & PIXATTR_HIPRI) && vdp_try_store_opaque_cached_8(scr, row, attr_word, 0))
+    return;
+
+  vdp_blend_cached_4(scr, row->pix_lo, opaque & 0x0F, attr_word, block_bits);
+  vdp_blend_cached_4(scr + 4, row->pix_hi, opaque >> 4, attr_word, block_bits);
+}
+#else
+void gwenesis_vdp_gfx_invalidate_tile_cache(void)
+{
+}
+
+void gwenesis_vdp_gfx_invalidate_vram(unsigned int address)
+{
+  (void)address;
 }
 #endif
 
@@ -294,21 +544,6 @@ static inline __attribute__((always_inline))
 void draw_pattern_nofliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
-
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, false);
-  uint8_t px;
-
-  if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
-  if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
-  if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
-  if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
-  if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
-  if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
-  if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
-  if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
-  return;
-#endif
 
   /*  not transparent pixel to write AND not already a sprite*/
   if (((PIX0(p))) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | (PIX0(p));
@@ -326,21 +561,6 @@ void draw_pattern_fliph_sprite(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
 
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, true);
-  uint8_t px;
-
-  if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
-  if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
-  if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
-  if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
-  if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
-  if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
-  if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
-  if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
-  return;
-#endif
-
   /*  not transparent pixel to write AND not already a sprite*/
   if (((PIX7(p))) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | (PIX7(p));
   if (((PIX6(p))) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | (PIX6(p));
@@ -357,32 +577,6 @@ static inline __attribute__((always_inline))
 void draw_pattern_nofliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return; 
-
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, false);
-  uint8_t px;
-
-  if (attrs & PIXATTR_HIPRI) {
-    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
-    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
-    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
-    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
-    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
-    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
-    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
-    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
-  } else {
-    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE_HIPRI) == 0)) scr[0] = attrs | px;
-    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE_HIPRI) == 0)) scr[1] = attrs | px;
-    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE_HIPRI) == 0)) scr[2] = attrs | px;
-    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE_HIPRI) == 0)) scr[3] = attrs | px;
-    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE_HIPRI) == 0)) scr[4] = attrs | px;
-    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE_HIPRI) == 0)) scr[5] = attrs | px;
-    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE_HIPRI) == 0)) scr[6] = attrs | px;
-    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE_HIPRI) == 0)) scr[7] = attrs | px;
-  }
-  return;
-#endif
 
   /* High priority */
   if (attrs & PIXATTR_HIPRI) {
@@ -418,32 +612,6 @@ static inline __attribute__((always_inline))
 void draw_pattern_fliph_sprite_over_planes(uint8_t *scr, uint32_t p, uint8_t attrs)
 {
   if (p == 0) return;
-
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, true);
-  uint8_t px;
-
-  if (attrs & PIXATTR_HIPRI) {
-    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE) == 0)) scr[0] = attrs | px;
-    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE) == 0)) scr[1] = attrs | px;
-    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE) == 0)) scr[2] = attrs | px;
-    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE) == 0)) scr[3] = attrs | px;
-    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE) == 0)) scr[4] = attrs | px;
-    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE) == 0)) scr[5] = attrs | px;
-    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE) == 0)) scr[6] = attrs | px;
-    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE) == 0)) scr[7] = attrs | px;
-  } else {
-    if ((px = pix[0]) && ((scr[0] & PIXATTR_SPRITE_HIPRI) == 0)) scr[0] = attrs | px;
-    if ((px = pix[1]) && ((scr[1] & PIXATTR_SPRITE_HIPRI) == 0)) scr[1] = attrs | px;
-    if ((px = pix[2]) && ((scr[2] & PIXATTR_SPRITE_HIPRI) == 0)) scr[2] = attrs | px;
-    if ((px = pix[3]) && ((scr[3] & PIXATTR_SPRITE_HIPRI) == 0)) scr[3] = attrs | px;
-    if ((px = pix[4]) && ((scr[4] & PIXATTR_SPRITE_HIPRI) == 0)) scr[4] = attrs | px;
-    if ((px = pix[5]) && ((scr[5] & PIXATTR_SPRITE_HIPRI) == 0)) scr[5] = attrs | px;
-    if ((px = pix[6]) && ((scr[6] & PIXATTR_SPRITE_HIPRI) == 0)) scr[6] = attrs | px;
-    if ((px = pix[7]) && ((scr[7] & PIXATTR_SPRITE_HIPRI) == 0)) scr[7] = attrs | px;
-  }
-  return;
-#endif
 
   /* High priority */
   if (attrs & PIXATTR_HIPRI) {
@@ -504,21 +672,6 @@ draw_pattern_nofliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, false);
-  uint8_t px;
-
-  scr[0] = (px = pix[0]) ? attrs | px : back;
-  scr[1] = (px = pix[1]) ? attrs | px : back;
-  scr[2] = (px = pix[2]) ? attrs | px : back;
-  scr[3] = (px = pix[3]) ? attrs | px : back;
-  scr[4] = (px = pix[4]) ? attrs | px : back;
-  scr[5] = (px = pix[5]) ? attrs | px : back;
-  scr[6] = (px = pix[6]) ? attrs | px : back;
-  scr[7] = (px = pix[7]) ? attrs | px : back;
-  return;
-#endif
-
   scr[0] = PIX0(p) ? attrs | (PIX0(p)) : back;
   scr[1] = PIX1(p) ? attrs | (PIX1(p)) : back;
   scr[2] = PIX2(p) ? attrs | (PIX2(p)) : back;
@@ -547,21 +700,6 @@ draw_pattern_fliph_planeB(uint8_t *scr, uint32_t p, uint8_t attrs) {
     return;
   }
 
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, true);
-  uint8_t px;
-
-  scr[0] = (px = pix[0]) ? attrs | px : back;
-  scr[1] = (px = pix[1]) ? attrs | px : back;
-  scr[2] = (px = pix[2]) ? attrs | px : back;
-  scr[3] = (px = pix[3]) ? attrs | px : back;
-  scr[4] = (px = pix[4]) ? attrs | px : back;
-  scr[5] = (px = pix[5]) ? attrs | px : back;
-  scr[6] = (px = pix[6]) ? attrs | px : back;
-  scr[7] = (px = pix[7]) ? attrs | px : back;
-  return;
-#endif
-
   scr[0] = PIX7(p) ? attrs | (PIX7(p)) : back;
   scr[1] = PIX6(p) ? attrs | (PIX6(p)) : back;
   scr[2] = PIX5(p) ? attrs | (PIX5(p)) : back;
@@ -578,32 +716,6 @@ static inline __attribute__((always_inline)) void
 draw_pattern_nofliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
   if (p == 0) return;
-
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-  const uint8_t *pix = vdp_tile_row_pixels(p, false);
-  uint8_t px;
-
-  if (attrs & PIXATTR_HIPRI) {
-    if ((px = pix[0])) scr[0] = attrs | px;
-    if ((px = pix[1])) scr[1] = attrs | px;
-    if ((px = pix[2])) scr[2] = attrs | px;
-    if ((px = pix[3])) scr[3] = attrs | px;
-    if ((px = pix[4])) scr[4] = attrs | px;
-    if ((px = pix[5])) scr[5] = attrs | px;
-    if ((px = pix[6])) scr[6] = attrs | px;
-    if ((px = pix[7])) scr[7] = attrs | px;
-  } else {
-    if ((px = pix[0]) && ((scr[0] & PIXATTR_HIPRI) == 0)) scr[0] = attrs | px;
-    if ((px = pix[1]) && ((scr[1] & PIXATTR_HIPRI) == 0)) scr[1] = attrs | px;
-    if ((px = pix[2]) && ((scr[2] & PIXATTR_HIPRI) == 0)) scr[2] = attrs | px;
-    if ((px = pix[3]) && ((scr[3] & PIXATTR_HIPRI) == 0)) scr[3] = attrs | px;
-    if ((px = pix[4]) && ((scr[4] & PIXATTR_HIPRI) == 0)) scr[4] = attrs | px;
-    if ((px = pix[5]) && ((scr[5] & PIXATTR_HIPRI) == 0)) scr[5] = attrs | px;
-    if ((px = pix[6]) && ((scr[6] & PIXATTR_HIPRI) == 0)) scr[6] = attrs | px;
-    if ((px = pix[7]) && ((scr[7] & PIXATTR_HIPRI) == 0)) scr[7] = attrs | px;
-  }
-  return;
-#endif
 
   if (attrs & PIXATTR_HIPRI) {
 
@@ -634,32 +746,6 @@ static inline __attribute__((always_inline)) void
 draw_pattern_fliph_planeAoverB(uint8_t *scr, uint32_t p, uint8_t attrs) {
 
     if (p == 0) return;
-
-#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
-    const uint8_t *pix = vdp_tile_row_pixels(p, true);
-    uint8_t px;
-
-    if (attrs & PIXATTR_HIPRI) {
-      if ((px = pix[0])) scr[0] = attrs | px;
-      if ((px = pix[1])) scr[1] = attrs | px;
-      if ((px = pix[2])) scr[2] = attrs | px;
-      if ((px = pix[3])) scr[3] = attrs | px;
-      if ((px = pix[4])) scr[4] = attrs | px;
-      if ((px = pix[5])) scr[5] = attrs | px;
-      if ((px = pix[6])) scr[6] = attrs | px;
-      if ((px = pix[7])) scr[7] = attrs | px;
-    } else {
-      if ((px = pix[0]) && ((scr[0] & PIXATTR_HIPRI) == 0)) scr[0] = attrs | px;
-      if ((px = pix[1]) && ((scr[1] & PIXATTR_HIPRI) == 0)) scr[1] = attrs | px;
-      if ((px = pix[2]) && ((scr[2] & PIXATTR_HIPRI) == 0)) scr[2] = attrs | px;
-      if ((px = pix[3]) && ((scr[3] & PIXATTR_HIPRI) == 0)) scr[3] = attrs | px;
-      if ((px = pix[4]) && ((scr[4] & PIXATTR_HIPRI) == 0)) scr[4] = attrs | px;
-      if ((px = pix[5]) && ((scr[5] & PIXATTR_HIPRI) == 0)) scr[5] = attrs | px;
-      if ((px = pix[6]) && ((scr[6] & PIXATTR_HIPRI) == 0)) scr[6] = attrs | px;
-      if ((px = pix[7]) && ((scr[7] & PIXATTR_HIPRI) == 0)) scr[7] = attrs | px;
-    }
-    return;
-#endif
 
     if (attrs & PIXATTR_HIPRI) {
 
@@ -704,6 +790,12 @@ void draw_pattern_sprite(uint8_t *scr, uint16_t name, int paty) {
  // uint8_t attrs = (pat_palette << 4) | ((name & 0x8000) ? PIXATTR_SPRITE_HIPRI : PIXATTR_SPRITE);
   uint8_t attrs = ( (name & 0x6000 ) >> 9 ) + ((name & 0x8000) >> 8) + PIXATTR_SPRITE;
 
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+  const vdp_tile_row_cache_entry_t *row = vdp_tile_row_cache_get(name, paty);
+  draw_cached_pattern_sprite(scr, row, attrs);
+  return;
+#endif
+
   unsigned int  pattern;
 
   // Vertical flip ?
@@ -746,6 +838,12 @@ void draw_pattern_sprite_over_planes(uint8_t *scr, uint16_t name, int paty) {
   uint8_t attrs = ( (name & 0x6000 ) >> 9 ) + ((name & 0x8000) >> 8) + PIXATTR_SPRITE;
   //uint8_t attrs = ( (name >>9) & 0x70 ) | PIXATTR_SPRITE;
 
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+  const vdp_tile_row_cache_entry_t *row = vdp_tile_row_cache_get(name, paty);
+  draw_cached_pattern_sprite_over_planes(scr, row, attrs);
+  return;
+#endif
+
   unsigned int  pattern;
 
   // Vertical flip ?
@@ -769,6 +867,12 @@ void draw_pattern_planeB(uint8_t *scr, uint16_t name, int paty) {
   //uint8_t *pattern = VRAM + pat_addr;
 
   uint8_t attrs = ( (name & 0x6000 ) >> 9 ) + ((name & 0x8000) >> 8);
+
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+  const vdp_tile_row_cache_entry_t *row = vdp_tile_row_cache_get(name, paty);
+  draw_cached_pattern_planeB(scr, row, attrs);
+  return;
+#endif
 
   unsigned int  pattern;
 
@@ -801,6 +905,12 @@ void draw_pattern_planeA(uint8_t *scr, uint16_t name, int paty) {
     uint8_t attrs = ( (name & 0x6000 ) >> 9 ) + ((name & 0x8000) >> 8);
 
 
+
+#if defined(RG_TARGET_HOLO_DYNMOD) && VDP_TILE_ROW_CACHE_ENABLED
+  const vdp_tile_row_cache_entry_t *row = vdp_tile_row_cache_get(name, paty);
+  draw_cached_pattern_planeAoverB(scr, row, attrs);
+  return;
+#endif
 
 
   unsigned int  pattern;
@@ -993,10 +1103,12 @@ void draw_line_aw(int line) {
 
   unsigned int nt = base_w + row * wdwidth_x2 + Window_first / 4;
 
+  uint8_t *wpos = scr + Window_first;
+
   for (int i = Window_first / 8; i < Window_last / 8; ++i) {
-    draw_pattern_planeA(end, FETCH16VRAM(nt), paty);
+    draw_pattern_planeA(wpos, FETCH16VRAM(nt), paty);
     nt += 2;
-    end += 8;
+    wpos += 8;
   }
 }
 
@@ -1554,7 +1666,7 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
   uint8_t *ps = &sprite_buffer[PIX_OVERFLOW];
 
   if (MODE_SHI)
-    memset(ps, 0, 320);
+    memset(ps, 0, screen_width);
 
   draw_line_b(line);
   draw_line_aw(line);

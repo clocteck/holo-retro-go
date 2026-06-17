@@ -623,6 +623,7 @@ void load_cartridge(unsigned char *buffer, size_t size)
     #endif
 
     gwenesis_rom_finalize(size);
+    z80_refresh_banked_rom_fast_path();
 
     set_region();
 }
@@ -637,6 +638,7 @@ void unload_cartridge(void)
     ROM_MASK = MAX_ROM_SIZE - 1;
     ROM_SIZE = 0;
     gwenesis_sram_reset();
+    z80_refresh_banked_rom_fast_path();
 }
 
 #endif
