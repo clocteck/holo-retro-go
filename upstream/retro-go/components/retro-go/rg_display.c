@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 10) // In pixels
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 20) // In pixels
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #define RG_DISPLAY_TASK_CORE 0

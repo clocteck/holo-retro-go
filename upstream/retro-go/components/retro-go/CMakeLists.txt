@@ -6,17 +6,26 @@ if(RG_ENABLE_NETPLAY)
     list(APPEND COMPONENT_ADD_INCLUDEDIRS "libs/netplay")
 endif()
 
-if(RG_BUILD_TARGET STREQUAL "RG_TARGET_HOLO_DYNMOD")
-    # Holocubic: display/input/audio/storage all go through host API.
-    # Only keep json (cJSON config), nvs_flash (settings), esp_timer, esp_psram.
-    set(COMPONENT_REQUIRES "json nvs_flash esp_timer esp_psram")
-elseif((IDF_VERSION_MAJOR EQUAL 5) AND (IDF_VERSION_MINOR GREATER 2)) # esp-idf 5.3+
-    set(COMPONENT_REQUIRES "spi_flash fatfs app_update json nvs_flash esp_adc esp_timer esp_psram esp_driver_ledc driver")
-elseif(IDF_VERSION_MAJOR EQUAL 5) # esp-idf 5.0 - 5.2
-    set(COMPONENT_REQUIRES "spi_flash fatfs app_update json nvs_flash esp_adc esp_timer esp_psram")
-else() # esp-idf 4.1 - 4.4
-    set(COMPONENT_REQUIRES "spi_flash fatfs app_update esp_adc_cal json nvs_flash")
-endif()
+# The Holo dynmod still compiles Retro-Go's platform files; keep the IDF
+# components that provide their headers even when host APIs handle runtime I/O.
+set(COMPONENT_REQUIRES
+    "spi_flash"
+    "fatfs"
+    "app_update"
+    "json"
+    "nvs_flash"
+    "esp_adc"
+    "esp_timer"
+    "esp_psram"
+    "esp_driver_gpio"
+    "esp_driver_i2c"
+    "esp_driver_i2s"
+    "esp_driver_ledc"
+    "esp_driver_sdmmc"
+    "esp_driver_sdspi"
+    "esp_driver_spi"
+    "driver"
+)
 
 if(RG_ENABLE_NETWORKING OR RG_ENABLE_NETPLAY)
     list(APPEND COMPONENT_REQUIRES esp_wifi esp_http_client)

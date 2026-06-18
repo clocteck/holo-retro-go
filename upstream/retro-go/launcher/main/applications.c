@@ -8,9 +8,7 @@
 #include "applications.h"
 #include "bookmarks.h"
 #include "gui.h"
-#if defined(RG_TARGET_HOLO_DYNMOD)
 #include "holo_port.h"
-#endif
 
 #define CRC_CACHE_MAGIC 0x21112223
 #define CRC_CACHE_MAX_ENTRIES 8192
@@ -136,7 +134,6 @@ static const char *get_file_path(retro_file_t *file)
 static void application_start(retro_file_t *file, int load_state)
 {
     RG_ASSERT_ARG(file);
-    char *part = strdup(file->app->partition);
     char *name = strdup(file->app->short_name);
     char *path = strdup(get_file_path(file));
     int flags = (gui.startup_mode ? RG_BOOT_ONCE : 0);
@@ -146,14 +143,10 @@ static void application_start(retro_file_t *file, int load_state)
         flags |= (load_state << 4) & RG_BOOT_SLOT_MASK;
     }
     bookmark_add(BOOK_TYPE_RECENT, file); // This could relocate *file, but we no longer need it
-#if defined(RG_TARGET_HOLO_DYNMOD)
     holo_runtime_request_switch(name, path, flags);
-    free(part);
     free(name);
     free(path);
     return;
-#endif
-    rg_system_switch_app(part, name, path, flags);
 }
 
 static uint32_t crc_read_file(retro_file_t *file, bool interactive)
@@ -673,18 +666,10 @@ static void application(const char *desc, const char *name, const char *exts, co
     RG_ASSERT_ARG(desc && name && exts && part);
     bool available = rg_system_have_app(part);
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
     if (!available)
     {
         RG_LOGI("Application '%s' (%s) not present, continuing anyway for HOLO_DYNMOD", desc, part);
     }
-#else
-    if (!rg_system_have_app(part))
-    {
-        RG_LOGI("Application '%s' (%s) not present, skipping", desc, part);
-        return;
-    }
-#endif
 
     retro_app_t *app = calloc(1, sizeof(retro_app_t));
     apps[apps_count++] = app;
@@ -707,35 +692,20 @@ static void application(const char *desc, const char *name, const char *exts, co
 
 void applications_init(void)
 {
-#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+#if HOLO_RETRO_GWENESIS_ONLY
     application("Sega Mega Drive", "md", "md gen bin zip", "gwenesis", 0);
 #else
-    application("Nintendo Entertainment System", "nes", "nes fc fds nsf zip", "retro-core", 16);
-    application("Super Nintendo", "snes", "smc sfc zip", "retro-core", 0);
-    application("Nintendo Gameboy", "gb", "gb gbc zip", "retro-core", 0);
-    application("Nintendo Gameboy Color", "gbc", "gbc gb zip", "retro-core", 0);
-#if !defined(RG_TARGET_HOLO_DYNMOD)
-    application("Nintendo Gameboy Advance", "gba", "gba zip", "gbsp", 0);
-#endif
-    application("Nintendo Game & Watch", "gw", "gw", "retro-core", 0);
-    // application("Sega SG-1000", "sg1", "sms sg sg1", "retro-core", 0);
-    application("Sega Master System", "sms", "sms sg zip", "retro-core", 0);
-    application("Sega Game Gear", "gg", "gg zip", "retro-core", 0);
-#if !defined(RG_TARGET_HOLO_DYNMOD)
-    application("Sega Mega Drive", "md", "md gen bin zip", "gwenesis", 0);
-#endif
-    application("Coleco ColecoVision", "col", "col rom zip", "retro-core", 0);
-    application("NEC PC Engine", "pce", "pce zip", "retro-core", 0);
-    application("Atari Lynx", "lnx", "lnx zip", "retro-core", 64);
-#if !defined(RG_TARGET_HOLO_DYNMOD)
-    // application("Atari 2600", "a26", "a26 zip", "stella-go", 0);
-    // application("Neo Geo Pocket Color", "ngp", "ngp ngc zip", "ngpocket-go", 0);
-    application("DOOM", "doom", "wad zip", "prboom-go", 0);
-    application("MSX", "msx", "rom mx1 mx2 dsk", "fmsx", 0);
-
-    // Special app to bootstrap native esp32 binaries from the SD card
-    // application("Bootstrap", "apps", "bin elf", "bootstrap", 0);
-#endif
+    application("Nintendo Entertainment System", "nes", "nes fc fds nsf zip", "retrogo", 16);
+    application("Super Nintendo", "snes", "smc sfc zip", "retrogo", 0);
+    application("Nintendo Gameboy", "gb", "gb gbc zip", "retrogo", 0);
+    application("Nintendo Gameboy Color", "gbc", "gbc gb zip", "retrogo", 0);
+    application("Nintendo Game & Watch", "gw", "gw", "retrogo", 0);
+    // application("Sega SG-1000", "sg1", "sms sg sg1", "retrogo", 0);
+    application("Sega Master System", "sms", "sms sg zip", "retrogo", 0);
+    application("Sega Game Gear", "gg", "gg zip", "retrogo", 0);
+    application("Coleco ColecoVision", "col", "col rom zip", "retrogo", 0);
+    application("NEC PC Engine", "pce", "pce zip", "retrogo", 0);
+    application("Atari Lynx", "lnx", "lnx zip", "retrogo", 64);
 #endif
 
     if (!rg_system_get_app()->lowMemoryMode)

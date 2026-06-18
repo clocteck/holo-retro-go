@@ -1,7 +1,5 @@
 #include "shared.h"
-#if defined(RG_TARGET_HOLO_DYNMOD)
 #include "holo_port.h"
-#endif
 
 #include <nofrendo.h>
 
@@ -65,11 +63,7 @@ static void build_palette(int n)
     uint16_t *pal = nofrendo_buildpalette(n, 16);
     for (int i = 0; i < 256; i++)
     {
-#if defined(RG_TARGET_HOLO_DYNMOD)
         uint16_t color = pal[i];
-#else
-        uint16_t color = (pal[i] >> 8) | ((pal[i]) << 8);
-#endif
         updates[0]->palette[i] = color;
         updates[1]->palette[i] = color;
     }
@@ -281,9 +275,7 @@ void nes_main(void)
     rg_system_set_tick_rate(nes->refresh_rate);
 
     int skipFrames = 0;
-#if defined(RG_TARGET_HOLO_DYNMOD)
     int holoFramePhase = 0;
-#endif
 
     while (true)
     {
@@ -341,10 +333,8 @@ void nes_main(void)
             int elapsed = rg_system_timer() - startTime;
             if (nsfPlayer)
                 skipFrames = 10, nsf_draw_overlay();
-#if defined(RG_TARGET_HOLO_DYNMOD)
             else if (app->frameskip == 1)
                 skipFrames = (++holoFramePhase % 3) ? 0 : 1;
-#endif
             else if (app->frameskip > 0)
                 skipFrames = app->frameskip;
             else if (elapsed > frameTime + 1500) // Allow some jitter

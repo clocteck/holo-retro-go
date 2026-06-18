@@ -4,11 +4,11 @@ This project builds Retro-Go based Holocubic Lua dynamic modules.
 
 ## Module Profiles
 
-Two module profiles are built separately, matching the upstream Retro-Go split:
+Two Holo module profiles are built separately:
 
-- `retro-core`: classic emulator collection. Output: `build/retrogo.so`.
+- `nes`: Holocubic classic Retro-Go core collection. Output: `build/retrogo.so`.
   Includes NES, SNES, GB/GBC, Game & Watch, SMS/GG, ColecoVision, PCE, Lynx, and related Retro-Go cores. This profile excludes MD/gwenesis.
-- `gwenesis`: Sega Mega Drive / Genesis only. Output: `build-gwenesis/gwenesis.so`.
+- `gwenesis`: Holocubic Sega Mega Drive / Genesis only. Output: `build-gwenesis/gwenesis.so`.
 
 Device module paths:
 
@@ -50,12 +50,12 @@ The current user environment should include these paths in `Path`, plus
 `idf.py`, `ninja`, `ccache`, `cmake`, or `xtensa-esp32s3-elf-gcc`, add the
 paths above to `Path` for that shell.
 
-## Build retro-core
+## Build Holo NES Branch
 
 Reconfigure when CMake files or profile selection changed:
 
 ```powershell
-powershell -NoProfile -Command "$env:IDF_PATH='C:\Users\72751\.platformio\packages\framework-espidf'; $env:IDF_TOOLS_PATH='C:\Users\72751\.espressif'; idf.py -B build -DHOLO_RETRO_MODULE_PROFILE=retro-core reconfigure; ninja -C build so"
+powershell -NoProfile -Command "$env:IDF_PATH='C:\Users\72751\.platformio\packages\framework-espidf'; $env:IDF_TOOLS_PATH='C:\Users\72751\.espressif'; idf.py -B build -DHOLO_RETRO_MODULE_PROFILE=nes reconfigure; ninja -C build so"
 ```
 
 For incremental rebuilds after the build dir is already configured:
@@ -201,4 +201,4 @@ rg "\.mod_iram|small_hot_function" build-gwenesis/gwenesis_so.map
 - Gwenesis audio uses `MEM_FAST` for the YM2612/SN76489 source buffers, a mixed stereo buffer, and a 2048-frame audio ring. Current Holo dynmod experiment pins async VDP, `rg_display`, `gwen_audio`/YM compute, and `gwen_aout` host-audio drain to Core 0 (`ymc:0`) to keep main emulation on Core 1. VDP async uses `GWENESIS_VDP_ASYNC_JOBS=2` and a latest-frame/drop policy: no READY/RENDERING backlog, no hot-path sync fallback, and no waiting for CPU0 to go idle. SN76489 stays off by default and the YM-only path bypasses the mixer for performance; enable SN76489 only when PSG accuracy matters more than speed.
 - Gwenesis currently uses fixed MD frameskip: draw 1 frame, then skip 2 frames. The Retro-Go global system-monitor frameskip is disabled for this core so it cannot overwrite the local policy.
 - Prefer compatibility fixes in upstream cores. Avoid ROM-specific hacks unless explicitly requested.
-- 不用管非 Holo dynmod 构建
+- 不用管非 Holo dynmod 构建,删除所有非 Holo dynmod 构建的代码 项目只构建md核心和retrogo nes gb等核心包两个动态模块

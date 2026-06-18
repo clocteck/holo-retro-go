@@ -261,11 +261,7 @@ void pce_main(void)
     uint16_t *palette = PalettePCE(16);
     for (int i = 0; i < 256; i++)
     {
-#if defined(RG_TARGET_HOLO_DYNMOD)
         uint16_t color = palette[i];
-#else
-        uint16_t color = (palette[i] << 8) | (palette[i] >> 8);
-#endif
         updates[0]->palette[i] = color;
         updates[1]->palette[i] = color;
     }

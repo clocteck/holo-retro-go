@@ -15,9 +15,7 @@
 #include "gui.h"
 #include "webui.h"
 #include "updater.h"
-#if defined(RG_TARGET_HOLO_DYNMOD)
 #include "holo_port.h"
-#endif
 
 static rg_app_t *app;
 
@@ -206,9 +204,7 @@ static void retro_loop(void)
     gui_init(app->isColdBoot);
     applications_init();
     bookmarks_init();
-#if defined(RG_TARGET_HOLO_DYNMOD)
     browser_init();
-#endif
 
 #ifdef RG_ENABLE_NETWORKING
     rg_network_init();
@@ -353,10 +349,8 @@ static void retro_loop(void)
 
         rg_system_tick(rg_system_timer() - start_time);
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
         if (holo_runtime_switch_requested() || holo_runtime_stop_requested())
             break;
-#endif
 
         if ((gui.joystick|joystick) & RG_KEY_ANY)
         {
@@ -385,11 +379,6 @@ static void try_migrate(void)
     // A handful of retro-go versions used the weird /odroid/*.txt to store books. Let's move them!
     if (rg_settings_get_number(NS_GLOBAL, "Migration", 0) < 1290)
     {
-    #ifdef RG_TARGET_ODROID_GO
-        rg_storage_mkdir(RG_BASE_PATH_CONFIG);
-        rename(RG_STORAGE_ROOT "/odroid/favorite.txt", RG_BASE_PATH_CONFIG "/favorite.txt");
-        rename(RG_STORAGE_ROOT "/odroid/recent.txt", RG_BASE_PATH_CONFIG "/recent.txt");
-    #endif
         rg_settings_set_number(NS_GLOBAL, "Migration", 1290);
         rg_settings_commit();
     }
@@ -397,12 +386,6 @@ static void try_migrate(void)
     // Some of our save formats have diverged and cause issue when they're shared with Go-Play
     if (rg_settings_get_number(NS_GLOBAL, "Migration", 0) < 1390)
     {
-    #ifdef RG_TARGET_ODROID_GO
-        if (rg_storage_exists(RG_STORAGE_ROOT "/odroid/data"))
-            rg_gui_alert("Save path changed in 1.32",
-                "Save format is no longer fully compatible with Go-Play and can cause corruption.\n\n"
-                "Please copy the contents of:\n /odroid/data\nto\n /retro-go/saves.");
-    #endif
         rg_settings_set_number(NS_GLOBAL, "Migration", 1390);
         rg_settings_commit();
     }
@@ -456,11 +439,7 @@ void app_main(void)
         .about = &about_handler,
     };
 
-    #if defined(RG_TARGET_HOLO_DYNMOD)
     app = rg_system_reinit(32000, &handlers, NULL);
-    #else
-    app = rg_system_init(32000, &handlers, NULL);
-    #endif
     app->configNs = "launcher";
     app->isLauncher = true;
 
