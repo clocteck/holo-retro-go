@@ -31,6 +31,14 @@ __license__ = "GPLv3"
 #endif
 #endif
 
+#ifndef GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+#define GWENESIS_VDP_GFX_ACTIVE_PTR_TEST 0
+#else
+#define GWENESIS_VDP_GFX_ACTIVE_PTR_TEST 0
+#endif
+#endif
+
 #define BIT(v, idx) (((v) >> (idx)) & 1)
 #define BITS(v, idx, n) (((v) >> (idx)) & ((1 << (n)) - 1))
 

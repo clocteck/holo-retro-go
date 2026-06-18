@@ -62,7 +62,7 @@ __license__ = "GPLv3"
 #endif
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define Z80_FREQ_DIVISOR 17 // Frequency divisor to Z80 clock
+#define Z80_FREQ_DIVISOR 16 // Frequency divisor to Z80 clock
 #else
 #define Z80_FREQ_DIVISOR 14 // Frequency divisor to Z80 clock
 #endif
@@ -70,10 +70,11 @@ __license__ = "GPLv3"
 #define SCREEN_WIDTH 320
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_AUDIO_OUTPUT_RATE 11025
-#define AUDIO_FREQ_DIVISOR 4054
-#define AUDIO_FREQ_DIVISOR_NTSC 4054
-#define AUDIO_FREQ_DIVISOR_PAL 4828
+#define GWENESIS_AUDIO_OUTPUT_RATE 11500
+#define GWENESIS_AUDIO_HOST_RATE 11050
+#define AUDIO_FREQ_DIVISOR 3887
+#define AUDIO_FREQ_DIVISOR_NTSC 3887
+#define AUDIO_FREQ_DIVISOR_PAL 4629
 #define GWENESIS_AUDIO_BUFFER_LENGTH_NTSC 224
 #define GWENESIS_AUDIO_BUFFER_LENGTH_PAL 224
 #else

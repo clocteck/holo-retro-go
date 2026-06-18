@@ -30,6 +30,7 @@ void retrogo_core_app_main(void);
 void rg_system_deinit_for_holo(void);
 #endif
 #if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+bool gwenesis_vdp_async_reserve_vram_early(void);
 bool gwenesis_alloc_vram_fast(void);
 #endif
 
@@ -327,6 +328,10 @@ static void retrogo_task_entry(void *arg)
     holo_port_log(RETROGO_LOG_PREFIX "retro-go task start");
     holo_runtime_bind_task(&inst->running, &inst->task);
 #if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_reserve_vram_early())
+    {
+        holo_port_log(RETROGO_LOG_PREFIX "task early Genesis async VDP VRAM reserve failed");
+    }
     if (!holo_display_acquire(320, 240))
     {
         holo_port_log(RETROGO_LOG_PREFIX "early display acquire failed");
@@ -518,6 +523,12 @@ static int32_t create_instance_from_host(const module_host_api_v1 *host,
     s_host = host;
     holo_port_set_host(host);
     create_log(host, RETROGO_LOG_PREFIX "create host set");
+#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_reserve_vram_early())
+    {
+        create_log(host, RETROGO_LOG_PREFIX "early Genesis async VDP VRAM reserve failed");
+    }
+#endif
 
     inst = &s_static_instance;
     memset(inst, 0, sizeof(*inst));

@@ -138,6 +138,69 @@ bool sprite_collision;
 static const gwenesis_vdp_render_context_t *gwenesis_vdp_gfx_render_ctx;
 static int gwenesis_vdp_gfx_ctx_sprite_overflow;
 
+#if GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+static unsigned char *gwenesis_vdp_gfx_active_vram;
+static unsigned short *gwenesis_vdp_gfx_active_vsram;
+static unsigned short *gwenesis_vdp_gfx_active_cram565;
+static unsigned char *gwenesis_vdp_gfx_active_sat_cache;
+static unsigned char *gwenesis_vdp_gfx_active_regs;
+static int gwenesis_vdp_gfx_active_screen_width;
+static int gwenesis_vdp_gfx_active_screen_height;
+
+static inline bool gwenesis_vdp_gfx_has_render_context(void)
+{
+  return gwenesis_vdp_gfx_render_ctx != NULL;
+}
+
+static inline int gwenesis_vdp_gfx_sprite_overflow(void)
+{
+  return gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_ctx_sprite_overflow : sprite_overflow;
+}
+
+static inline void gwenesis_vdp_gfx_set_sprite_overflow(int line)
+{
+  if (gwenesis_vdp_gfx_render_ctx)
+    gwenesis_vdp_gfx_ctx_sprite_overflow = line;
+  else
+    sprite_overflow = line;
+}
+
+void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ctx)
+{
+  gwenesis_vdp_gfx_render_ctx = ctx;
+  gwenesis_vdp_gfx_ctx_sprite_overflow = 0;
+
+  if (ctx)
+  {
+    gwenesis_vdp_gfx_active_vram = (unsigned char *)ctx->vram;
+    gwenesis_vdp_gfx_active_vsram = (unsigned short *)ctx->vsram;
+    gwenesis_vdp_gfx_active_cram565 = (unsigned short *)ctx->cram565;
+    gwenesis_vdp_gfx_active_sat_cache = (unsigned char *)ctx->sat_cache;
+    gwenesis_vdp_gfx_active_regs = (unsigned char *)ctx->regs;
+    gwenesis_vdp_gfx_active_screen_width = ctx->screen_width;
+    gwenesis_vdp_gfx_active_screen_height = ctx->screen_height;
+  }
+  else
+  {
+    gwenesis_vdp_gfx_active_vram = VRAM;
+    gwenesis_vdp_gfx_active_vsram = VSRAM;
+    gwenesis_vdp_gfx_active_cram565 = CRAM565;
+    gwenesis_vdp_gfx_active_sat_cache = SAT_CACHE;
+    gwenesis_vdp_gfx_active_regs = gwenesis_vdp_regs;
+    gwenesis_vdp_gfx_active_screen_width = screen_width;
+    gwenesis_vdp_gfx_active_screen_height = screen_height;
+  }
+}
+
+#define VRAM gwenesis_vdp_gfx_active_vram
+#define VSRAM gwenesis_vdp_gfx_active_vsram
+#define CRAM565 gwenesis_vdp_gfx_active_cram565
+#define SAT_CACHE gwenesis_vdp_gfx_active_sat_cache
+#define gwenesis_vdp_regs gwenesis_vdp_gfx_active_regs
+#define screen_width gwenesis_vdp_gfx_active_screen_width
+#define screen_height gwenesis_vdp_gfx_active_screen_height
+
+#else
 static inline unsigned char *gwenesis_vdp_gfx_vram(void)
 {
   return (unsigned char *)(gwenesis_vdp_gfx_render_ctx ? gwenesis_vdp_gfx_render_ctx->vram : VRAM);
@@ -204,6 +267,7 @@ void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ct
 #define gwenesis_vdp_regs gwenesis_vdp_gfx_regs()
 #define screen_width gwenesis_vdp_gfx_screen_width()
 #define screen_height gwenesis_vdp_gfx_screen_height()
+#endif
 #else
 static inline int gwenesis_vdp_gfx_sprite_overflow(void)
 {
@@ -256,10 +320,15 @@ bool gwenesis_vdp_gfx_init_fast_ram(void)
         tile_row_cache = rg_alloc(sizeof(*tile_row_cache) * VDP_TILE_ROW_CACHE_ENTRIES, MEM_FAST | MEM_NOPANIC);
     if (tile_row_cache)
         vdp_tile_row_cache_clear();
-    return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
+    const bool ok = render_buffer && sprite_buffer && sprite_line_count && sprite_line_table && tile_row_cache;
 #else
-    return render_buffer && sprite_buffer && sprite_line_count && sprite_line_table;
+    const bool ok = render_buffer && sprite_buffer && sprite_line_count && sprite_line_table;
 #endif
+#if GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+    if (ok)
+        gwenesis_vdp_gfx_set_render_context(NULL);
+#endif
+    return ok;
 #endif
 #endif
     return render_buffer && sprite_buffer;
