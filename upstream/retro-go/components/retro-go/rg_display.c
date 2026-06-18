@@ -7,7 +7,7 @@
 #define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 10) // In pixels
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define RG_DISPLAY_TASK_CORE 0
+#define RG_DISPLAY_TASK_CORE 1
 #else
 #define RG_DISPLAY_TASK_CORE 1
 #endif

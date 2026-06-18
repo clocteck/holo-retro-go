@@ -9,6 +9,7 @@
 #if defined(ESP_PLATFORM)
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#undef BIT
 #endif
 
 #include <gwenesis.h>
@@ -191,7 +192,7 @@ static bool gwenesis_perf_overlay_enabled;
 #if GWENESIS_VDP_ASYNC_ENABLED
 #define GWENESIS_VDP_ASYNC_JOBS 2
 #define GWENESIS_VDP_ASYNC_TASK_STACK (6 * 1024)
-#define GWENESIS_VDP_ASYNC_TASK_PRIORITY RG_TASK_PRIORITY_3
+#define GWENESIS_VDP_ASYNC_TASK_PRIORITY RG_TASK_PRIORITY_4
 #define GWENESIS_VDP_ASYNC_RENDER_FRAME_DELAY_MS 2
 #define GWENESIS_VDP_ASYNC_UNSAFE_FRAMES 8
 #define GWENESIS_VDP_ASYNC_SERIAL_TEST 0
@@ -204,8 +205,9 @@ static bool gwenesis_perf_overlay_enabled;
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #define GWENESIS_RENDER_MIN_FPS 25
-#define GWENESIS_RENDER_TARGET_FPS 30
+#define GWENESIS_RENDER_TARGET_FPS 35
 #define GWENESIS_RENDER_MAX_FPS 35
+#define GWENESIS_RENDER_SKIP_DEBT_US 5000
 static const int render_target_us = 1000000 / GWENESIS_RENDER_TARGET_FPS;
 static const int render_min_interval_us = 1000000 / GWENESIS_RENDER_MAX_FPS;
 static const int render_max_interval_us = 1000000 / GWENESIS_RENDER_MIN_FPS;
@@ -1252,14 +1254,17 @@ static bool gwenesis_frameskip_should_draw(bool audio_enabled, int64_t now)
     return draw;
 #elif defined(RG_TARGET_HOLO_DYNMOD)
     (void)audio_enabled;
-    const int64_t since_last_draw = now - render_pacer_last_draw_us;
-    if (since_last_draw < render_min_interval_us)
+    if (now < render_pacer_next_us)
         return false;
-    if (now >= render_pacer_next_us)
-        return true;
-    if (since_last_draw >= render_max_interval_us)
-        return true;
-    return false;
+
+    const int64_t lateness_us = now - render_pacer_next_us;
+    render_pacer_next_us += render_target_us;
+    if (lateness_us > render_target_us * 4 || render_pacer_next_us <= now)
+        render_pacer_next_us = now + render_target_us;
+
+    if (frameskip_last_debt_us >= GWENESIS_RENDER_SKIP_DEBT_US)
+        return false;
+    return true;
 #else
     if (frameskip_skip_streak >= frameskip_max_consecutive_skips)
         return true;
@@ -1287,10 +1292,6 @@ static void gwenesis_frameskip_note_frame(bool drew_frame, int64_t now)
         frameskip_skip_streak = 0;
 #if defined(RG_TARGET_HOLO_DYNMOD)
         render_pacer_last_draw_us = now;
-        if (render_pacer_next_us == 0)
-            render_pacer_next_us = now + render_target_us;
-        while (render_pacer_next_us <= now)
-            render_pacer_next_us += render_target_us;
 #endif
     }
     else
@@ -4119,7 +4120,9 @@ void app_main(void)
             GWENESIS_PROFILER_INC(frameskip_skips);
 
         bool display_ready = true;
-#if defined(RG_TARGET_HOLO_DYNMOD)
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+        (void)display_ready;
+#elif defined(RG_TARGET_HOLO_DYNMOD)
         if (scheduled_draw && !gwenesis_display_double_buffered())
 #else
         if (scheduled_draw)
@@ -4140,8 +4143,14 @@ void app_main(void)
 #endif
         gwenesis_frameskip_note_frame(drawFrame, startTime);
 #if GWENESIS_VDP_ASYNC_ENABLED
+#if !defined(RG_TARGET_HOLO_DYNMOD)
         bool async_vdp_path = false;
+#endif
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        bool sync_vdp_frame = false;
+#else
         bool sync_vdp_frame = drawFrame;
+#endif
 #else
         const bool sync_vdp_frame = drawFrame;
 #endif
@@ -4184,6 +4193,14 @@ void app_main(void)
         gwenesis_vdp_async_begin_frame(async_vdp_frame_id);
         if (drawFrame)
         {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+            if (gwenesis_vdp_async_can_submit_frame())
+            {
+                (void)gwenesis_vdp_async_submit_snapshot(async_vdp_frame_id,
+                                                         screen_width,
+                                                         screen_height);
+            }
+#else
             if (gwenesis_vdp_async_can_submit_frame())
             {
                 sync_vdp_frame = false;
@@ -4201,6 +4218,7 @@ void app_main(void)
             {
                 gwenesis_vdp_async_wait_idle_for_sync();
             }
+#endif
         }
 #endif
 
@@ -4360,6 +4378,13 @@ void app_main(void)
         // reset m68k cycles to the begin of next frame cycle
         m68k.cycles -= system_clock;
 
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+        {
+            int64_t prof_start = gwenesis_profiler_now();
+            gwenesis_vdp_async_display_latest(false);
+            gwenesis_profiler_add(&gwenesis_profiler.display_us, prof_start);
+        }
+#else
         if (drawFrame)
         {
             int64_t prof_start = gwenesis_profiler_now();
@@ -4394,13 +4419,6 @@ void app_main(void)
             displayUpdate = currentUpdate;
             rg_display_submit(displayUpdate, 0);
 #endif
-            gwenesis_profiler_add(&gwenesis_profiler.display_us, prof_start);
-        }
-#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-        else
-        {
-            int64_t prof_start = gwenesis_profiler_now();
-            gwenesis_vdp_async_display_latest(false);
             gwenesis_profiler_add(&gwenesis_profiler.display_us, prof_start);
         }
 #endif
