@@ -14,6 +14,7 @@
 
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;
+static rg_mutex_t *display_lock;
 static rg_display_counters_t counters;
 static rg_display_config_t config;
 static rg_surface_t *border;
@@ -41,6 +42,21 @@ static void lcd_set_backlight(float percent);
 static void lcd_set_window(int left, int top, int width, int height);
 static inline uint16_t *lcd_get_buffer(size_t length);
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length);
+static void display_write_rect_locked(int left, int top, int width, int height, int stride,
+                                      const uint16_t *buffer, uint32_t flags);
+static void display_clear_rect_locked(int left, int top, int width, int height, uint16_t color_le);
+static void display_clear_except_locked(int left, int top, int width, int height, uint16_t color_le);
+
+static inline bool display_take_lock(void)
+{
+    return !display_lock || rg_mutex_take(display_lock, 10000);
+}
+
+static inline void display_give_lock(void)
+{
+    if (display_lock)
+        rg_mutex_give(display_lock);
+}
 
 #if RG_SCREEN_DRIVER == 0 || RG_SCREEN_DRIVER == 1 /* ILI9341/ST7789 */
 #include "drivers/display/ili9341.h"
@@ -68,17 +84,17 @@ static int draw_on_screen_display(int region_start, int region_end)
     // Low battery indicator
     if (rg_system_get_indicator(RG_INDICATOR_POWER_LOW) && ((counters.totalFrames / 20) & 1))
     {
-        rg_display_clear_rect(left, top, width, height, C_RED);                           // Main body
-        rg_display_clear_rect(left + width, top + height / 4, border, height / 2, C_RED); // The tab
-        rg_display_clear_rect(left + border, top + border, width - border * 2, height - border * 2,
-                              C_BLACK); // The fill
+        display_clear_rect_locked(left, top, width, height, C_RED);                           // Main body
+        display_clear_rect_locked(left + width, top + height / 4, border, height / 2, C_RED); // The tab
+        display_clear_rect_locked(left + border, top + border, width - border * 2, height - border * 2,
+                                  C_BLACK); // The fill
         // memset(&screen_line_checksum[top], 0, sizeof(uint32_t) * height);
         area_dirty |= (1 << RG_INDICATOR_POWER_LOW);
     }
     else if (area_dirty)
     {
         if (display.viewport.width < display.screen.width || display.viewport.height < display.screen.height)
-            rg_display_clear_rect(left, top, width + border, height, C_BLACK);
+            display_clear_rect_locked(left, top, width + border, height, C_BLACK);
         memset(&screen_line_checksum[top], 0, sizeof(uint32_t) * height);
         area_dirty = 0;
     }
@@ -464,6 +480,12 @@ static void display_task(void *arg)
         if (msg.type == RG_TASK_MSG_STOP)
             break;
 
+        if (!display_take_lock())
+        {
+            rg_task_receive(&msg);
+            continue;
+        }
+
         if (display.changed)
         {
             update_viewport_scaling();
@@ -472,11 +494,11 @@ static void display_task(void *arg)
             if (display.viewport.width < display.screen.width || display.viewport.height < display.screen.height)
             {
                 if (border)
-                    rg_display_write_rect(0, 0, border->width, border->height, 0, border->data,
-                                          RG_DISPLAY_WRITE_NOSYNC);
+                    display_write_rect_locked(0, 0, border->width, border->height, 0, border->data,
+                                              RG_DISPLAY_WRITE_NOSYNC);
                 else
-                    rg_display_clear_except(display.viewport.left, display.viewport.top, display.viewport.width,
-                                            display.viewport.height, C_BLACK);
+                    display_clear_except_locked(display.viewport.left, display.viewport.top, display.viewport.width,
+                                                display.viewport.height, C_BLACK);
             }
             display.changed = false;
         }
@@ -486,6 +508,7 @@ static void display_task(void *arg)
         rg_task_receive(&msg);
 
         lcd_sync();
+        display_give_lock();
     }
 }
 
@@ -624,14 +647,60 @@ void rg_display_submit(const rg_surface_t *update, uint32_t flags)
     counters.totalFrames++;
 }
 
+bool rg_display_present_direct(const rg_surface_t *update)
+{
+    const int64_t time_start = rg_system_timer();
+
+    if (!update || !update->data)
+        return false;
+
+    rg_display_sync(true);
+
+    if (display.source.width != update->width || display.source.height != update->height)
+    {
+        display.source.width = update->width;
+        display.source.height = update->height;
+        display.changed = true;
+    }
+
+    if (!display_take_lock())
+        return false;
+
+    if (display.changed)
+    {
+        update_viewport_scaling();
+        if (display.viewport.width < display.screen.width || display.viewport.height < display.screen.height)
+        {
+            if (border)
+                display_write_rect_locked(0, 0, border->width, border->height, 0, border->data,
+                                          RG_DISPLAY_WRITE_NOSYNC);
+            else
+                display_clear_except_locked(display.viewport.left, display.viewport.top, display.viewport.width,
+                                            display.viewport.height, C_BLACK);
+        }
+        display.changed = false;
+    }
+
+    write_update(update);
+    lcd_sync();
+    display_give_lock();
+
+    counters.blockTime += rg_system_timer() - time_start;
+    counters.totalFrames++;
+    return true;
+}
+
 bool rg_display_sync(bool block)
 {
+    if (!display_task_queue)
+        return true;
     while (block && rg_task_messages_waiting(display_task_queue))
         rg_task_delay(1);
     return !rg_task_messages_waiting(display_task_queue);
 }
 
-void rg_display_write_rect(int left, int top, int width, int height, int stride, const uint16_t *buffer, uint32_t flags)
+static void display_write_rect_locked(int left, int top, int width, int height, int stride,
+                                      const uint16_t *buffer, uint32_t flags)
 {
     RG_ASSERT_ARG(buffer);
 
@@ -645,12 +714,6 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     // This can happen when left or top is out of bound
     if (width < 0 || height < 0)
         return;
-
-    // This will work for now because we rarely draw from different threads (so all we need is ensure
-    // that we're not interrupting a display update). But what we SHOULD be doing is acquire a lock
-    // before every call to lcd_set_window and release it only after the last call to lcd_send_buffer.
-    if (!(flags & RG_DISPLAY_WRITE_NOSYNC))
-        rg_display_sync(true);
 
     // This isn't really necessary but it makes sense to invalidate
     // the lines we're about to overwrite...
@@ -693,7 +756,18 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     lcd_sync();
 }
 
-void rg_display_clear_rect(int left, int top, int width, int height, uint16_t color_le)
+void rg_display_write_rect(int left, int top, int width, int height, int stride, const uint16_t *buffer, uint32_t flags)
+{
+    if (!(flags & RG_DISPLAY_WRITE_NOSYNC))
+        rg_display_sync(true);
+
+    if (!display_take_lock())
+        return;
+    display_write_rect_locked(left, top, width, height, stride, buffer, flags);
+    display_give_lock();
+}
+
+static void display_clear_rect_locked(int left, int top, int width, int height, uint16_t color_le)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
     const uint16_t color_be = color_le;
@@ -718,7 +792,17 @@ void rg_display_clear_rect(int left, int top, int width, int height, uint16_t co
     }
 }
 
-void rg_display_clear_except(int left, int top, int width, int height, uint16_t color_le)
+void rg_display_clear_rect(int left, int top, int width, int height, uint16_t color_le)
+{
+    rg_display_sync(true);
+    if (!display_take_lock())
+        return;
+    display_clear_rect_locked(left, top, width, height, color_le);
+    lcd_sync();
+    display_give_lock();
+}
+
+static void display_clear_except_locked(int left, int top, int width, int height, uint16_t color_le)
 {
     // Clear everything except the specified area
     // FIXME: Do not ignore left/top...
@@ -726,20 +810,35 @@ void rg_display_clear_except(int left, int top, int width, int height, uint16_t 
     int top_offset = -display.screen.margins.top;
     int horiz = (display.screen.real_width - width + 1) / 2;
     int vert = (display.screen.real_height - height + 1) / 2;
-    rg_display_clear_rect(left_offset, top_offset, horiz, display.screen.real_height, color_le); // Left
-    rg_display_clear_rect(left_offset + horiz + width, top_offset, horiz, display.screen.real_height,
-                          color_le); // Right
-    rg_display_clear_rect(left_offset + horiz, top_offset, display.screen.real_width - horiz * 2, vert,
-                          color_le); // Top
-    rg_display_clear_rect(left_offset + horiz, top_offset + vert + height, display.screen.real_width - horiz * 2, vert,
-                          color_le); // Bottom
+    display_clear_rect_locked(left_offset, top_offset, horiz, display.screen.real_height, color_le); // Left
+    display_clear_rect_locked(left_offset + horiz + width, top_offset, horiz, display.screen.real_height,
+                              color_le); // Right
+    display_clear_rect_locked(left_offset + horiz, top_offset, display.screen.real_width - horiz * 2, vert,
+                              color_le); // Top
+    display_clear_rect_locked(left_offset + horiz, top_offset + vert + height, display.screen.real_width - horiz * 2,
+                              vert, color_le); // Bottom
+}
+
+void rg_display_clear_except(int left, int top, int width, int height, uint16_t color_le)
+{
+    rg_display_sync(true);
+    if (!display_take_lock())
+        return;
+    display_clear_except_locked(left, top, width, height, color_le);
+    lcd_sync();
+    display_give_lock();
 }
 
 void rg_display_clear(uint16_t color_le)
 {
+    rg_display_sync(true);
+    if (!display_take_lock())
+        return;
     // We ignore margins here, we want to fill the entire screen
-    rg_display_clear_rect(-display.screen.margins.left, -display.screen.margins.top, display.screen.real_width,
-                          display.screen.real_height, color_le);
+    display_clear_rect_locked(-display.screen.margins.left, -display.screen.margins.top, display.screen.real_width,
+                              display.screen.real_height, color_le);
+    lcd_sync();
+    display_give_lock();
 }
 
 void rg_display_deinit(void)
@@ -759,6 +858,8 @@ void rg_display_deinit(void)
 void rg_display_init(void)
 {
     RG_LOGI("Initialization...\n");
+    if (!display_lock)
+        display_lock = rg_mutex_create();
     // TO DO: We probably should call the setters to ensure valid values...
     config = (rg_display_config_t){
         .backlight = rg_settings_get_number(NS_GLOBAL, SETTING_BACKLIGHT, 80),

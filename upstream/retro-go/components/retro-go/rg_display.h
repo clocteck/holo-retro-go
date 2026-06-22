@@ -108,6 +108,7 @@ void rg_display_clear(uint16_t color_le);
 bool rg_display_sync(bool block);
 void rg_display_force_redraw(void);
 void rg_display_submit(const rg_surface_t *update, uint32_t flags);
+bool rg_display_present_direct(const rg_surface_t *update);
 
 rg_display_counters_t rg_display_get_counters(void);
 const rg_display_t *rg_display_get_info(void);
