@@ -20,16 +20,14 @@
 #define RETROGO_MODULE_PROFILE "gwenesis"
 #else
 #define RETROGO_MODULE_NAME "retrogo"
-#define RETROGO_MODULE_PROFILE "retro-core"
+#define RETROGO_MODULE_PROFILE "nes"
 #endif
 #define RETROGO_MODULE_DESCRIPTION "Retro-Go dynamic module optimized for " RETROGO_PORT_PLATFORM
 #define RETROGO_LOG_PREFIX "[" RETROGO_MODULE_NAME ".so] "
 
 void retrogo_core_app_main(void);
-#if defined(RG_TARGET_HOLO_DYNMOD)
 void rg_system_deinit_for_holo(void);
-#endif
-#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+#if HOLO_RETRO_GWENESIS_ONLY
 bool gwenesis_vdp_async_reserve_vram_early(void);
 bool gwenesis_alloc_vram_fast(void);
 #endif
@@ -327,7 +325,7 @@ static void retrogo_task_entry(void *arg)
     holo_port_log(RETROGO_LOG_PREFIX "task entry");
     holo_port_log(RETROGO_LOG_PREFIX "retro-go task start");
     holo_runtime_bind_task(&inst->running, &inst->task);
-#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+#if HOLO_RETRO_GWENESIS_ONLY
     if (!gwenesis_vdp_async_reserve_vram_early())
     {
         holo_port_log(RETROGO_LOG_PREFIX "task early Genesis async VDP VRAM reserve failed");
@@ -342,9 +340,7 @@ static void retrogo_task_entry(void *arg)
     }
 #endif
     retrogo_core_app_main();
-#if defined(RG_TARGET_HOLO_DYNMOD)
     rg_system_deinit_for_holo();
-#endif
     holo_runtime_unbind_task();
     inst->running = 0;
     inst->task = NULL;
@@ -523,7 +519,7 @@ static int32_t create_instance_from_host(const module_host_api_v1 *host,
     s_host = host;
     holo_port_set_host(host);
     create_log(host, RETROGO_LOG_PREFIX "create host set");
-#if HOLO_RETRO_GWENESIS_ONLY && defined(RG_TARGET_HOLO_DYNMOD)
+#if HOLO_RETRO_GWENESIS_ONLY
     if (!gwenesis_vdp_async_reserve_vram_early())
     {
         create_log(host, RETROGO_LOG_PREFIX "early Genesis async VDP VRAM reserve failed");

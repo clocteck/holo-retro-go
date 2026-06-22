@@ -1,23 +1,25 @@
 ﻿cmake_minimum_required(VERSION 3.16)
 
 set(RG_UPSTREAM_DIR "${CMAKE_CURRENT_LIST_DIR}/upstream/retro-go")
-set(HOLO_RETRO_MODULE_PROFILE "retro-core" CACHE STRING "Module profile to build: retro-core or gwenesis")
-set_property(CACHE HOLO_RETRO_MODULE_PROFILE PROPERTY STRINGS retro-core gwenesis)
+set(HOLO_RETRO_MODULE_PROFILE "nes" CACHE STRING "Module profile to build: nes or gwenesis")
+set_property(CACHE HOLO_RETRO_MODULE_PROFILE PROPERTY STRINGS nes gwenesis)
 
 if(HOLO_RETRO_MODULE_PROFILE STREQUAL "gwenesis")
+    set(HOLO_RETRO_MODULE_PROFILE_CANONICAL "gwenesis")
     set(HOLO_RETRO_MODULE_NAME "gwenesis" CACHE INTERNAL "Holo Retro-Go module output name")
     set(HOLO_RETRO_GWENESIS_ONLY 1 CACHE INTERNAL "Build only the gwenesis core")
-elseif(HOLO_RETRO_MODULE_PROFILE STREQUAL "retro-core")
+elseif(HOLO_RETRO_MODULE_PROFILE STREQUAL "nes")
+    set(HOLO_RETRO_MODULE_PROFILE_CANONICAL "nes")
     set(HOLO_RETRO_MODULE_NAME "retrogo" CACHE INTERNAL "Holo Retro-Go module output name")
-    set(HOLO_RETRO_GWENESIS_ONLY 0 CACHE INTERNAL "Build only the gwenesis core")
+    set(HOLO_RETRO_GWENESIS_ONLY 0 CACHE INTERNAL "Build the Holo classic core module")
 else()
     message(FATAL_ERROR "Unsupported HOLO_RETRO_MODULE_PROFILE='${HOLO_RETRO_MODULE_PROFILE}'")
 endif()
 
-message(STATUS "Holo Retro module profile: ${HOLO_RETRO_MODULE_PROFILE} -> ${HOLO_RETRO_MODULE_NAME}")
+message(STATUS "Holo Retro module profile: ${HOLO_RETRO_MODULE_PROFILE} (${HOLO_RETRO_MODULE_PROFILE_CANONICAL}) -> ${HOLO_RETRO_MODULE_NAME}")
 
 file(WRITE "${CMAKE_BINARY_DIR}/holo_retro_profile.cmake"
-    "set(HOLO_RETRO_MAIN_PROFILE \"${HOLO_RETRO_MODULE_PROFILE}\")\n"
+    "set(HOLO_RETRO_MAIN_PROFILE \"${HOLO_RETRO_MODULE_PROFILE_CANONICAL}\")\n"
     "set(HOLO_RETRO_MAIN_MODULE_NAME \"${HOLO_RETRO_MODULE_NAME}\")\n"
     "set(HOLO_RETRO_MAIN_GWENESIS_ONLY ${HOLO_RETRO_GWENESIS_ONLY})\n"
 )

@@ -2,15 +2,10 @@
 
 The port is built from upstream Retro-Go source, not a rewritten emulator core.
 
-Default compiled cores:
+Holo dynmod compiled modules:
 
-- NES: `nofrendo`
-- GB/GBC: `gnuboy`
-- SMS/GG/COL: `smsplus`
-- PCE: `pce-go`
-- GW: `gw-emulator`
-- Lynx: `handy`
-- SNES: `snes9x`
+- Classic core module (`retrogo.so`): NES `nofrendo`, GB/GBC `gnuboy`, SMS/GG/COL `smsplus`, PCE `pce-go`, GW `gw-emulator`, Lynx `handy`, SNES `snes9x`
+- MD module (`gwenesis.so`): `gwenesis`
 
 Official Retro-Go launcher sources are included in the module build:
 
@@ -21,7 +16,7 @@ Official Retro-Go launcher sources are included in the module build:
 - `gui.c`
 - `images.c`
 
-For `RG_TARGET_HOLO_DYNMOD`, `retro-core/main/main_launcher.c` enters the official launcher main loop and enables `browser_init()`.
+For the Holo dynmod build, `retro-core/main/main_launcher.c` enters the official launcher main loop. The `retrogo.so` module registers the classic Retro-Go core package, while `gwenesis.so` registers only MD.
 
 The first ABI workaround is a Lua-provided catalog. The host scans `/sd/roms`, serializes a flat list, and passes it to `retrogo.set_catalog(...)`. Retro-Go launcher/core code still calls `rg_storage_scandir()`, but for `RG_TARGET_HOLO_DYNMOD` that function reads the injected catalog.
 

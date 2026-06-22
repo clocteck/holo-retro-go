@@ -1,17 +1,17 @@
 local APP = {
-  VERSION = "2026-06-15-minimal-selector-v2",
+  VERSION = "2026-06-19-holo-branches-v2",
   ROM_ROOT = "/sd/roms",
   POLL_DELAY_MS = 16,
   AXIS_THRESHOLD = 0.60,
   MODULES = {
     {
-      id = "retro-core",
+      id = "nes",
       title = "Retro Core",
-      detail = "Holocubic optimized",
+      detail = "Holocubic classic cores",
       path = "/sd/modules/retrogo.so",
     },
     {
-      id = "gwenesis",
+      id = "md",
       title = "Mega Drive",
       detail = "Holocubic optimized",
       path = "/sd/modules/gwenesis.so",

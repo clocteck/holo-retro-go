@@ -20,7 +20,7 @@ if(EXISTS "${HOLO_RETRO_PROFILE_FILE}")
 endif()
 
 if(NOT DEFINED HOLO_RETRO_MAIN_GWENESIS_ONLY)
-    set(HOLO_RETRO_MAIN_PROFILE "retro-core")
+    set(HOLO_RETRO_MAIN_PROFILE "nes")
     set(HOLO_RETRO_MAIN_MODULE_NAME "retrogo")
     set(HOLO_RETRO_MAIN_GWENESIS_ONLY 0)
 endif()
@@ -47,6 +47,41 @@ else()
 endif()
 
 message(STATUS "main component profile: ${HOLO_RETRO_MAIN_PROFILE}; gwenesis-only: ${HOLO_RETRO_MAIN_GWENESIS_ONLY}")
+
+set(MAIN_COMPONENT_INCLUDE_DIRS
+    "."
+    "${MODULE_ABI_DIR}"
+    "${RG_UPSTREAM_DIR}/launcher/main"
+    "${RG_UPSTREAM_DIR}/retro-core/main"
+    "${RG_UPSTREAM_DIR}/components/retro-go"
+)
+
+if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
+    list(APPEND MAIN_COMPONENT_INCLUDE_DIRS
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/bus"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/M68K"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/Z80"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/io"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/savestate"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/sound"
+        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/vdp"
+    )
+else()
+    list(APPEND MAIN_COMPONENT_INCLUDE_DIRS
+        "${RG_UPSTREAM_DIR}/retro-core/components/gnuboy"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/cpus"
+        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/gw_sys"
+        "${RG_UPSTREAM_DIR}/retro-core/components/handy"
+        "${RG_UPSTREAM_DIR}/retro-core/components/nofrendo"
+        "${RG_UPSTREAM_DIR}/retro-core/components/pce-go"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/cpu"
+        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/sound"
+        "${RG_UPSTREAM_DIR}/retro-core/components/snes9x"
+    )
+endif()
 
 set(LAUNCHER_MAIN_SRCS
     "${RG_UPSTREAM_DIR}/launcher/main/applications.c"
@@ -88,30 +123,7 @@ idf_component_register(
         ${RETRO_CORE_MAIN_SRCS}
         ${LAUNCHER_MAIN_SRCS}
     INCLUDE_DIRS
-        "."
-        "${MODULE_ABI_DIR}"
-        "${RG_UPSTREAM_DIR}/launcher/main"
-        "${RG_UPSTREAM_DIR}/retro-core/main"
-        "${RG_UPSTREAM_DIR}/components/retro-go"
-        "${RG_UPSTREAM_DIR}/retro-core/components/gnuboy"
-        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src"
-        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/cpus"
-        "${RG_UPSTREAM_DIR}/retro-core/components/gw-emulator/src/gw_sys"
-        "${RG_UPSTREAM_DIR}/retro-core/components/handy"
-        "${RG_UPSTREAM_DIR}/retro-core/components/nofrendo"
-        "${RG_UPSTREAM_DIR}/retro-core/components/pce-go"
-        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus"
-        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/cpu"
-        "${RG_UPSTREAM_DIR}/retro-core/components/smsplus/sound"
-        "${RG_UPSTREAM_DIR}/retro-core/components/snes9x"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/bus"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/M68K"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/cpus/Z80"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/io"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/savestate"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/sound"
-        "${RG_UPSTREAM_DIR}/gwenesis/components/gwenesis/src/vdp"
+        ${MAIN_COMPONENT_INCLUDE_DIRS}
     REQUIRES
         ${MAIN_COMPONENT_REQUIRES}
 )
