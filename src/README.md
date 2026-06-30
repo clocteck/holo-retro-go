@@ -11,7 +11,7 @@
 - 产物：`src/build/retrogo.so`
 - 仓库内设备运行包：`package/`
 - 当前运行包模块快照：`package/modules/retrogo.so`
-- 模块加载路径：`/sd/modules/retrogo.so`
+- 模块加载路径：当前 app 目录下的 `modules`，例如 `/sd/apps/retro-go/modules/retrogo.so`
 - ROM 根目录：当前 app 目录下的 `roms`，例如 `/sd/apps/retro-go/roms`
 - ROM 上传页面：当前 app 的 WebUI 路由，例如 `/retro-go/`
 

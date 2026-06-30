@@ -28,10 +28,12 @@ end
 
 local APP_DIR = resolve_app_dir()
 local ROUTE_BASE = normalize_route_base(app and app.route_base and app.route_base() or "/retro-go")
+local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-06-19-holo-branches-v2",
+  VERSION = "2026-06-30-route-slots-v1",
   APP_DIR = APP_DIR,
+  MODULE_DIR = MODULE_DIR,
   ROM_ROOT = APP_DIR .. "/roms",
   ROUTE_BASE = ROUTE_BASE,
   API_PREFIX = ROUTE_BASE .. "/api",
@@ -46,13 +48,13 @@ local APP = {
       id = "nes",
       title = "Retro Core",
       detail = "Holocubic classic cores",
-      path = "/sd/modules/retrogo.so",
+      path = MODULE_DIR .. "/retrogo.so",
     },
     {
       id = "md",
       title = "Mega Drive",
       detail = "Holocubic optimized",
-      path = "/sd/modules/gwenesis.so",
+      path = MODULE_DIR .. "/gwenesis.so",
     },
   },
 }
@@ -787,10 +789,6 @@ function APP.route_index()
   return text_response("200 OK", "text/html; charset=utf-8", APP.render_upload_html())
 end
 
-function APP.route_favicon()
-  return text_response("204 No Content", "image/x-icon", "")
-end
-
 function APP.api_info()
   ensure_dir(APP.ROM_ROOT)
   return json_response("200 OK", {
@@ -904,7 +902,7 @@ local function start_rom_web()
   local put = httpd.PUT or "PUT"
   APP.register_route(get, APP.ROUTE_BASE, APP.route_redirect)
   APP.register_route(get, APP.ROUTE_BASE .. "/", APP.route_index)
-  APP.register_route(get, APP.ROUTE_BASE .. "/favicon.ico", APP.route_favicon)
+  -- Some host builds expose only five dynamic handler slots to Lua apps.
   APP.register_route(get, APP.API_PREFIX .. "/info", APP.api_info)
   APP.register_route(get, APP.API_PREFIX .. "/list", APP.api_list)
   APP.register_route(put, APP.API_PREFIX .. "/upload", APP.api_upload)
