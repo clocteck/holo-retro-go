@@ -50,7 +50,6 @@ static void lcd_init(void)
 static void lcd_deinit(void)
 {
     lcd_sync();
-    holo_display_release();
     for (uint8_t i = 0; i < HOLO_LCD_DMA_BUFFER_COUNT; ++i) {
         if (lcd_buffers[i]) {
             holo_dma_free(lcd_buffers[i]);
@@ -59,6 +58,9 @@ static void lcd_deinit(void)
     }
     lcd_buffer_count = 0;
     lcd_buffer_index = 0;
+    if (!holo_display_release()) {
+        holo_port_log("[retrogo.so] display release failed during lcd_deinit");
+    }
 }
 
 static void lcd_set_rotation(int rotation)

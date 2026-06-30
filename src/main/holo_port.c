@@ -16,6 +16,7 @@ static holo_launch_t s_launch = {
 static volatile int s_switch_requested;
 static volatile int s_stop_requested;
 static void *s_display_surface;
+static int s_display_write_active;
 static void *s_audio_stream;
 static volatile uint8_t *s_runtime_running;
 static void **s_runtime_task;
@@ -226,15 +227,44 @@ int holo_display_acquire(uint16_t width, uint16_t height)
         .flags = 0,
     };
 
-    return s_host->display.acquire("retrogo", &desc, &s_display_surface) == MODULE_OK && s_display_surface;
-}
-
-void holo_display_release(void)
-{
-    if (s_display_surface && s_host && s_host->display.release) {
-        s_host->display.release(s_display_surface);
+    if (s_host->display.acquire("retrogo", &desc, &s_display_surface) == MODULE_OK && s_display_surface) {
+        s_display_write_active = 0;
+        return 1;
     }
     s_display_surface = NULL;
+    s_display_write_active = 0;
+    return 0;
+}
+
+int holo_display_release(void)
+{
+    int32_t ret;
+
+    if (!s_display_surface) {
+        s_display_write_active = 0;
+        return 1;
+    }
+    if (!s_host || !s_host->display.release) {
+        holo_port_log("[retrogo.so] display release unavailable");
+        return 0;
+    }
+
+    if (s_display_write_active && s_host->display.endWrite) {
+        ret = s_host->display.endWrite(s_display_surface);
+        if (ret == MODULE_OK) {
+            s_display_write_active = 0;
+        }
+    }
+
+    ret = s_host->display.release(s_display_surface);
+    if (ret == MODULE_OK) {
+        s_display_surface = NULL;
+        s_display_write_active = 0;
+        return 1;
+    }
+
+    holo_port_log("[retrogo.so] display release failed; keeping surface for retry");
+    return 0;
 }
 
 int holo_display_start_write(void)
@@ -246,7 +276,11 @@ int holo_display_start_write(void)
         return 0;
     }
 
-    return s_host->display.startWrite(s_display_surface) == MODULE_OK;
+    if (s_host->display.startWrite(s_display_surface) == MODULE_OK) {
+        s_display_write_active = 1;
+        return 1;
+    }
+    return 0;
 }
 
 int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t height, const uint16_t *pixels)
@@ -303,7 +337,14 @@ int holo_display_end_write(void)
         return 0;
     }
 
-    return s_host->display.endWrite(s_display_surface) == MODULE_OK;
+    if (!s_display_write_active) {
+        return 1;
+    }
+    if (s_host->display.endWrite(s_display_surface) == MODULE_OK) {
+        s_display_write_active = 0;
+        return 1;
+    }
+    return 0;
 }
 
 void *holo_dma_alloc(size_t size)

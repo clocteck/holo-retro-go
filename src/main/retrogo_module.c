@@ -346,8 +346,14 @@ static void retrogo_task_entry(void *arg)
     holo_runtime_unbind_task();
     inst->running = 0;
     inst->task = NULL;
-    holo_display_release();
-    holo_port_log(RETROGO_LOG_PREFIX "display release");
+    if (holo_display_release())
+    {
+        holo_port_log(RETROGO_LOG_PREFIX "display release");
+    }
+    else
+    {
+        holo_port_log(RETROGO_LOG_PREFIX "display release failed");
+    }
     holo_port_log(RETROGO_LOG_PREFIX "retro-go task stop");
     if (inst->host && inst->host->task.remove)
     {
@@ -609,8 +615,7 @@ RETROGO_MODULE_EXPORT void module_destroy_v1(void *instance)
     holo_port_log(RETROGO_LOG_PREFIX "destroy");
     if (inst->running)
     {
-        holo_port_log(RETROGO_LOG_PREFIX "destroy deferred; task still running, force release display");
-        holo_display_release();
+        holo_port_log(RETROGO_LOG_PREFIX "destroy deferred; task still running");
         return;
     }
     if (inst != &s_static_instance && host->heap.free)

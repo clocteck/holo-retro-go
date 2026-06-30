@@ -802,12 +802,9 @@ static INT32 mem;        /* one sample delay memory */
 static INT32 out_fm[8];  /* outputs of working channels */
 static UINT32 bitmask;   /* working channels output bitmasking (DAC quantization) */
 static bool ym2612_lite_mode;
+static bool ym2612_ssg_eg_active;
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 4
-#else
 #define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 2
-#endif
 
 /* mirror of all OPN registers */
 #define OPNREGS_SIZE 512
@@ -884,6 +881,24 @@ void ym2612_set_divisor(int divisor)
 {
   if (divisor > 0)
     ym2612.divisor = divisor;
+}
+
+static bool ym2612_has_ssg_eg_active(void)
+{
+  for (int c = 0; c < 6; ++c)
+  {
+    for (int s = 0; s < 4; ++s)
+    {
+      if (ym2612.CH[c].SLOT[s].ssg & 0x08)
+        return true;
+    }
+  }
+  return false;
+}
+
+static inline void ym2612_refresh_ssg_eg_active(void)
+{
+  ym2612_ssg_eg_active = ym2612_has_ssg_eg_active();
 }
 
 INLINE void FM_KEYON(FM_CH *CH, int s)
@@ -1813,7 +1828,8 @@ INLINE void chan_advance_phase(FM_CH *CH, int num)
 
 static inline void GWENESIS_HOT YM2612AdvanceLiteSkippedSample(int num_channels)
 {
-  update_ssg_eg_channels(&ym2612.CH[0]);
+  if (ym2612_ssg_eg_active)
+    update_ssg_eg_channels(&ym2612.CH[0]);
   chan_advance_phase(&ym2612.CH[0], num_channels);
 
   advance_lfo();
@@ -1959,7 +1975,16 @@ INLINE void OPNWriteReg(int r, int v)
     break;
 
   case 0x90: /* SSG-EG */
+  {
+    const UINT8 old_ssg = SLOT->ssg;
     SLOT->ssg = v & 0x0f;
+    if ((old_ssg ^ SLOT->ssg) & 0x08)
+    {
+      if (SLOT->ssg & 0x08)
+        ym2612_ssg_eg_active = true;
+      else
+        ym2612_refresh_ssg_eg_active();
+    }
 
     /* recalculate EG output */
     if (SLOT->state > EG_REL)
@@ -2045,6 +2070,7 @@ INLINE void OPNWriteReg(int r, int v)
     */
 
     break;
+  }
 
   case 0xa0:
     switch (OPN_SLOT(r))
@@ -2127,6 +2153,7 @@ static void reset_channels(FM_CH *CH, int num)
       CH[c].SLOT[s].Incr = -1;
       CH[c].SLOT[s].key = 0;
       CH[c].SLOT[s].phase = 0;
+      CH[c].SLOT[s].ssg = 0;
       CH[c].SLOT[s].ssgn = 0;
       CH[c].SLOT[s].state = EG_OFF;
       CH[c].SLOT[s].volume = MAX_ATT_INDEX;
@@ -2262,6 +2289,7 @@ void YM2612Init(void)
 
   memset(&ym2612, 0, sizeof(YM2612));
   memset(OPNREGS, 0, OPNREGS_SIZE);
+  ym2612_ssg_eg_active = false;
   init_tables();
   ym2612_tables_initialized = 1;
 }
@@ -2286,6 +2314,7 @@ void YM2612ResetChip(void)
   ym2612.OPN.ST.TBC = 0;
 
   ym2612.OPN.SL3.key_csm = 0;
+  ym2612_ssg_eg_active = false;
 
   ym2612.dacen = 0;
   ym2612.dacout = 0;
@@ -2353,7 +2382,8 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
     out_fm[5] = 0;
 
     /* update SSG-EG output */
-    update_ssg_eg_channels(&ym2612.CH[0]);
+    if (ym2612_ssg_eg_active)
+      update_ssg_eg_channels(&ym2612.CH[0]);
 
     /* calculate FM */
     if (!ym2612.dacen)
@@ -2656,6 +2686,7 @@ void YM2612LoadRegs(uint8_t *regs)
   setup_connection(&ym2612.CH[3], 3);
   setup_connection(&ym2612.CH[4], 4);
   setup_connection(&ym2612.CH[5], 5);
+  ym2612_refresh_ssg_eg_active();
 }
 
 #if 0
@@ -2740,4 +2771,5 @@ void gwenesis_ym2612_load_state()
   saveGwenesisStateGetBuffer(state, "out_fm", out_fm, sizeof(out_fm));
   bitmask = saveGwenesisStateGet(state, "bitmask");
   saveGwenesisStateGetBuffer(state, "OPNREGS", OPNREGS, OPNREGS_SIZE);
+  ym2612_refresh_ssg_eg_active();
 }

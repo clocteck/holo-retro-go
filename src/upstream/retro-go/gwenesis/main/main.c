@@ -4221,12 +4221,12 @@ void app_main(void)
         if (!ym_async_frame)
         {
             gwenesis_ym_async_capture_active = false;
-            ym2612_set_lite_mode(false);
+            ym2612_set_lite_mode(yfm_run_enabled && gwenesis_audio_mode == GWENESIS_AUDIO_MODE_FAST);
         }
 #else
         const bool ym_async_frame = false;
         if (!ym_async_frame)
-            ym2612_set_lite_mode(false);
+            ym2612_set_lite_mode(yfm_run_enabled && gwenesis_audio_mode == GWENESIS_AUDIO_MODE_FAST);
 #endif
 
         int lines_per_frame = REG1_PAL ? LINES_PER_FRAME_PAL : LINES_PER_FRAME_NTSC;
