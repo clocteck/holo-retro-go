@@ -462,7 +462,11 @@ static void display_task(void *arg)
     {
         // Received a shutdown request!
         if (msg.type == RG_TASK_MSG_STOP)
+        {
+            rg_task_receive(&msg);
+            lcd_sync();
             break;
+        }
 
         if (display.changed)
         {
@@ -747,14 +751,20 @@ void rg_display_clear(uint16_t color_le)
 void rg_display_deinit(void)
 {
     if (display_task_queue)
+    {
         rg_task_send(display_task_queue, &(rg_task_msg_t){.type = RG_TASK_MSG_STOP});
+        for (int retry = 0; rg_task_find("rg_display") && retry < 250; ++retry)
+            rg_task_delay(1);
+        if (rg_task_find("rg_display"))
+            RG_LOGW("Display task still running during deinit.");
+        display_task_queue = NULL;
+    }
     // lcd_set_backlight(0);
     lcd_deinit();
     free(config.border_file);
     config.border_file = NULL;
     rg_surface_free(border);
     border = NULL;
-    display_task_queue = NULL;
     RG_LOGI("Display terminated.\n");
 }
 

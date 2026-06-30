@@ -600,11 +600,7 @@ void heap_caps_malloc_extmem_enable(size_t limit)
 
 size_t heap_caps_get_largest_free_block(uint32_t caps)
 {
-    const module_host_api_v1 *host = holo_port_host();
-    if (host && host->heap.largest_free_block) {
-        uint32_t module_caps = (caps & MALLOC_CAP_INTERNAL) ? MODULE_HEAP_INTERNAL : MODULE_HEAP_DEFAULT;
-        return host->heap.largest_free_block(module_caps);
-    }
+    (void)caps;
     return 0;
 }
 
@@ -618,9 +614,6 @@ void heap_caps_get_info(multi_heap_info_t *info, uint32_t caps)
     if (host && host->heap.free_size) {
         uint32_t module_caps = (caps & MALLOC_CAP_INTERNAL) ? MODULE_HEAP_INTERNAL : MODULE_HEAP_DEFAULT;
         info->total_free_bytes = host->heap.free_size(module_caps);
-        if (host->heap.largest_free_block) {
-            info->largest_free_block = host->heap.largest_free_block(module_caps);
-        }
     }
 }
 

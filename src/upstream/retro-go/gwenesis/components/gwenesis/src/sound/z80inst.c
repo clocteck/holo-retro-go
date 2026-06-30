@@ -20,6 +20,11 @@ __license__ = "GPLv3"
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#include "rg_utils.h"
+#endif
 #include "Z80.h"
 #include "z80inst.h"
 #include "m68k.h"
@@ -50,9 +55,45 @@ unsigned char *Z80_RAM;
 static unsigned char *Z80_BANK_ROM_BASE;
 static unsigned int Z80_BANK_BASE;
 
-static Z80 cpu;
+static Z80 z80_cpu_fallback;
+static Z80 *z80_cpu_ptr = &z80_cpu_fallback;
+#define cpu (*z80_cpu_ptr)
 
 void ResetZ80(register Z80 *R);
+
+static void z80_init_fast_ram(void)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (z80_cpu_ptr != &z80_cpu_fallback)
+        return;
+
+    Z80 *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+    if (ptr)
+    {
+        z80_cpu_ptr = ptr;
+        printf("[info] Genesis Z80 context: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
+               z80_cpu_ptr, (unsigned)sizeof(*z80_cpu_ptr),
+               PTR_IN_SPIRAM(z80_cpu_ptr) ? "SPIRAM" : "internal");
+    }
+    else
+    {
+        printf("[warn] Genesis Z80 context: MEM_FAST allocation failed size=%u, using static fallback\n",
+               (unsigned)sizeof(*z80_cpu_ptr));
+    }
+#endif
+}
+
+void z80_deinit_fast_ram(void)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (z80_cpu_ptr != &z80_cpu_fallback)
+    {
+        free(z80_cpu_ptr);
+        z80_cpu_ptr = &z80_cpu_fallback;
+    }
+    memset(&z80_cpu_fallback, 0, sizeof(z80_cpu_fallback));
+#endif
+}
 
 #define Z80_INST_DISABLE_LOGGING 1
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -106,6 +147,7 @@ void z80_refresh_banked_rom_fast_path(void)
 
 
 void z80_start() {
+    z80_init_fast_ram();
     cpu.IPeriod = 1;
     cpu.ICount = 0;
     cpu.Trace = 0;
