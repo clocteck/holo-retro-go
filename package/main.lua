@@ -45,7 +45,7 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-06-30-btc-style-web-v8",
+  VERSION = "2026-06-30-async-selector-v15",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = APP_DIR .. "/roms",
@@ -57,6 +57,10 @@ local APP = {
   AXIS_THRESHOLD = 0.60,
   routes = {},
   web_ready = false,
+  rom_list_cache = {},
+  rom_list_cache_ready = false,
+  AUTO_SELECT_MODULE = false,
+  DEFAULT_MODULE_ID = "nes",
   MODULES = {
     {
       id = "nes",
@@ -76,6 +80,8 @@ local APP = {
 local function log(...)
   print("[retrogo_app]", ...)
 end
+
+log("boot", APP.VERSION, APP.ROUTE_BASE, APP.APP_DIR)
 
 local function has_bit(mask, bit)
   if type(mask) ~= "number" or type(bit) ~= "number" or bit == 0 then
@@ -590,31 +596,15 @@ end
 
 local function list_rom_files()
   local items = {}
-  if not file or not file.listdir then
+  if not APP.rom_list_cache_ready then
     return items
   end
-  ensure_dir(APP.ROM_ROOT)
-  local list = file.listdir(APP.ROM_ROOT) or {}
-  for _, item in ipairs(list) do
-    local name = type(item) == "table" and text_or(item.name or item[1], "") or tostring(item)
-    local path = type(item) == "table" and text_or(item.path, "") or ""
-    if path == "" then
-      path = APP.ROM_ROOT .. "/" .. name
-    end
-    local st = type(item) == "table" and item or nil
-    local is_dir = stat_is_dir(st)
-    if not is_dir then
-      local fs = file.stat and file.stat(path) or nil
-      is_dir = stat_is_dir(fs)
-      st = fs or st
-    end
-    if name ~= "" and not is_dir then
-      items[#items + 1] = {
-        name = name,
-        path = path,
-        size = st and (st.size or st.file_size) or 0,
-      }
-    end
+  for _, item in ipairs(APP.rom_list_cache or {}) do
+    items[#items + 1] = {
+      name = item.name,
+      path = item.path,
+      size = item.size or 0,
+    }
   end
   table.sort(items, function(a, b)
     return text_or(a.name, ""):lower() < text_or(b.name, ""):lower()
@@ -774,7 +764,7 @@ function setStatus(text,kind){statusEl.textContent=text;statusEl.className="stat
 function setProgress(done,total){const pct=total>0?Math.max(0,Math.min(100,Math.round(done*100/total))):0;bar.style.width=pct+"%"}
 async function parseJson(res){const text=await res.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){throw new Error(text||res.statusText)}if(!res.ok||data.ok===false)throw new Error(data.error||res.statusText);return data}
 async function loadInfo(){const data=await parseJson(await fetch(api("/info"),{cache:"no-store"}));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root}
-async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent="No ROMs yet";return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
+async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent=data.pending?"Waiting for module...":"No ROMs yet";if(data.pending)setTimeout(()=>loadList().catch(()=>{}),1000);return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
 function selectedFiles(files){return Array.from(files||input.files||[]).filter(file=>file&&file.name)}
 async function uploadOne(file,index,totalFiles){if(file.size>serverInfo.max_file_size)throw new Error(file.name+" is too large");let offset=0;const chunkSize=serverInfo.chunk_size||65536;const safeName=file.name.replace(/[\\/]/g,"_");const path=(serverInfo.rom_root||"__ROM_ROOT__")+"/"+safeName;while(offset<file.size||file.size===0){const end=file.size===0?0:Math.min(offset+chunkSize,file.size);setStatus(`Uploading ${index}/${totalFiles}: ${file.name}`,"");const res=await fetch(api("/upload")+"?path="+encodeURIComponent(path)+"&offset="+offset+"&total="+file.size,{method:"PUT",body:file.size===0?new Blob([]):file.slice(offset,end)});const data=await parseJson(res);const next=data.next_offset||end;if(file.size>0&&next<=offset)throw new Error("Upload did not advance");offset=next;setProgress(offset,file.size);if(file.size===0||data.done)break}}
 async function uploadFiles(files){files=selectedFiles(files);if(!files.length){setStatus("Select files first","err");return}uploadBtn.disabled=true;setProgress(0,1);try{for(let i=0;i<files.length;i++){await uploadOne(files[i],i+1,files.length)}setStatus("Upload complete","ok");setProgress(1,1);input.value="";await loadList()}catch(err){setStatus(err.message||"Upload failed","err")}finally{uploadBtn.disabled=false}}
@@ -821,7 +811,6 @@ function APP.route_redirect(req)
 end
 
 function APP.route_index(req)
-  ensure_dir(APP.ROM_ROOT)
   return text_response("200 OK", "text/html; charset=utf-8", APP.render_upload_html(request_route_base(req)))
 end
 
@@ -830,7 +819,6 @@ function APP.route_favicon()
 end
 
 function APP.api_info()
-  ensure_dir(APP.ROM_ROOT)
   return json_response("200 OK", {
     ok = true,
     version = APP.VERSION,
@@ -846,6 +834,7 @@ function APP.api_list()
   return json_response("200 OK", {
     ok = true,
     rom_root = APP.ROM_ROOT,
+    pending = not APP.rom_list_cache_ready,
     items = list_rom_files(),
   })
 end
@@ -1276,7 +1265,7 @@ local function choose_module()
     bind(key.HOME, cancel)
   end
 
-  local prev = {}
+  local prev = selector_gamepad_nav(read_gamepad_state())
   while not chosen and not canceled do
     if app and app.exiting and app.exiting() then
       canceled = true
@@ -1313,9 +1302,196 @@ local function choose_module()
   return APP.MODULES[index]
 end
 
-start_rom_web()
+local function choose_module_async(on_selected)
+  if not tmr or not tmr.create then
+    log("tmr unavailable, selector uses blocking fallback")
+    return false
+  end
 
-local selected_module = choose_module()
+  local index = 1
+  local finished = false
+  local ui = selector_make_ui()
+  local bt_phase = nil
+  local key_codes = {}
+  local selector_timer = nil
+  local prev = selector_gamepad_nav(read_gamepad_state())
+
+  local function stop_selector_timer()
+    if not selector_timer then
+      return
+    end
+    pcall(function()
+      selector_timer:stop()
+    end)
+    pcall(function()
+      selector_timer:unregister()
+    end)
+    selector_timer = nil
+  end
+
+  local function finish(selected, exit_app)
+    if finished then
+      return
+    end
+    finished = true
+    stop_selector_timer()
+    local cleanup_ui = ui
+    ui = nil
+    selector_cleanup(cleanup_ui, key_codes)
+    if type(on_selected) == "function" then
+      on_selected(selected)
+    end
+    if exit_app and app and app.exit then
+      pcall(function() app.exit() end)
+    end
+  end
+
+  local function move(delta)
+    if finished then
+      return
+    end
+    index = index + delta
+    if index < 1 then index = #APP.MODULES end
+    if index > #APP.MODULES then index = 1 end
+    selector_render(ui, index)
+    log("selector", APP.MODULES[index].id, APP.MODULES[index].path)
+  end
+
+  local function confirm()
+    if finished then
+      return
+    end
+    selector_render(ui, index, "LOADING " .. APP.MODULES[index].title)
+    finish(APP.MODULES[index], false)
+  end
+
+  local function cancel(exit_app)
+    if finished then
+      return
+    end
+    selector_render(ui, index, "EXIT")
+    finish(nil, exit_app)
+  end
+
+  selector_render(ui, index)
+  selector_update_gamepad_status(ui, read_gamepad_state())
+  log("selector ready", APP.MODULES[index].id, APP.MODULES[index].path)
+
+  if gamepad and gamepad.start then
+    pcall(function()
+      if gamepad.off then gamepad.off() end
+      gamepad.start({ clear_bonds = false, debug = false })
+    end)
+  end
+
+  if gamepad and gamepad.on then
+    local function set_bt_phase(phase)
+      bt_phase = phase
+      selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
+    end
+    pcall(function()
+      if gamepad.EVT_CONNECTING then
+        gamepad.on(gamepad.EVT_CONNECTING, function()
+          set_bt_phase("connecting")
+        end)
+      end
+      if gamepad.EVT_CONNECT_FAILED then
+        gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
+          set_bt_phase("waiting")
+        end)
+      end
+      if gamepad.EVT_CONNECTED then
+        gamepad.on(gamepad.EVT_CONNECTED, function()
+          set_bt_phase("connected")
+        end)
+      end
+      if gamepad.EVT_DISCONNECTED then
+        gamepad.on(gamepad.EVT_DISCONNECTED, function()
+          set_bt_phase("waiting")
+        end)
+      end
+    end)
+  end
+
+  if key and key.on then
+    local function bind(code, fn)
+      if not code then return end
+      key_codes[#key_codes + 1] = code
+      pcall(function()
+        key.on(code, function(evt_type)
+          if key_event_is_press(evt_type) then
+            fn()
+          end
+        end)
+      end)
+    end
+    bind(key.LEFT, function() move(-1) end)
+    bind(key.RIGHT, function() move(1) end)
+    bind(key.UP, confirm)
+    bind(key.DOWN, confirm)
+    bind(key.HOME, function() cancel(true) end)
+  end
+
+  selector_timer = tmr.create()
+  local ok, err = pcall(function()
+    selector_timer:alarm(30, tmr.ALARM_AUTO or 1, function()
+      if finished then
+        return
+      end
+      if app and app.exiting and app.exiting() then
+        cancel(false)
+        return
+      end
+      local state = read_gamepad_state()
+      selector_update_gamepad_status(ui, state, bt_phase)
+      local nav = selector_gamepad_nav(state)
+      if edge(nav, prev, "left") then
+        move(-1)
+      elseif edge(nav, prev, "right") then
+        move(1)
+      elseif edge(nav, prev, "confirm") then
+        confirm()
+      elseif edge(nav, prev, "home") then
+        cancel(true)
+      end
+      prev = nav
+    end)
+  end)
+  if not ok then
+    log("selector timer failed", tostring(err))
+    selector_cleanup(ui, key_codes)
+    ui = nil
+    selector_timer = nil
+    return false
+  end
+
+  return true
+end
+
+local function module_by_id(id)
+  if type(id) ~= "string" or id == "" then
+    return nil
+  end
+  for _, mod in ipairs(APP.MODULES) do
+    if mod.id == id then
+      return mod
+    end
+  end
+  return nil
+end
+
+local function select_module()
+  if APP.AUTO_SELECT_MODULE then
+    local selected = module_by_id(APP.DEFAULT_MODULE_ID) or APP.MODULES[1]
+    if selected then
+      log("auto selected", selected.id, selected.path)
+    end
+    return selected
+  end
+  return choose_module()
+end
+
+local function start_selected_module(selected_module)
 if not selected_module then
   log("module selection canceled")
   APP.stop_web("module selection canceled")
@@ -1455,6 +1631,13 @@ end
 
 local function add_row(rows, kind, path, size, mtime)
   rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
+  if kind == "F" and APP.rom_list_cache then
+    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+      name = basename(path),
+      path = path,
+      size = tonumber(size) or 0,
+    }
+  end
 end
 
 local function item_path(parent, item)
@@ -1513,8 +1696,11 @@ end
 
 local function build_catalog_blob()
   ensure_dir(APP.ROM_ROOT)
+  APP.rom_list_cache = {}
+  APP.rom_list_cache_ready = false
   local rows = {}
   scan(APP.ROM_ROOT, rows, {})
+  APP.rom_list_cache_ready = true
   return table.concat(rows), #rows
 end
 
@@ -1597,33 +1783,41 @@ end
 local current_mask = 0
 local exit_to_home_requested = false
 local runtime_timer = nil
+local exit_timer = nil
 local pending_restart = nil
 local runtime_tick_busy = false
 
-local function request_exit_to_home(reason)
-  if exit_to_home_requested then
+local function stop_timer(timer_obj)
+  if not timer_obj then
     return
   end
-  exit_to_home_requested = true
-  pending_restart = nil
-  log("exit to home", reason or "")
+  pcall(function()
+    timer_obj:stop()
+  end)
+  pcall(function()
+    timer_obj:unregister()
+  end)
+end
+
+local function stop_runtime_timer()
   if runtime_timer then
-    pcall(function()
-      runtime_timer:stop()
-    end)
-    pcall(function()
-      runtime_timer:unregister()
-    end)
+    stop_timer(runtime_timer)
     runtime_timer = nil
   end
-  APP.stop_web("exit")
-  sync_input_mask(0)
-  current_mask = 0
-  local stop_ok, stop_result, stop_err = pcall(function()
-    return retrogo.stop()
-  end)
-  log("retrogo.stop", tostring(stop_ok), tostring(stop_result), tostring(stop_err))
-  log("retrogo stopped", tostring(wait_retrogo_stopped(1500)))
+end
+
+local function finish_exit_to_home()
+  if exit_timer then
+    local timer = exit_timer
+    exit_timer = nil
+    stop_timer(timer)
+  end
+  stop_runtime_timer()
+  if gamepad and gamepad.off then
+    pcall(function()
+      gamepad.off()
+    end)
+  end
   if app and app.exit then
     local ok, result, err = pcall(function()
       return app.exit()
@@ -1633,6 +1827,44 @@ local function request_exit_to_home(reason)
       log("app.exit failed", tostring(err or result))
     end
   end
+end
+
+local function schedule_exit_to_home()
+  if exit_timer then
+    return
+  end
+  if not tmr or not tmr.create then
+    finish_exit_to_home()
+    return
+  end
+  exit_timer = tmr.create()
+  local ok, err = pcall(function()
+    exit_timer:alarm(80, tmr.ALARM_SINGLE or 0, finish_exit_to_home)
+  end)
+  if ok then
+    log("app.exit scheduled")
+  else
+    log("app.exit schedule failed", tostring(err))
+    finish_exit_to_home()
+  end
+end
+
+local function request_exit_to_home(reason)
+  if exit_to_home_requested then
+    return
+  end
+  exit_to_home_requested = true
+  pending_restart = nil
+  log("exit to home", reason or "")
+  APP.stop_web("exit")
+  sync_input_mask(0)
+  current_mask = 0
+  local stop_ok, stop_result, stop_err = pcall(function()
+    return retrogo.stop()
+  end)
+  log("retrogo.stop", tostring(stop_ok), tostring(stop_result), tostring(stop_err))
+  log("retrogo stopped", tostring(wait_retrogo_stopped(1500)))
+  schedule_exit_to_home()
 end
 
 local function update_gamepad_input(force)
@@ -1837,4 +2069,13 @@ if not start_runtime_timer() then
   if app and app.exiting and app.exiting() then
     request_exit_to_home("app.exiting")
   end
+end
+end
+
+start_rom_web()
+
+if APP.AUTO_SELECT_MODULE then
+  start_selected_module(select_module())
+elseif not choose_module_async(start_selected_module) then
+  start_selected_module(choose_module())
 end
