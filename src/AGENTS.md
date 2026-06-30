@@ -13,8 +13,8 @@ Two Holo module profiles are built separately:
 Device module paths:
 
 ```text
-/sd/apps/retro-go/modules/retrogo.so
-/sd/apps/retro-go/modules/gwenesis.so
+/sd/apps/holo-retro-go/modules/retrogo.so
+/sd/apps/holo-retro-go/modules/gwenesis.so
 ```
 
 Lua app entry in this repo:
@@ -26,13 +26,13 @@ package/main.lua
 Lua app entry path on the device:
 
 ```text
-/sd/apps/retro-go/main.lua
+/sd/apps/holo-retro-go/main.lua
 ```
 
 ROM root on the device:
 
 ```text
-/sd/apps/retro-go/roms
+/sd/apps/holo-retro-go/roms
 ```
 
 ## Build Environment
@@ -115,7 +115,7 @@ Upload `retrogo.so` from the package snapshot:
 ```powershell
 $path='E:\cubicsrc\APPS\holo-retro-go\package\modules\retrogo.so'
 $bytes=[System.IO.File]::ReadAllBytes($path)
-$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/retro-go/modules/retrogo.so')
+$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/holo-retro-go/modules/retrogo.so')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/octet-stream' -UseBasicParsing -TimeoutSec 90
 ```
 
@@ -124,7 +124,7 @@ Upload `gwenesis.so` from the package snapshot:
 ```powershell
 $path='E:\cubicsrc\APPS\holo-retro-go\package\modules\gwenesis.so'
 $bytes=[System.IO.File]::ReadAllBytes($path)
-$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/retro-go/modules/gwenesis.so')
+$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/holo-retro-go/modules/gwenesis.so')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'application/octet-stream' -UseBasicParsing -TimeoutSec 90
 ```
 
@@ -133,7 +133,7 @@ Upload the Lua app entry from the package:
 ```powershell
 $path='E:\cubicsrc\APPS\holo-retro-go\package\main.lua'
 $bytes=[System.IO.File]::ReadAllBytes($path)
-$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/retro-go/main.lua')
+$uri='http://192.168.31.197/api/system/fs/upload?path=' + [uri]::EscapeDataString('/sd/apps/holo-retro-go/main.lua')
 Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'text/plain; charset=utf-8' -UseBasicParsing -TimeoutSec 90
 ```
 

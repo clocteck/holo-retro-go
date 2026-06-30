@@ -1,3 +1,14 @@
+local FALLBACK_APP_ID = "holo-retro-go"
+
+local function app_id_from_dir(dir)
+  dir = type(dir) == "string" and dir:gsub("\\", "/") or ""
+  local id = dir:match("([^/]+)$")
+  if id and id ~= "" then
+    return id
+  end
+  return FALLBACK_APP_ID
+end
+
 local function resolve_app_dir()
   local cur = app and app.current and app.current() or nil
   local entry = cur and cur.entry or nil
@@ -8,13 +19,13 @@ local function resolve_app_dir()
       return dir
     end
   end
-  return "/sd/apps/retro-go"
+  return "/sd/apps/" .. FALLBACK_APP_ID
 end
 
-local function normalize_route_base(route)
+local function normalize_route_base(route, fallback)
   route = type(route) == "string" and route or ""
   if route == "" then
-    route = "/retro-go"
+    route = fallback or ("/" .. FALLBACK_APP_ID)
   end
   route = route:gsub("\\", "/")
   if route:sub(1, 1) ~= "/" then
@@ -27,11 +38,14 @@ local function normalize_route_base(route)
 end
 
 local APP_DIR = resolve_app_dir()
-local ROUTE_BASE = normalize_route_base(app and app.route_base and app.route_base() or "/retro-go")
+local ROUTE_BASE = normalize_route_base(
+  app and app.route_base and app.route_base() or nil,
+  "/" .. app_id_from_dir(APP_DIR)
+)
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-06-30-route-slots-v1",
+  VERSION = "2026-06-30-btc-style-web-v8",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = APP_DIR .. "/roms",
@@ -743,7 +757,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
   </section>
 </main>
 <script>
-const BASE="__APP_BASE__";
+const CONFIG_BASE="__APP_BASE__";
+const pathBase=location.pathname.replace(/\/api\/.*$/,"").replace(/\/$/,"");
+const BASE=pathBase||CONFIG_BASE;
 let serverInfo={rom_root:"__ROM_ROOT__",chunk_size:65536,max_file_size:33554432};
 const qs=id=>document.getElementById(id);
 const statusEl=qs("status");
@@ -757,8 +773,8 @@ function fmtSize(bytes){bytes=Number(bytes)||0;if(bytes<1024)return bytes+" B";i
 function setStatus(text,kind){statusEl.textContent=text;statusEl.className="status "+(kind||"")}
 function setProgress(done,total){const pct=total>0?Math.max(0,Math.min(100,Math.round(done*100/total))):0;bar.style.width=pct+"%"}
 async function parseJson(res){const text=await res.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){throw new Error(text||res.statusText)}if(!res.ok||data.ok===false)throw new Error(data.error||res.statusText);return data}
-async function loadInfo(){const data=await parseJson(await fetch(api("/info")));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root}
-async function loadList(){const data=await parseJson(await fetch(api("/list")));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent="No ROMs yet";return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
+async function loadInfo(){const data=await parseJson(await fetch(api("/info"),{cache:"no-store"}));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root}
+async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent="No ROMs yet";return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
 function selectedFiles(files){return Array.from(files||input.files||[]).filter(file=>file&&file.name)}
 async function uploadOne(file,index,totalFiles){if(file.size>serverInfo.max_file_size)throw new Error(file.name+" is too large");let offset=0;const chunkSize=serverInfo.chunk_size||65536;const safeName=file.name.replace(/[\\/]/g,"_");const path=(serverInfo.rom_root||"__ROM_ROOT__")+"/"+safeName;while(offset<file.size||file.size===0){const end=file.size===0?0:Math.min(offset+chunkSize,file.size);setStatus(`Uploading ${index}/${totalFiles}: ${file.name}`,"");const res=await fetch(api("/upload")+"?path="+encodeURIComponent(path)+"&offset="+offset+"&total="+file.size,{method:"PUT",body:file.size===0?new Blob([]):file.slice(offset,end)});const data=await parseJson(res);const next=data.next_offset||end;if(file.size>0&&next<=offset)throw new Error("Upload did not advance");offset=next;setProgress(offset,file.size);if(file.size===0||data.done)break}}
 async function uploadFiles(files){files=selectedFiles(files);if(!files.length){setStatus("Select files first","err");return}uploadBtn.disabled=true;setProgress(0,1);try{for(let i=0;i<files.length;i++){await uploadOne(files[i],i+1,files.length)}setStatus("Upload complete","ok");setProgress(1,1);input.value="";await loadList()}catch(err){setStatus(err.message||"Upload failed","err")}finally{uploadBtn.disabled=false}}
@@ -772,21 +788,45 @@ loadInfo().then(loadList).catch(err=>setStatus(err.message||"WebUI failed","err"
 </html>
 ]==]
 
-function APP.render_upload_html()
-  local html = APP.HTML:gsub("__APP_BASE__", function() return APP.ROUTE_BASE end)
+local function request_route_base(req)
+  local uri = text_or(req and req.uri, "")
+  uri = uri:match("^([^?]*)") or uri
+  if uri == "" then
+    return APP.ROUTE_BASE
+  end
+  while #uri > 1 and uri:sub(-1) == "/" do
+    uri = uri:sub(1, -2)
+  end
+  local api_pos = uri:find("/api/", 1, true)
+  if api_pos then
+    uri = uri:sub(1, api_pos - 1)
+  end
+  if uri == "" then
+    return APP.ROUTE_BASE
+  end
+  return uri
+end
+
+function APP.render_upload_html(route_base)
+  local html = APP.HTML:gsub("__APP_BASE__", function() return route_base or APP.ROUTE_BASE end)
   html = html:gsub("__ROM_ROOT__", function() return APP.ROM_ROOT end)
   return html
 end
 
-function APP.route_redirect()
+function APP.route_redirect(req)
+  local base = request_route_base(req)
   return text_response("302 Found", "text/plain; charset=utf-8", "", {
-    ["location"] = APP.ROUTE_BASE .. "/",
+    ["location"] = base .. "/",
   })
 end
 
-function APP.route_index()
+function APP.route_index(req)
   ensure_dir(APP.ROM_ROOT)
-  return text_response("200 OK", "text/html; charset=utf-8", APP.render_upload_html())
+  return text_response("200 OK", "text/html; charset=utf-8", APP.render_upload_html(request_route_base(req)))
+end
+
+function APP.route_favicon()
+  return text_response("204 No Content", "image/x-icon", "")
 end
 
 function APP.api_info()
@@ -857,6 +897,17 @@ function APP.register_route(method, route, handler)
   return true
 end
 
+function APP.register_web_routes()
+  local get = httpd.GET or "GET"
+  local put = httpd.PUT or "PUT"
+  APP.register_route(get, APP.ROUTE_BASE, APP.route_redirect)
+  APP.register_route(get, APP.ROUTE_BASE .. "/", APP.route_index)
+  APP.register_route(get, APP.ROUTE_BASE .. "/favicon.ico", APP.route_favicon)
+  APP.register_route(get, APP.API_PREFIX .. "/info", APP.api_info)
+  APP.register_route(get, APP.API_PREFIX .. "/list", APP.api_list)
+  APP.register_route(put, APP.API_PREFIX .. "/upload", APP.api_upload)
+end
+
 function APP.unregister_routes()
   if not httpd or not httpd.unregister then
     APP.routes = {}
@@ -873,6 +924,11 @@ end
 
 function APP.stop_web(reason)
   APP.unregister_routes()
+  if app and app.set_webui then
+    pcall(function()
+      app.set_webui(false)
+    end)
+  end
   APP.web_ready = false
   log("web stopped", reason or "")
 end
@@ -892,25 +948,23 @@ local function start_rom_web()
   if httpd.start then
     pcall(function()
       httpd.start({
-        webroot = APP.APP_DIR,
+        webroot = "/sd",
         auto_index = httpd.INDEX_NONE,
-        max_handlers = 12,
+        max_handlers = 64,
       })
     end)
   end
-  local get = httpd.GET or "GET"
-  local put = httpd.PUT or "PUT"
-  APP.register_route(get, APP.ROUTE_BASE, APP.route_redirect)
-  APP.register_route(get, APP.ROUTE_BASE .. "/", APP.route_index)
-  -- Some host builds expose only five dynamic handler slots to Lua apps.
-  APP.register_route(get, APP.API_PREFIX .. "/info", APP.api_info)
-  APP.register_route(get, APP.API_PREFIX .. "/list", APP.api_list)
-  APP.register_route(put, APP.API_PREFIX .. "/upload", APP.api_upload)
+  APP.register_web_routes()
   _G.HOLO_RETRO_GO_WEB = {
     stop = function(reason)
       APP.stop_web(reason)
     end,
   }
+  if app and app.set_webui then
+    pcall(function()
+      app.set_webui(true)
+    end)
+  end
   APP.web_ready = true
   log("web ready", APP.ROUTE_BASE .. "/", APP.ROM_ROOT)
   return true
@@ -1542,13 +1596,26 @@ end
 
 local current_mask = 0
 local exit_to_home_requested = false
+local runtime_timer = nil
+local pending_restart = nil
+local runtime_tick_busy = false
 
 local function request_exit_to_home(reason)
   if exit_to_home_requested then
     return
   end
   exit_to_home_requested = true
+  pending_restart = nil
   log("exit to home", reason or "")
+  if runtime_timer then
+    pcall(function()
+      runtime_timer:stop()
+    end)
+    pcall(function()
+      runtime_timer:unregister()
+    end)
+    runtime_timer = nil
+  end
   APP.stop_web("exit")
   sync_input_mask(0)
   current_mask = 0
@@ -1676,40 +1743,98 @@ else
   log("key HOME handler unavailable")
 end
 
-while true do
-  if app and app.exiting and app.exiting() then
-    request_exit_to_home("app.exiting")
-    break
+local function schedule_restart(info)
+  if exit_to_home_requested or (info and info.stop_requested) then
+    pending_restart = nil
+    return
   end
-  if exit_to_home_requested then
-    break
+  sync_input_mask(0)
+  current_mask = 0
+  local app_name = info.app or "launcher"
+  local rom_path = info.rom or ""
+  local flags = info.boot_flags or 0
+  if app_name == "desktop" or app_name == "__desktop" then
+    request_exit_to_home("module requested desktop")
+    return
   end
-  if not gamepad_service_started or gamepad_poll_while_running then
-    update_gamepad_input(false)
+  log("restart request", app_name, rom_path, flags)
+  if APP.catalog_dirty and not load_catalog() then
+    request_exit_to_home("catalog reload failed")
+    return
   end
-  local info = retrogo_info()
-  if info and not info.running then
-    sync_input_mask(0)
-    current_mask = 0
-    local app_name = info.app or "launcher"
-    local rom_path = info.rom or ""
-    local flags = info.boot_flags or 0
-    if app_name == "desktop" or app_name == "__desktop" then
-      request_exit_to_home("module requested desktop")
-      break
+  pending_restart = {
+    app_name = app_name,
+    rom_path = rom_path,
+    flags = flags,
+    due_ms = now_ms() + 80,
+  }
+end
+
+local function runtime_tick()
+  if runtime_tick_busy or exit_to_home_requested then
+    return
+  end
+  runtime_tick_busy = true
+  local ok, err = pcall(function()
+    if app and app.exiting and app.exiting() then
+      request_exit_to_home("app.exiting")
+      return
     end
-    log("restart request", app_name, rom_path, flags)
-    if APP.catalog_dirty and not load_catalog() then
-      break
+    if exit_to_home_requested then
+      return
     end
-    sleep_ms(80)
-    if not start_retrogo(app_name, rom_path, flags) then
-      break
+    if pending_restart then
+      if now_ms() >= (pending_restart.due_ms or 0) then
+        if exit_to_home_requested then
+          pending_restart = nil
+          return
+        end
+        local req = pending_restart
+        pending_restart = nil
+        if not start_retrogo(req.app_name, req.rom_path, req.flags) then
+          request_exit_to_home("restart failed")
+        end
+      end
+      return
     end
-  end
-  if not sleep_ms(APP.POLL_DELAY_MS) then
-    break
+    if not gamepad_service_started or gamepad_poll_while_running then
+      update_gamepad_input(false)
+    end
+    if exit_to_home_requested then
+      return
+    end
+    local info = retrogo_info()
+    if info and not info.running then
+      schedule_restart(info)
+    end
+  end)
+  runtime_tick_busy = false
+  if not ok then
+    log("runtime tick failed", tostring(err))
+    request_exit_to_home("runtime tick failed")
   end
 end
 
-APP.stop_web("loop end")
+local function start_runtime_timer()
+  if not tmr or not tmr.create then
+    log("tmr unavailable, runtime loop disabled")
+    return false
+  end
+  runtime_timer = tmr.create()
+  local ok, err = pcall(function()
+    runtime_timer:alarm(APP.POLL_DELAY_MS, tmr.ALARM_AUTO or 1, runtime_tick)
+  end)
+  if not ok then
+    log("runtime timer failed", tostring(err))
+    runtime_timer = nil
+    return false
+  end
+  log("runtime timer started", APP.POLL_DELAY_MS)
+  return true
+end
+
+if not start_runtime_timer() then
+  if app and app.exiting and app.exiting() then
+    request_exit_to_home("app.exiting")
+  end
+end

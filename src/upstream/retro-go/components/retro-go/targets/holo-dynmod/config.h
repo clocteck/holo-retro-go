@@ -3,13 +3,13 @@
 
 // Storage
 #define RG_STORAGE_ROOT            "/sd"
-#define RG_BASE_PATH               RG_STORAGE_ROOT "/holo-retro-go"
+#define RG_BASE_PATH               RG_STORAGE_ROOT "/apps/holo-retro-go"
 #define RG_BASE_PATH_BIOS          RG_BASE_PATH "/bios"
 #define RG_BASE_PATH_CACHE         RG_BASE_PATH "/cache"
 #define RG_BASE_PATH_CONFIG        RG_BASE_PATH "/config"
 #define RG_BASE_PATH_COVERS        RG_BASE_PATH "/covers"
 #define RG_BASE_PATH_MUSIC         RG_BASE_PATH "/music"
-#define RG_BASE_PATH_ROMS          RG_STORAGE_ROOT "/roms"
+#define RG_BASE_PATH_ROMS          RG_BASE_PATH "/roms"
 #define RG_BASE_PATH_SAVES         RG_BASE_PATH "/saves"
 #define RG_BASE_PATH_THEMES        RG_BASE_PATH "/themes"
 #define RG_BASE_PATH_BORDERS       RG_BASE_PATH "/borders"

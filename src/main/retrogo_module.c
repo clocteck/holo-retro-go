@@ -477,7 +477,7 @@ static int l_info(lua_State *L)
     }
 
     holo_launch_get(&launch);
-    host->lua.createtable(L, 0, 18);
+    host->lua.createtable(L, 0, 20);
     set_string_field(L, host, "version", RETROGO_VERSION);
     set_string_field(L, host, "description", RETROGO_MODULE_DESCRIPTION);
     set_string_field(L, host, "profile", RETROGO_MODULE_PROFILE);
@@ -491,6 +491,8 @@ static int l_info(lua_State *L)
     set_integer_field(L, host, "input_mask", holo_input_get_raw_mask());
     set_integer_field(L, host, "rg_input_mask", holo_input_get_mask());
     set_boolean_field(L, host, "running", inst->running);
+    set_boolean_field(L, host, "stop_requested", holo_runtime_stop_requested());
+    set_boolean_field(L, host, "switch_requested", holo_runtime_switch_requested());
     set_boolean_field(L, host, "catalog_ready", holo_catalog_ready());
     return 1;
 }

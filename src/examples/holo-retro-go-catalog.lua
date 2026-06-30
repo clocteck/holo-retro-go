@@ -9,7 +9,7 @@ local function app_dir()
       return dir
     end
   end
-  return "/sd/apps/retro-go"
+  return "/sd/apps/holo-retro-go"
 end
 
 local root = app_dir() .. "/roms"
