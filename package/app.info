@@ -1,0 +1,5 @@
+name = Retro-Go
+entry = main.lua
+icon = main.png
+allow_webui = true
+description = Retro-Go dynmod launcher
