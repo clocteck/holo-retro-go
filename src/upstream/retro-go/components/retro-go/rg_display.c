@@ -4,7 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 20) // In pixels
+#define LCD_BUFFER_ROWS 16
+#define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * LCD_BUFFER_ROWS) // In pixels
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #define RG_DISPLAY_TASK_CORE 0
@@ -797,8 +798,8 @@ void rg_display_init(void)
     rg_task_delay(
         80); // Wait for the screen be cleared before turning on the backlight (40ms doesn't seem to be enough...)
     lcd_set_backlight(config.backlight);
-    display_task_queue = rg_task_create("rg_display", &display_task, NULL, 4 * 1024 - 512,
-                                        RG_TASK_PRIORITY_6, RG_DISPLAY_TASK_CORE);
+    display_task_queue =
+        rg_task_create("rg_display", &display_task, NULL, 4 * 1024 - 512, RG_TASK_PRIORITY_6, RG_DISPLAY_TASK_CORE);
     if (config.border_file)
         load_border_file(config.border_file);
     RG_LOGI("Display ready.\n");

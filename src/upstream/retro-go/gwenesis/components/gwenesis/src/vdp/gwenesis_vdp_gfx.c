@@ -68,10 +68,6 @@ extern unsigned short VSRAM[];        // VSRAM - Scrolling
 // Define screen buffers: original and scaled for host RGB
 unsigned char *screen, *scaled_screen;
 
-// Define screen buffers for embedded 565 format
-static uint8_t *screen_buffer_line=0;
-static uint8_t *screen_buffer=0;
-
     // Overflow is the maximum size we can draw outside to avoid
     // wasting time and code in clipping. The maximum object is a 4x4 sprite,
     // so 32 pixels (on both side) is enough.
@@ -79,10 +75,7 @@ static uint8_t *screen_buffer=0;
 enum { PIX_OVERFLOW = 32 };
 
 #define VDP_GFX_LINE_BUFFER_SIZE (SCREEN_WIDTH + PIX_OVERFLOW * 2)
-#if defined(RETRO_GO)
-static uint8_t *render_buffer;
-static uint8_t *sprite_buffer;
-#else
+#if !defined(RETRO_GO)
 static uint8_t render_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 static uint8_t sprite_buffer[VDP_GFX_LINE_BUFFER_SIZE];
 #endif
@@ -112,17 +105,13 @@ typedef struct {
 };
 #endif
 
-static uint8_t *sprite_line_count;
-static uint8_t *sprite_line_table;
 #if VDP_TILE_ROW_CACHE_ENABLED
-static vdp_tile_row_cache_entry_t *tile_row_cache;
 static void vdp_tile_row_cache_clear(void);
 typedef char vdp_tile_row_cache_entry_size_must_be_12[(sizeof(vdp_tile_row_cache_entry_t) == 12) ? 1 : -1];
 #endif
 #endif
 
 // Define VIDEO MODE
-static int mode_h40;
 int mode_pal;
 
 // Define screen W/H
@@ -134,11 +123,102 @@ int gwenesis_H32upscaler;
 int sprite_overflow;
 bool sprite_collision;
 
+#if defined(RETRO_GO)
+typedef struct
+{
+  uint8_t *screen_buffer_line;
+  uint8_t *screen_buffer;
+  uint8_t *render_buffer;
+  uint8_t *sprite_buffer;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  uint8_t *sprite_line_count;
+  uint8_t *sprite_line_table;
+#if VDP_TILE_ROW_CACHE_ENABLED
+  vdp_tile_row_cache_entry_t *tile_row_cache;
+#endif
+#endif
+  int mode_h40;
 #if GWENESIS_VDP_ASYNC_ENABLED
+  const gwenesis_vdp_render_context_t *render_ctx;
+  int ctx_sprite_overflow;
+#if GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+  unsigned char *active_vram;
+  unsigned short *active_vsram;
+  unsigned short *active_cram565;
+  unsigned char *active_sat_cache;
+  unsigned char *active_regs;
+  int active_screen_width;
+  int active_screen_height;
+#endif
+#endif
+  int base_w;
+  int PlanA_firstcol;
+  int PlanA_lastcol;
+  int Window_firstcol;
+  int Window_lastcol;
+  uint16_t ntwidth_x2;
+  uint16_t ntw_mask;
+  uint16_t nth_mask;
+} gwenesis_vdp_gfx_fast_state_t;
+
+static gwenesis_vdp_gfx_fast_state_t gwenesis_vdp_gfx_fast_state_fallback;
+static gwenesis_vdp_gfx_fast_state_t *gwenesis_vdp_gfx_fast_state = &gwenesis_vdp_gfx_fast_state_fallback;
+
+#define screen_buffer_line (gwenesis_vdp_gfx_fast_state->screen_buffer_line)
+#define screen_buffer (gwenesis_vdp_gfx_fast_state->screen_buffer)
+#define render_buffer (gwenesis_vdp_gfx_fast_state->render_buffer)
+#define sprite_buffer (gwenesis_vdp_gfx_fast_state->sprite_buffer)
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define sprite_line_count (gwenesis_vdp_gfx_fast_state->sprite_line_count)
+#define sprite_line_table (gwenesis_vdp_gfx_fast_state->sprite_line_table)
+#if VDP_TILE_ROW_CACHE_ENABLED
+#define tile_row_cache (gwenesis_vdp_gfx_fast_state->tile_row_cache)
+#endif
+#endif
+#define mode_h40 (gwenesis_vdp_gfx_fast_state->mode_h40)
+#if GWENESIS_VDP_ASYNC_ENABLED
+#define gwenesis_vdp_gfx_render_ctx (gwenesis_vdp_gfx_fast_state->render_ctx)
+#define gwenesis_vdp_gfx_ctx_sprite_overflow (gwenesis_vdp_gfx_fast_state->ctx_sprite_overflow)
+#if GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+#define gwenesis_vdp_gfx_active_vram (gwenesis_vdp_gfx_fast_state->active_vram)
+#define gwenesis_vdp_gfx_active_vsram (gwenesis_vdp_gfx_fast_state->active_vsram)
+#define gwenesis_vdp_gfx_active_cram565 (gwenesis_vdp_gfx_fast_state->active_cram565)
+#define gwenesis_vdp_gfx_active_sat_cache (gwenesis_vdp_gfx_fast_state->active_sat_cache)
+#define gwenesis_vdp_gfx_active_regs (gwenesis_vdp_gfx_fast_state->active_regs)
+#define gwenesis_vdp_gfx_active_screen_width (gwenesis_vdp_gfx_fast_state->active_screen_width)
+#define gwenesis_vdp_gfx_active_screen_height (gwenesis_vdp_gfx_fast_state->active_screen_height)
+#endif
+#endif
+#define base_w (gwenesis_vdp_gfx_fast_state->base_w)
+#define PlanA_firstcol (gwenesis_vdp_gfx_fast_state->PlanA_firstcol)
+#define PlanA_lastcol (gwenesis_vdp_gfx_fast_state->PlanA_lastcol)
+#define Window_firstcol (gwenesis_vdp_gfx_fast_state->Window_firstcol)
+#define Window_lastcol (gwenesis_vdp_gfx_fast_state->Window_lastcol)
+#define ntwidth_x2 (gwenesis_vdp_gfx_fast_state->ntwidth_x2)
+#define ntw_mask (gwenesis_vdp_gfx_fast_state->ntw_mask)
+#define nth_mask (gwenesis_vdp_gfx_fast_state->nth_mask)
+#else
+// Define screen buffers for embedded 565 format
+static uint8_t *screen_buffer_line=0;
+static uint8_t *screen_buffer=0;
+static int mode_h40;
+static int base_w;
+static int PlanA_firstcol;
+static int PlanA_lastcol;
+static int Window_firstcol;
+static int Window_lastcol;
+static uint16_t ntwidth_x2;
+static uint16_t ntw_mask, nth_mask;
+#endif
+
+#if GWENESIS_VDP_ASYNC_ENABLED
+#if !defined(RETRO_GO)
 static const gwenesis_vdp_render_context_t *gwenesis_vdp_gfx_render_ctx;
 static int gwenesis_vdp_gfx_ctx_sprite_overflow;
+#endif
 
 #if GWENESIS_VDP_GFX_ACTIVE_PTR_TEST
+#if !defined(RETRO_GO)
 static unsigned char *gwenesis_vdp_gfx_active_vram;
 static unsigned short *gwenesis_vdp_gfx_active_vsram;
 static unsigned short *gwenesis_vdp_gfx_active_cram565;
@@ -146,6 +226,7 @@ static unsigned char *gwenesis_vdp_gfx_active_sat_cache;
 static unsigned char *gwenesis_vdp_gfx_active_regs;
 static int gwenesis_vdp_gfx_active_screen_width;
 static int gwenesis_vdp_gfx_active_screen_height;
+#endif
 
 static inline bool gwenesis_vdp_gfx_has_render_context(void)
 {
@@ -290,14 +371,6 @@ void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ct
 }
 #endif
 
-// Window Plane and A plane spearation
-static int base_w;
-static int PlanA_firstcol;
-static int PlanA_lastcol;
-
-static int Window_firstcol;
-static int Window_lastcol;
-
 // 16 bits access to VRAM
 // #define FETCH16VRAM(A)  ({size_t addr = (A); (VRAM[addr+1]) | (VRAM[addr] << 8);})
 #define FETCH16VRAM(A)  ( (VRAM[(A)+1]) | (VRAM[(A)] << 8) )
@@ -306,6 +379,21 @@ static int Window_lastcol;
 bool gwenesis_vdp_gfx_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
+    if (gwenesis_vdp_gfx_fast_state == &gwenesis_vdp_gfx_fast_state_fallback)
+    {
+        gwenesis_vdp_gfx_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        if (ptr && PTR_IN_SPIRAM(ptr))
+        {
+            free(ptr);
+            ptr = NULL;
+        }
+#endif
+        if (!ptr)
+            return false;
+        *ptr = *gwenesis_vdp_gfx_fast_state;
+        gwenesis_vdp_gfx_fast_state = ptr;
+    }
     if (!render_buffer)
         render_buffer = rg_alloc(VDP_GFX_LINE_BUFFER_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!sprite_buffer)
@@ -355,6 +443,12 @@ void gwenesis_vdp_gfx_deinit_fast_ram(void)
     tile_row_cache = NULL;
 #endif
 #endif
+    if (gwenesis_vdp_gfx_fast_state != &gwenesis_vdp_gfx_fast_state_fallback)
+    {
+        free(gwenesis_vdp_gfx_fast_state);
+        gwenesis_vdp_gfx_fast_state = &gwenesis_vdp_gfx_fast_state_fallback;
+    }
+    memset(&gwenesis_vdp_gfx_fast_state_fallback, 0, sizeof(gwenesis_vdp_gfx_fast_state_fallback));
 #endif
 }
 
@@ -383,9 +477,9 @@ void vdpg_log(const char *subs, const char *fmt, ...) {
  *
  ******************************************************************************/
 //host
-void gwenesis_vdp_set_buffers(unsigned char *screen_buffer, unsigned char *scaled_buffer)
+void gwenesis_vdp_set_buffers(unsigned char *host_screen_buffer, unsigned char *scaled_buffer)
 {
-    screen = screen_buffer;
+    screen = host_screen_buffer;
     scaled_screen = scaled_buffer;
 }
 //embedded
@@ -1096,9 +1190,6 @@ void draw_pattern_planeA(uint8_t *scr, uint16_t name, int paty) {
     draw_pattern_nofliph_planeAoverB(scr, pattern, attrs);
 
 }
-
-static  uint16_t ntwidth_x2;
-static  uint16_t ntw_mask, nth_mask;
 
 /******************************************************************************
  *

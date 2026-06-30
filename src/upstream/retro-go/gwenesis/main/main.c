@@ -128,6 +128,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_AUDIO_RING_LOW_FRAMES 768
 #define GWENESIS_AUDIO_RING_TARGET_FRAMES 1024
 #define GWENESIS_AUDIO_RING_HIGH_FRAMES 1280
+#define GWENESIS_AUDIO_RING_BLOCK_FRAMES 1500
 #define GWENESIS_AUDIO_HIGH_WATER_PAUSE_MS 10
 #define GWENESIS_AUDIO_RING_STRETCH_FRAMES 1024
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -143,7 +144,7 @@ static bool gwenesis_perf_overlay_enabled;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #define GWENESIS_AUDIO_TASK_STACK (3 * 1024)
 #define GWENESIS_AUDIO_OUTPUT_TASK_STACK (2 * 1024 + 512)
-#define GWENESIS_AUDIO_TASK_CORE 1
+#define GWENESIS_AUDIO_TASK_CORE 0
 #define GWENESIS_AUDIO_OUTPUT_TASK_CORE 0
 #define GWENESIS_VDP_ASYNC_TASK_CORE 0
 #define GWENESIS_VRAM_MEM MEM_SLOW
@@ -210,7 +211,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 #if GWENESIS_VDP_ASYNC_ENABLED
 #define GWENESIS_VDP_ASYNC_JOBS 2
-#define GWENESIS_VDP_ASYNC_TASK_STACK (9 * 1024)
+#define GWENESIS_VDP_ASYNC_TASK_STACK (8 * 1024)
 #define GWENESIS_VDP_ASYNC_TASK_PRIORITY RG_TASK_PRIORITY_5
 #define GWENESIS_VDP_ASYNC_RENDER_FRAME_DELAY_MS 0
 #define GWENESIS_VDP_ASYNC_UNSAFE_FRAMES 8
@@ -264,7 +265,7 @@ static int64_t render_pacer_last_draw_us;
 #endif
 static int frame_yield_count;
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_Z80_BATCH_LINES_FAST 4
+#define GWENESIS_Z80_BATCH_LINES_FAST 2
 #define GWENESIS_Z80_BATCH_LINES_BALANCE 1
 #define GWENESIS_Z80_BATCH_LINES_MUTED 16
 #define GWENESIS_YM_BATCH_LINES_FAST 2
@@ -575,6 +576,17 @@ static bool gwenesis_audio_critical_water_now(void)
 static bool gwenesis_audio_high_water_now(void)
 {
     return gwenesis_audio_ring_fill() >= GWENESIS_AUDIO_RING_HIGH_FRAMES;
+}
+
+static bool gwenesis_audio_block_water_now(void)
+{
+    return gwenesis_audio_ring_fill() >= GWENESIS_AUDIO_RING_BLOCK_FRAMES;
+}
+
+static void gwenesis_audio_wait_below_block_water(void)
+{
+    while (gwenesis_audio_task_running && gwenesis_audio_block_water_now())
+        rg_task_delay(2);
 }
 
 static int32_t gwenesis_clamp_i32(int32_t value, int32_t min_value, int32_t max_value)
@@ -1756,11 +1768,20 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
     size_t offset = 0;
     while (offset < count)
     {
-        const uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+        uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
         const uint32_t write = __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE);
         uint32_t used = write - read;
         if (used > GWENESIS_AUDIO_RING_FRAMES)
             used = GWENESIS_AUDIO_RING_FRAMES;
+
+        while (gwenesis_audio_task_running && used >= GWENESIS_AUDIO_RING_BLOCK_FRAMES)
+        {
+            rg_task_delay(2);
+            read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+            used = write - read;
+            if (used > GWENESIS_AUDIO_RING_FRAMES)
+                used = GWENESIS_AUDIO_RING_FRAMES;
+        }
 
         if (used >= GWENESIS_AUDIO_RING_FRAMES)
         {
@@ -4130,7 +4151,12 @@ void app_main(void)
                                          gwenesis_sn76489_buffer != NULL;
         const bool z80_run_enabled = gwenesis_z80_enabled;
 #if defined(RG_TARGET_HOLO_DYNMOD)
-        if (yfm_run_enabled && gwenesis_audio_ring_fill() > GWENESIS_AUDIO_RING_HIGH_FRAMES)
+        if (yfm_run_enabled && gwenesis_audio_block_water_now())
+        {
+            gwenesis_audio_wait_below_block_water();
+            startTime = rg_system_timer();
+        }
+        else if (yfm_run_enabled && gwenesis_audio_ring_fill() > GWENESIS_AUDIO_RING_HIGH_FRAMES)
         {
             rg_task_delay(GWENESIS_AUDIO_HIGH_WATER_PAUSE_MS);
             startTime = rg_system_timer();

@@ -95,10 +95,29 @@ unsigned short CRAM565[CRAM_MAX_SIZE * 4];    // CRAM - Palettes
 unsigned short VSRAM[VSRAM_MAX_SIZE];         // VSRAM - Scrolling
 #endif
 
-// Define VDP control code and set initial code
+// Define VDP private control state.
+#if defined(RETRO_GO)
+typedef struct
+{
+    unsigned char code_reg;
+    unsigned short address_reg;
+    int hvcounter_latch;
+    int hvcounter_latched;
+} gwenesis_vdp_mem_fast_state_t;
+
+static gwenesis_vdp_mem_fast_state_t gwenesis_vdp_mem_fast_state_fallback;
+static gwenesis_vdp_mem_fast_state_t *gwenesis_vdp_mem_fast_state = &gwenesis_vdp_mem_fast_state_fallback;
+
+#define code_reg (gwenesis_vdp_mem_fast_state->code_reg)
+#define address_reg (gwenesis_vdp_mem_fast_state->address_reg)
+#define hvcounter_latch (gwenesis_vdp_mem_fast_state->hvcounter_latch)
+#define hvcounter_latched (gwenesis_vdp_mem_fast_state->hvcounter_latched)
+#else
 static unsigned char code_reg = 0;
-// Define VDP control address and set initial address
 static unsigned short address_reg = 0;
+static int hvcounter_latch = 0;
+static int hvcounter_latched = 0;
+#endif
 // Define VDP control pending and set initial state
 int command_word_pending = 0;
 // Define VDP status and set initial status value
@@ -111,10 +130,6 @@ extern int scan_line;
 //static unsigned int dma_source;
 // Define and set DMA FILL pending as initial state
  int dma_fill_pending = 0;
-
-// Define HVCounter latch and set initial state
-static int hvcounter_latch = 0;
-static int hvcounter_latched = 0;
 
 int hint_pending;
 
@@ -137,6 +152,21 @@ extern bool sprite_collision;
 bool gwenesis_vdp_mem_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
+    if (gwenesis_vdp_mem_fast_state == &gwenesis_vdp_mem_fast_state_fallback)
+    {
+        gwenesis_vdp_mem_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        if (ptr && PTR_IN_SPIRAM(ptr))
+        {
+            free(ptr);
+            ptr = NULL;
+        }
+#endif
+        if (!ptr)
+            return false;
+        *ptr = *gwenesis_vdp_mem_fast_state;
+        gwenesis_vdp_mem_fast_state = ptr;
+    }
     if (!CRAM)
         CRAM = rg_alloc(sizeof(*CRAM) * CRAM_MAX_SIZE, MEM_FAST | MEM_NOPANIC);
     if (!SAT_CACHE)
@@ -168,6 +198,12 @@ void gwenesis_vdp_mem_deinit_fast_ram(void)
     fifo = NULL;
     CRAM565 = NULL;
     VSRAM = NULL;
+    if (gwenesis_vdp_mem_fast_state != &gwenesis_vdp_mem_fast_state_fallback)
+    {
+        free(gwenesis_vdp_mem_fast_state);
+        gwenesis_vdp_mem_fast_state = &gwenesis_vdp_mem_fast_state_fallback;
+    }
+    memset(&gwenesis_vdp_mem_fast_state_fallback, 0, sizeof(gwenesis_vdp_mem_fast_state_fallback));
 #endif
 }
 

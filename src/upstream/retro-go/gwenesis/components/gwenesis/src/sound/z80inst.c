@@ -44,16 +44,35 @@ __license__ = "GPLv3"
   #pragma GCC optimize("Ofast")
 #endif
 
-static int bus_ack = 0;
-static int reset = 0;
-static int reset_once = 0;
 int zclk = 0;
-static int initialized = 0;
-static bool z80_emulation_enabled = true;
 
 unsigned char *Z80_RAM;
-static unsigned char *Z80_BANK_ROM_BASE;
-static unsigned int Z80_BANK_BASE;
+
+typedef struct
+{
+    int bus_ack;
+    int reset;
+    int reset_once;
+    int initialized;
+    int current_timeslice;
+    bool emulation_enabled;
+    unsigned char *bank_rom_base;
+    unsigned int bank_base;
+} z80_fast_state_t;
+
+static z80_fast_state_t z80_fast_state_fallback = {
+    .emulation_enabled = true,
+};
+static z80_fast_state_t *z80_fast_state = &z80_fast_state_fallback;
+
+#define bus_ack (z80_fast_state->bus_ack)
+#define reset (z80_fast_state->reset)
+#define reset_once (z80_fast_state->reset_once)
+#define initialized (z80_fast_state->initialized)
+#define current_timeslice (z80_fast_state->current_timeslice)
+#define z80_emulation_enabled (z80_fast_state->emulation_enabled)
+#define Z80_BANK_ROM_BASE (z80_fast_state->bank_rom_base)
+#define Z80_BANK_BASE (z80_fast_state->bank_base)
 
 static Z80 z80_cpu_fallback;
 static Z80 *z80_cpu_ptr = &z80_cpu_fallback;
@@ -64,10 +83,38 @@ void ResetZ80(register Z80 *R);
 static void z80_init_fast_ram(void)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
+    if (z80_fast_state == &z80_fast_state_fallback)
+    {
+        z80_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+        if (ptr && PTR_IN_SPIRAM(ptr))
+        {
+            free(ptr);
+            ptr = NULL;
+        }
+        if (ptr)
+        {
+            *ptr = *z80_fast_state;
+            z80_fast_state = ptr;
+            printf("[info] Genesis Z80 small state: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
+                   z80_fast_state, (unsigned)sizeof(*z80_fast_state),
+                   PTR_IN_SPIRAM(z80_fast_state) ? "SPIRAM" : "internal");
+        }
+        else
+        {
+            printf("[warn] Genesis Z80 small state: MEM_FAST allocation failed size=%u, using static fallback\n",
+                   (unsigned)sizeof(*z80_fast_state));
+        }
+    }
+
     if (z80_cpu_ptr != &z80_cpu_fallback)
         return;
 
     Z80 *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+    if (ptr && PTR_IN_SPIRAM(ptr))
+    {
+        free(ptr);
+        ptr = NULL;
+    }
     if (ptr)
     {
         z80_cpu_ptr = ptr;
@@ -92,6 +139,13 @@ void z80_deinit_fast_ram(void)
         z80_cpu_ptr = &z80_cpu_fallback;
     }
     memset(&z80_cpu_fallback, 0, sizeof(z80_cpu_fallback));
+    if (z80_fast_state != &z80_fast_state_fallback)
+    {
+        free(z80_fast_state);
+        z80_fast_state = &z80_fast_state_fallback;
+    }
+    memset(&z80_fast_state_fallback, 0, sizeof(z80_fast_state_fallback));
+    z80_fast_state_fallback.emulation_enabled = true;
 #endif
 }
 
@@ -173,7 +227,6 @@ void z80_set_enabled(bool enabled)
 void z80_pulse_reset() {
   ResetZ80(&cpu);
 }
-static int current_timeslice = 0;
 
 void GWENESIS_HOT z80_run(int target) {
 

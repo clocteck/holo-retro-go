@@ -797,12 +797,29 @@ static YM2612 *ym2612_ptr = &ym2612_fallback;
 #define ym2612 (*ym2612_ptr)
 
 /* current chip state */
-static INT32 m2, c1, c2; /* Phase Modulation input for operators 2,3,4 */
-static INT32 mem;        /* one sample delay memory */
-static INT32 out_fm[8];  /* outputs of working channels */
-static UINT32 bitmask;   /* working channels output bitmasking (DAC quantization) */
-static bool ym2612_lite_mode;
-static bool ym2612_ssg_eg_active;
+typedef struct
+{
+  INT32 m2, c1, c2; /* Phase Modulation input for operators 2,3,4 */
+  INT32 mem;        /* one sample delay memory */
+  INT32 out_fm[8];  /* outputs of working channels */
+  UINT32 bitmask;   /* working channels output bitmasking (DAC quantization) */
+  bool lite_mode;
+  bool ssg_eg_active;
+  unsigned tables_initialized;
+} ym2612_fast_state_t;
+
+static ym2612_fast_state_t ym2612_fast_state_fallback;
+static ym2612_fast_state_t *ym2612_fast_state = &ym2612_fast_state_fallback;
+
+#define m2 (ym2612_fast_state->m2)
+#define c1 (ym2612_fast_state->c1)
+#define c2 (ym2612_fast_state->c2)
+#define mem (ym2612_fast_state->mem)
+#define out_fm (ym2612_fast_state->out_fm)
+#define bitmask (ym2612_fast_state->bitmask)
+#define ym2612_lite_mode (ym2612_fast_state->lite_mode)
+#define ym2612_ssg_eg_active (ym2612_fast_state->ssg_eg_active)
+#define ym2612_tables_initialized (ym2612_fast_state->tables_initialized)
 
 #define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 2
 
@@ -814,11 +831,42 @@ static uint8_t *OPNREGS;
 static uint8_t OPNREGS[OPNREGS_SIZE];
 #endif
 
-static unsigned ym2612_tables_initialized;
-
 bool gwenesis_ym2612_init_fast_ram(void)
 {
 #if defined(RETRO_GO)
+  if (ym2612_fast_state == &ym2612_fast_state_fallback)
+  {
+    ym2612_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (ptr && PTR_IN_SPIRAM(ptr))
+    {
+      free(ptr);
+      ptr = NULL;
+    }
+#endif
+    if (ptr)
+    {
+      *ptr = *ym2612_fast_state;
+      ym2612_fast_state = ptr;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+      printf("[info] Genesis YM2612 small state: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
+             ym2612_fast_state, (unsigned)sizeof(*ym2612_fast_state),
+             PTR_IN_SPIRAM(ym2612_fast_state) ? "SPIRAM" : "internal");
+#endif
+      RG_LOGI("Genesis YM2612 small state: ptr=%p size=%u requested=MEM_FAST addr_guess=%s",
+              ym2612_fast_state, (unsigned)sizeof(*ym2612_fast_state),
+              PTR_IN_SPIRAM(ym2612_fast_state) ? "SPIRAM" : "internal");
+    }
+    else
+    {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+      printf("[warn] Genesis YM2612 small state: MEM_FAST allocation failed size=%u, using static fallback\n",
+             (unsigned)sizeof(*ym2612_fast_state));
+#endif
+      RG_LOGW("Genesis YM2612 small state: MEM_FAST allocation failed size=%u, using static fallback",
+              (unsigned)sizeof(*ym2612_fast_state));
+    }
+  }
   if (ym2612_ptr == &ym2612_fallback)
   {
     YM2612 *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
@@ -868,6 +916,12 @@ void gwenesis_ym2612_deinit_fast_ram(void)
   OPNREGS = NULL;
   free(sin_tab);
   sin_tab = NULL;
+  if (ym2612_fast_state != &ym2612_fast_state_fallback)
+  {
+    free(ym2612_fast_state);
+    ym2612_fast_state = &ym2612_fast_state_fallback;
+  }
+  memset(&ym2612_fast_state_fallback, 0, sizeof(ym2612_fast_state_fallback));
   ym2612_tables_initialized = 0;
 #endif
 }

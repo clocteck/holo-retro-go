@@ -8,6 +8,7 @@ extern int vdp_68k_irq_ack(int int_level);
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "rg_utils.h"
 #endif
 
@@ -42,13 +43,45 @@ static unsigned char m68ki_cycles[0x10000];
 /* ================================= DATA ================================= */
 /* ======================================================================== */
 
-static int irq_latency;
-
 #if defined(RG_TARGET_HOLO_DYNMOD)
+typedef struct
+{
+  int irq_latency;
+  unsigned int emulation_initialized;
+} gwenesis_m68k_fast_state_t;
+
+static gwenesis_m68k_fast_state_t gwenesis_m68k_fast_state_fallback;
+static gwenesis_m68k_fast_state_t *gwenesis_m68k_fast_state = &gwenesis_m68k_fast_state_fallback;
+
+#define irq_latency (gwenesis_m68k_fast_state->irq_latency)
+#define emulation_initialized (gwenesis_m68k_fast_state->emulation_initialized)
+
 m68ki_cpu_core *gwenesis_m68k_core;
 
 bool gwenesis_m68k_core_init_fast_ram(void)
 {
+  if (gwenesis_m68k_fast_state == &gwenesis_m68k_fast_state_fallback)
+  {
+    gwenesis_m68k_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+    if (ptr && PTR_IN_SPIRAM(ptr))
+    {
+      free(ptr);
+      ptr = NULL;
+    }
+    if (!ptr)
+    {
+      printf("[error] Genesis M68K small state allocation failed size=%u requested=MEM_FAST\n",
+             (unsigned)sizeof(*gwenesis_m68k_fast_state));
+      return false;
+    }
+    *ptr = *gwenesis_m68k_fast_state;
+    gwenesis_m68k_fast_state = ptr;
+    printf("[info] Genesis M68K small state: ptr=%p size=%u requested=MEM_FAST addr_guess=%s\n",
+           gwenesis_m68k_fast_state,
+           (unsigned)sizeof(*gwenesis_m68k_fast_state),
+           PTR_IN_SPIRAM(gwenesis_m68k_fast_state) ? "SPIRAM" : "internal");
+  }
+
   if (gwenesis_m68k_core)
     return true;
 
@@ -75,8 +108,15 @@ void gwenesis_m68k_core_deinit_fast_ram(void)
 {
   free(gwenesis_m68k_core);
   gwenesis_m68k_core = NULL;
+  if (gwenesis_m68k_fast_state != &gwenesis_m68k_fast_state_fallback)
+  {
+    free(gwenesis_m68k_fast_state);
+    gwenesis_m68k_fast_state = &gwenesis_m68k_fast_state_fallback;
+  }
+  memset(&gwenesis_m68k_fast_state_fallback, 0, sizeof(gwenesis_m68k_fast_state_fallback));
 }
 #else
+static int irq_latency;
 m68ki_cpu_core m68k;
 #endif
 
@@ -384,7 +424,9 @@ void m68k_init(void)
 #endif
 
 #ifdef BUILD_TABLES
+#if !defined(RG_TARGET_HOLO_DYNMOD)
   static uint emulation_initialized = 0;
+#endif
 
   /* The first call to this function initializes the opcode handler jump table */
   if(!emulation_initialized)
