@@ -70,13 +70,10 @@ a:hover{text-decoration:underline}
   width:52px;
   height:52px;
   border-radius:16px;
-  display:grid;
-  place-items:center;
   border:1px solid rgba(75,132,216,.16);
   background:linear-gradient(180deg,#f8fbff,var(--blue-soft));
-  color:#2f67bc;
-  font-size:18px;
-  font-weight:900;
+  display:block;
+  object-fit:contain;
 }
 .brand h1{
   margin:0;
@@ -144,8 +141,9 @@ a:hover{text-decoration:underline}
 .pill{
   display:inline-flex;
   align-items:center;
+  gap:8px;
   min-height:32px;
-  padding:0 11px;
+  padding:0 10px;
   border-radius:999px;
   border:1px solid var(--line);
   background:#fff;
@@ -153,6 +151,15 @@ a:hover{text-decoration:underline}
 }
 .pill.fast{color:var(--green);background:var(--green-soft);border-color:#cfeedd}
 .pill.md{color:#a25f13;background:var(--orange-soft);border-color:#f4d9b8}
+.pill-logo{
+  width:22px;
+  height:22px;
+  border-radius:7px;
+  border:1px solid rgba(47,76,122,.12);
+  background:#fff;
+  display:block;
+  object-fit:contain;
+}
 .grid{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -203,28 +210,19 @@ li{margin:7px 0}
   background:var(--orange-soft);
   color:#80500f;
 }
-.open-source{
+.open-source-foot{
   margin-top:14px;
-  padding:18px;
+  padding:2px 4px 0;
+  color:#8a98a8;
+  font-size:12px;
+  line-height:1.55;
+  text-align:center;
 }
-.open-source ul{
-  padding-left:0;
-  list-style:none;
-}
-.open-source li{
-  display:grid;
-  grid-template-columns:96px minmax(0,1fr);
-  gap:10px;
-  padding:8px 0;
-  border-top:1px solid var(--line);
-}
-.open-source li:first-child{border-top:0}
-.open-source strong{font-weight:800}
+.open-source-foot a{color:#748aa4}
 @media (max-width:720px){
   .topbar{align-items:flex-start}
   .summary,.grid,.info{grid-template-columns:1fr}
   .map-row{grid-template-columns:96px minmax(0,1fr)}
-  .open-source li{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -232,7 +230,7 @@ li{margin:7px 0}
 <main class="shell">
   <header class="topbar">
     <div class="brand">
-      <div class="app-icon" aria-hidden="true">RG</div>
+      <img class="app-icon" src="main.png" width="52" height="52" alt="Holo Retro-Go logo">
       <div>
         <h1>Holo Retro-Go</h1>
         <p data-zh="复古游戏模拟器" data-en="Retro game emulator">复古游戏模拟器</p>
@@ -242,11 +240,7 @@ li{margin:7px 0}
   </header>
 
   <section class="card hero">
-    <div class="pill-row">
-      <span class="pill fast" data-zh="NES / GB 满速" data-en="NES / GB full speed">NES / GB 满速</span>
-      <span class="pill md" data-zh="MD 稳定 50/30 帧" data-en="MD stable 50/30 fps">MD 稳定 50/30 帧</span>
-      <span class="pill" data-zh="支持 Xbox / Q36 手柄" data-en="Xbox / Q36 gamepad">支持 Xbox / Q36 手柄</span>
-    </div>
+    <div id="systemPills" class="pill-row" aria-label="Supported systems"></div>
     <p data-zh="支持 NES、GB/GBC、MD/Genesis、SMS、GG、ColecoVision、PCE 等核心。" data-en="Supports NES, GB/GBC, MD/Genesis, SMS, GG, ColecoVision, PCE, and more.">支持 NES、GB/GBC、MD/Genesis、SMS、GG、ColecoVision、PCE 等核心。</p>
     <div class="summary">
       <div class="item">
@@ -295,27 +289,6 @@ li{margin:7px 0}
     </section>
   </div>
 
-  <section class="card open-source">
-    <h2 class="section-title">
-      <span data-zh="开源" data-en="Open source">开源</span>
-      <strong data-zh="协议与源码" data-en="License and source">协议与源码</strong>
-    </h2>
-    <ul>
-      <li>
-        <strong data-zh="协议" data-en="License">协议</strong>
-        <span data-zh="GPLv2 开源协议" data-en="GPLv2 open-source license">GPLv2 开源协议</span>
-      </li>
-      <li>
-        <strong>Git</strong>
-        <span><a href="https://github.com/clocteck/holo-retro-go/" target="_blank" rel="noreferrer noopener">github.com/clocteck/holo-retro-go</a></span>
-      </li>
-      <li>
-        <strong data-zh="移植" data-en="Port">移植</strong>
-        <span data-zh="参考并移植自 Retro-Go 项目。" data-en="Ported with reference to the Retro-Go project.">参考并移植自 Retro-Go 项目。</span>
-      </li>
-    </ul>
-  </section>
-
   <section class="card section" style="margin-top:14px">
     <h2 class="section-title">
       <span data-zh="手柄" data-en="Gamepad">手柄</span>
@@ -333,17 +306,98 @@ li{margin:7px 0}
     </div>
     <div class="note" data-zh="MD 性能说明基于开启音频状态：稳定约 50 模拟帧 / 30 渲染帧。" data-en="MD performance note with audio enabled: stable around 50 simulated fps / 30 rendered fps.">MD 性能说明基于开启音频状态：稳定约 50 模拟帧 / 30 渲染帧。</div>
   </section>
+  <footer class="open-source-foot" data-zh="GPLv2 · &lt;a href=&quot;https://github.com/clocteck/holo-retro-go/&quot; target=&quot;_blank&quot; rel=&quot;noreferrer noopener&quot;&gt;github.com/clocteck/holo-retro-go&lt;/a&gt; · 移植自 Retro-Go" data-en="GPLv2 · &lt;a href=&quot;https://github.com/clocteck/holo-retro-go/&quot; target=&quot;_blank&quot; rel=&quot;noreferrer noopener&quot;&gt;github.com/clocteck/holo-retro-go&lt;/a&gt; · Ported from Retro-Go">
+    GPLv2 · <a href="https://github.com/clocteck/holo-retro-go/" target="_blank" rel="noreferrer noopener">github.com/clocteck/holo-retro-go</a> · 移植自 Retro-Go
+  </footer>
 </main>
 
 <script>
 (function(){
   var current = "zh";
   var button = document.getElementById("langBtn");
+  var logoImages = [
+    { key:"nes", text:"NES", size:44 },
+    { key:"gb", text:"GB", size:44 },
+    { key:"md", text:"MD", size:44 },
+    { key:"pad", text:"PAD", size:44 }
+  ];
+  var systems = [
+    { logo:"nes", tone:"fast", zh:"NES / GB 满速", en:"NES / GB full speed" },
+    { logo:"md", tone:"md", zh:"MD 稳定 50/30 帧", en:"MD stable 50/30 fps" },
+    { logo:"pad", tone:"", zh:"支持 Xbox / Q36 手柄", en:"Xbox / Q36 gamepad" }
+  ];
+
+  function createLogoImage(text, size){
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext && canvas.getContext("2d");
+    var scale = size || 44;
+    canvas.width = scale;
+    canvas.height = scale;
+    if(!ctx){return ""}
+
+    ctx.fillStyle = "#f8fbff";
+    ctx.fillRect(0,0,scale,scale);
+    ctx.strokeStyle = "#c9d8eb";
+    ctx.lineWidth = Math.max(1,Math.round(scale / 36));
+    ctx.strokeRect(ctx.lineWidth / 2,ctx.lineWidth / 2,scale - ctx.lineWidth,scale - ctx.lineWidth);
+    ctx.fillStyle = "#4f6f95";
+    ctx.font = "900 " + Math.round(scale * (text.length > 2 ? .27 : .34)) + "px -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text,scale / 2,scale / 2 + 1);
+
+    try{return canvas.toDataURL("image/png")}
+    catch(err){return ""}
+  }
+
+  logoImages.forEach(function(item){
+    item.src = createLogoImage(item.text,item.size);
+  });
+
+  function getLogo(key){
+    for(var i = 0; i < logoImages.length; i += 1){
+      if(logoImages[i].key === key){
+        return logoImages[i].src;
+      }
+    }
+    return "";
+  }
+
+  function renderSystems(){
+    var wrap = document.getElementById("systemPills");
+    if(!wrap){return}
+    systems.forEach(function(item){
+      var pill = document.createElement("span");
+      var img = document.createElement("img");
+      var text = document.createElement("span");
+
+      pill.className = "pill" + (item.tone ? " " + item.tone : "");
+      pill.setAttribute("data-zh",item.zh);
+      pill.setAttribute("data-en",item.en);
+      img.className = "pill-logo";
+      img.src = getLogo(item.logo);
+      img.alt = "";
+      img.width = 22;
+      img.height = 22;
+      img.setAttribute("aria-hidden","true");
+      text.className = "pill-text";
+
+      pill.appendChild(img);
+      pill.appendChild(text);
+      wrap.appendChild(pill);
+    });
+  }
+
   function setLang(lang){
     current = lang === "en" ? "en" : "zh";
     document.documentElement.lang = current === "en" ? "en" : "zh-CN";
     document.querySelectorAll("[data-zh][data-en]").forEach(function(node){
-      node.innerHTML = node.getAttribute(current === "en" ? "data-en" : "data-zh");
+      var target = node.querySelector(".pill-text");
+      if(target){
+        target.textContent = node.getAttribute(current === "en" ? "data-en" : "data-zh");
+      }else{
+        node.innerHTML = node.getAttribute(current === "en" ? "data-en" : "data-zh");
+      }
     });
     button.textContent = current === "en" ? "中文" : "EN";
     button.setAttribute("aria-label", current === "en" ? "切换到中文" : "Switch language");
@@ -351,6 +405,7 @@ li{margin:7px 0}
   button.addEventListener("click", function(){
     setLang(current === "en" ? "zh" : "en");
   });
+  renderSystems();
   setLang("zh");
 }());
 </script>
