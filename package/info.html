@@ -43,6 +43,11 @@ code{
   font-family:"Cascadia Code","Consolas",monospace;
   word-break:break-all;
 }
+a{
+  color:#2f67bc;
+  text-decoration:none;
+}
+a:hover{text-decoration:underline}
 .shell{
   width:min(900px,calc(100% - 24px));
   margin:0 auto;
@@ -61,11 +66,17 @@ code{
   gap:12px;
   min-width:0;
 }
-.brand img{
+.app-icon{
   width:52px;
   height:52px;
   border-radius:16px;
-  background:var(--blue-soft);
+  display:grid;
+  place-items:center;
+  border:1px solid rgba(75,132,216,.16);
+  background:linear-gradient(180deg,#f8fbff,var(--blue-soft));
+  color:#2f67bc;
+  font-size:18px;
+  font-weight:900;
 }
 .brand h1{
   margin:0;
@@ -192,10 +203,28 @@ li{margin:7px 0}
   background:var(--orange-soft);
   color:#80500f;
 }
+.open-source{
+  margin-top:14px;
+  padding:18px;
+}
+.open-source ul{
+  padding-left:0;
+  list-style:none;
+}
+.open-source li{
+  display:grid;
+  grid-template-columns:96px minmax(0,1fr);
+  gap:10px;
+  padding:8px 0;
+  border-top:1px solid var(--line);
+}
+.open-source li:first-child{border-top:0}
+.open-source strong{font-weight:800}
 @media (max-width:720px){
   .topbar{align-items:flex-start}
   .summary,.grid,.info{grid-template-columns:1fr}
   .map-row{grid-template-columns:96px minmax(0,1fr)}
+  .open-source li{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -203,7 +232,7 @@ li{margin:7px 0}
 <main class="shell">
   <header class="topbar">
     <div class="brand">
-      <img src="main.png" alt="Holo Retro-Go">
+      <div class="app-icon" aria-hidden="true">RG</div>
       <div>
         <h1>Holo Retro-Go</h1>
         <p data-zh="复古游戏模拟器" data-en="Retro game emulator">复古游戏模拟器</p>
@@ -265,6 +294,27 @@ li{margin:7px 0}
       </div>
     </section>
   </div>
+
+  <section class="card open-source">
+    <h2 class="section-title">
+      <span data-zh="开源" data-en="Open source">开源</span>
+      <strong data-zh="协议与源码" data-en="License and source">协议与源码</strong>
+    </h2>
+    <ul>
+      <li>
+        <strong data-zh="协议" data-en="License">协议</strong>
+        <span data-zh="GPLv2 开源协议" data-en="GPLv2 open-source license">GPLv2 开源协议</span>
+      </li>
+      <li>
+        <strong>Git</strong>
+        <span><a href="https://github.com/clocteck/holo-retro-go/" target="_blank" rel="noreferrer noopener">github.com/clocteck/holo-retro-go</a></span>
+      </li>
+      <li>
+        <strong data-zh="移植" data-en="Port">移植</strong>
+        <span data-zh="参考并移植自 Retro-Go 项目。" data-en="Ported with reference to the Retro-Go project.">参考并移植自 Retro-Go 项目。</span>
+      </li>
+    </ul>
+  </section>
 
   <section class="card section" style="margin-top:14px">
     <h2 class="section-title">
