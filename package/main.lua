@@ -45,7 +45,7 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-06-30-async-selector-v15",
+  VERSION = "2026-07-01-runtime-light-v16",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = APP_DIR .. "/roms",
@@ -53,7 +53,9 @@ local APP = {
   API_PREFIX = ROUTE_BASE .. "/api",
   CHUNK_SIZE = 64 * 1024,
   MAX_ROM_FILE_SIZE = 32 * 1024 * 1024,
-  POLL_DELAY_MS = 16,
+  POLL_DELAY_MS = 200,
+  STATUS_POLL_DELAY_MS = 200,
+  EXIT_POLL_DELAY_MS = 200,
   AXIS_THRESHOLD = 0.60,
   routes = {},
   web_ready = false,
@@ -1723,6 +1725,7 @@ if not load_catalog() then
   APP.stop_web("catalog failed")
   return
 end
+APP.stop_web("runtime")
 
 local function retrogo_info()
   local ok, info = pcall(function()
@@ -1786,6 +1789,8 @@ local runtime_timer = nil
 local exit_timer = nil
 local pending_restart = nil
 local runtime_tick_busy = false
+local next_status_poll_ms = 0
+local next_exit_poll_ms = 0
 
 local function stop_timer(timer_obj)
   if not timer_obj then
@@ -2008,15 +2013,19 @@ local function runtime_tick()
   end
   runtime_tick_busy = true
   local ok, err = pcall(function()
-    if app and app.exiting and app.exiting() then
-      request_exit_to_home("app.exiting")
-      return
+    local now = now_ms()
+    if now >= next_exit_poll_ms then
+      next_exit_poll_ms = now + APP.EXIT_POLL_DELAY_MS
+      if app and app.exiting and app.exiting() then
+        request_exit_to_home("app.exiting")
+        return
+      end
     end
     if exit_to_home_requested then
       return
     end
     if pending_restart then
-      if now_ms() >= (pending_restart.due_ms or 0) then
+      if now >= (pending_restart.due_ms or 0) then
         if exit_to_home_requested then
           pending_restart = nil
           return
@@ -2035,9 +2044,12 @@ local function runtime_tick()
     if exit_to_home_requested then
       return
     end
-    local info = retrogo_info()
-    if info and not info.running then
-      schedule_restart(info)
+    if now >= next_status_poll_ms then
+      next_status_poll_ms = now + APP.STATUS_POLL_DELAY_MS
+      local info = retrogo_info()
+      if info and not info.running then
+        schedule_restart(info)
+      end
     end
   end)
   runtime_tick_busy = false

@@ -41,6 +41,7 @@ void holo_runtime_exit_now(void) __attribute__((noreturn));
 
 int holo_display_acquire(uint16_t width, uint16_t height);
 int holo_display_release(void);
+int holo_display_release_retry(uint32_t attempts, uint32_t delay_ms);
 int holo_display_start_write(void);
 int holo_display_push_image(int16_t x, int16_t y, uint16_t width, uint16_t height, const uint16_t *pixels);
 int holo_display_set_addr_window(int32_t x, int32_t y, int32_t width, int32_t height);

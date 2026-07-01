@@ -18,14 +18,18 @@
 #if HOLO_RETRO_GWENESIS_ONLY
 #define RETROGO_MODULE_NAME "gwenesis"
 #define RETROGO_MODULE_PROFILE "gwenesis"
-#define RETROGO_MODULE_TASK_STACK_BYTES (15u * 1024u)
+#define RETROGO_MODULE_TASK_STACK_BYTES (7u * 1024u)
+#define RETROGO_MODULE_TASK_STACK_CAPS (MODULE_HEAP_INTERNAL | MODULE_HEAP_8BIT)
 #else
 #define RETROGO_MODULE_NAME "retrogo"
 #define RETROGO_MODULE_PROFILE "nes"
 #define RETROGO_MODULE_TASK_STACK_BYTES (9u * 1024u)
+#define RETROGO_MODULE_TASK_STACK_CAPS (MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT)
 #endif
 #define RETROGO_MODULE_DESCRIPTION "Retro-Go dynamic module optimized for " RETROGO_PORT_PLATFORM
 #define RETROGO_LOG_PREFIX "[" RETROGO_MODULE_NAME ".so] "
+#define RETROGO_DISPLAY_RELEASE_RETRIES 25u
+#define RETROGO_DISPLAY_RELEASE_RETRY_DELAY_MS 20u
 
 void retrogo_core_app_main(void);
 void rg_system_deinit_for_holo(void);
@@ -343,10 +347,7 @@ static void retrogo_task_entry(void *arg)
 #endif
     retrogo_core_app_main();
     rg_system_deinit_for_holo();
-    holo_runtime_unbind_task();
-    inst->running = 0;
-    inst->task = NULL;
-    if (holo_display_release())
+    if (holo_display_release_retry(RETROGO_DISPLAY_RELEASE_RETRIES, RETROGO_DISPLAY_RELEASE_RETRY_DELAY_MS))
     {
         holo_port_log(RETROGO_LOG_PREFIX "display release");
     }
@@ -355,6 +356,9 @@ static void retrogo_task_entry(void *arg)
         holo_port_log(RETROGO_LOG_PREFIX "display release failed");
     }
     holo_port_log(RETROGO_LOG_PREFIX "retro-go task stop");
+    holo_runtime_unbind_task();
+    inst->task = NULL;
+    inst->running = 0;
     if (inst->host && inst->host->task.remove)
     {
         inst->host->task.remove(NULL);
@@ -416,7 +420,7 @@ static int l_start(lua_State *L)
     if (host->task.create_ex)
     {
         if (host->task.create_ex(RETROGO_MODULE_NAME, retrogo_task_entry, inst, RETROGO_MODULE_TASK_STACK_BYTES, 3u, 1,
-                                 MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT, &inst->task) != MODULE_OK)
+                                 RETROGO_MODULE_TASK_STACK_CAPS, &inst->task) != MODULE_OK)
         {
             inst->task = NULL;
         }

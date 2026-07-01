@@ -210,6 +210,15 @@ void holo_runtime_exit_now(void)
     }
 }
 
+static void holo_port_delay_ms(uint32_t ms)
+{
+    if (s_host && s_host->task.delay) {
+        s_host->task.delay(ms);
+    } else if (s_host && s_host->time.delay) {
+        s_host->time.delay(ms);
+    }
+}
+
 int holo_display_acquire(uint16_t width, uint16_t height)
 {
     if (s_display_surface) {
@@ -236,7 +245,7 @@ int holo_display_acquire(uint16_t width, uint16_t height)
     return 0;
 }
 
-int holo_display_release(void)
+static int holo_display_release_once(int log_failure)
 {
     int32_t ret;
 
@@ -245,7 +254,9 @@ int holo_display_release(void)
         return 1;
     }
     if (!s_host || !s_host->display.release) {
-        holo_port_log("[retrogo.so] display release unavailable");
+        if (log_failure) {
+            holo_port_log("[retrogo.so] display release unavailable");
+        }
         return 0;
     }
 
@@ -263,7 +274,32 @@ int holo_display_release(void)
         return 1;
     }
 
-    holo_port_log("[retrogo.so] display release failed; keeping surface for retry");
+    if (log_failure) {
+        holo_port_log("[retrogo.so] display release failed; keeping surface for retry");
+    }
+    return 0;
+}
+
+int holo_display_release(void)
+{
+    return holo_display_release_once(1);
+}
+
+int holo_display_release_retry(uint32_t attempts, uint32_t delay_ms)
+{
+    if (attempts == 0) {
+        attempts = 1;
+    }
+
+    for (uint32_t i = 0; i < attempts; ++i) {
+        const int last_attempt = (i + 1u) >= attempts;
+        if (holo_display_release_once(last_attempt)) {
+            return 1;
+        }
+        if (!last_attempt && delay_ms > 0) {
+            holo_port_delay_ms(delay_ms);
+        }
+    }
     return 0;
 }
 

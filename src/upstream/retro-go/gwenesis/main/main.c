@@ -55,7 +55,7 @@ typedef enum
     GWENESIS_AUDIO_MODE_BALANCE = 2,
 } gwenesis_audio_mode_t;
 
-static gwenesis_audio_mode_t gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
+static gwenesis_audio_mode_t gwenesis_audio_mode = GWENESIS_AUDIO_MODE_BALANCE;
 
 static const char *gwenesis_audio_mode_name(gwenesis_audio_mode_t mode)
 {
@@ -171,6 +171,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_YM_PENDING_MEM MEM_SLOW
 #define GWENESIS_AUDIO_STRETCH_MEM MEM_SLOW
 #define GWENESIS_AUDIO_RING_MEM MEM_FAST
+#define GWENESIS_AUDIO_RING_BUFFER_MEM MEM_SLOW
 #define GWENESIS_AUDIO_QUEUE_MEM MEM_FAST
 #define GWENESIS_YM_EVENTS_PER_PACKET 128
 #define GWENESIS_YM_PACKET_MIN_SAMPLES 64
@@ -183,6 +184,9 @@ static bool gwenesis_perf_overlay_enabled;
 #ifndef GWENESIS_AUDIO_EQ_ENABLED
 #define GWENESIS_AUDIO_EQ_ENABLED 0
 #endif
+#ifndef GWENESIS_MONITOR_EXTRA_ENABLED
+#define GWENESIS_MONITOR_EXTRA_ENABLED 0
+#endif
 #else
 #define GWENESIS_YM_ASYNC_CORE0 0
 #define GWENESIS_YM_QUEUE_PACKETS GWENESIS_AUDIO_QUEUE_PACKETS
@@ -190,6 +194,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_YM_PENDING_MEM MEM_FAST
 #define GWENESIS_AUDIO_STRETCH_MEM MEM_FAST
 #define GWENESIS_AUDIO_RING_MEM MEM_FAST
+#define GWENESIS_AUDIO_RING_BUFFER_MEM MEM_FAST
 #define GWENESIS_AUDIO_QUEUE_MEM MEM_FAST
 #ifndef GWENESIS_PROFILER_DETAILED
 #define GWENESIS_PROFILER_DETAILED 0
@@ -199,6 +204,9 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 #ifndef GWENESIS_AUDIO_EQ_ENABLED
 #define GWENESIS_AUDIO_EQ_ENABLED 1
+#endif
+#ifndef GWENESIS_MONITOR_EXTRA_ENABLED
+#define GWENESIS_MONITOR_EXTRA_ENABLED 1
 #endif
 #endif
 #ifndef GWENESIS_YM_ASYNC_COMPUTE_ENABLED
@@ -211,7 +219,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 #if GWENESIS_VDP_ASYNC_ENABLED
 #define GWENESIS_VDP_ASYNC_JOBS 2
-#define GWENESIS_VDP_ASYNC_TASK_STACK (8 * 1024)
+#define GWENESIS_VDP_ASYNC_TASK_STACK ((11 * 1024) / 2)
 #define GWENESIS_VDP_ASYNC_TASK_PRIORITY RG_TASK_PRIORITY_5
 #define GWENESIS_VDP_ASYNC_RENDER_FRAME_DELAY_MS 0
 #define GWENESIS_VDP_ASYNC_UNSAFE_FRAMES 8
@@ -221,15 +229,15 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 50
+#define GWENESIS_FRAME_TARGET_FPS 52
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
 #define GWENESIS_FIXED_DRAW_SKIP 1
 #endif
-#define GWENESIS_RENDER_MIN_FPS 30
-#define GWENESIS_RENDER_TARGET_FPS 30
-#define GWENESIS_RENDER_MAX_FPS 30
+#define GWENESIS_RENDER_MIN_FPS 31
+#define GWENESIS_RENDER_TARGET_FPS 31
+#define GWENESIS_RENDER_MAX_FPS 31
 #define GWENESIS_RENDER_SKIP_DEBT_US 5000
 static const int render_target_us = 1000000 / GWENESIS_RENDER_TARGET_FPS;
 static const int frame_min_yield_ms = 1;
@@ -1155,7 +1163,9 @@ static bool gwenesis_frameskip_should_draw(bool audio_enabled, int64_t now)
     frameskip_last_debt_us = (int)debt_us;
 
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_FIXED_DRAW_SKIP
-    const bool draw = frameskip_fixed_phase < 3;
+    const bool draw = frameskip_fixed_phase == 0 ||
+                      frameskip_fixed_phase == 2 ||
+                      frameskip_fixed_phase == 3;
     frameskip_fixed_phase = (frameskip_fixed_phase + 1) % 5;
     (void)audio_enabled;
     return draw;
@@ -2092,7 +2102,7 @@ static bool gwenesis_audio_start(void)
                  GWENESIS_AUDIO_RING_MEM | MEM_NOPANIC);
     gwenesis_audio_ring_buffer =
         rg_alloc(sizeof(*gwenesis_audio_ring_buffer) * GWENESIS_AUDIO_RING_FRAMES,
-                 GWENESIS_AUDIO_RING_MEM | MEM_NOPANIC);
+                 GWENESIS_AUDIO_RING_BUFFER_MEM | MEM_NOPANIC);
     gwenesis_audio_ring_drain_buffer =
         rg_alloc(sizeof(*gwenesis_audio_ring_drain_buffer) * GWENESIS_AUDIO_RING_SUBMIT_FRAMES,
                  GWENESIS_AUDIO_RING_MEM | MEM_NOPANIC);
@@ -2331,7 +2341,7 @@ static bool gwenesis_audio_start(void)
                 GWENESIS_YM_PACKET_MIN_SAMPLES, GWENESIS_AUDIO_PROCESS_BATCH_FRAMES,
                 GWENESIS_AUDIO_RING_FRAMES, GWENESIS_AUDIO_RING_SUBMIT_FRAMES,
                 GWENESIS_AUDIO_RING_TARGET_FRAMES,
-                GWENESIS_AUDIO_RING_MEM == MEM_SLOW ? "slow" : "fast",
+                GWENESIS_AUDIO_RING_BUFFER_MEM == MEM_SLOW ? "slow" : "fast",
                 GWENESIS_AUDIO_QUEUE_MEM == MEM_SLOW ? "slow" : "fast",
                 GWENESIS_YM_QUEUE_MEM == MEM_SLOW ? "slow" : "fast");
 #else
@@ -3905,11 +3915,11 @@ void app_main(void)
 #endif
 
 #if GWENESIS_AUDIO_EMULATION
-    gwenesis_audio_mode = rg_settings_get_number(NS_APP, SETTING_AUDIO_MODE, GWENESIS_AUDIO_MODE_FAST);
+    gwenesis_audio_mode = rg_settings_get_number(NS_APP, SETTING_AUDIO_MODE, GWENESIS_AUDIO_MODE_BALANCE);
     if (gwenesis_audio_mode < GWENESIS_AUDIO_MODE_FAST ||
         gwenesis_audio_mode > GWENESIS_AUDIO_MODE_BALANCE)
     {
-        gwenesis_audio_mode = GWENESIS_AUDIO_MODE_FAST;
+        gwenesis_audio_mode = GWENESIS_AUDIO_MODE_BALANCE;
     }
 #else
     gwenesis_audio_mode = GWENESIS_AUDIO_MODE_MUTED_PERFORMANCE;
@@ -4588,6 +4598,7 @@ void app_main(void)
 #if GWENESIS_PROFILER_DETAILED
         const int64_t frame_total_us = gwenesis_profiler_active() ? (rg_system_timer() - startTime) : 0;
 #endif
+#if GWENESIS_MONITOR_EXTRA_ENABLED
         char monitor_extra[32];
         const int ym_core = yfm_run_enabled ?
 #if GWENESIS_YM_ASYNC_CORE0
@@ -4601,6 +4612,7 @@ void app_main(void)
         snprintf(monitor_extra, sizeof(monitor_extra), "avg:%dus debt:%d ymc:%d",
                  (int)frame_work_total_us, frameskip_last_debt_us, ym_core);
         rg_system_set_monitor_extra(monitor_extra);
+#endif
         GWENESIS_PROFILER_ADD_VALUE(total_us, frame_total_us);
         GWENESIS_PROFILER_ADD_VALUE(frameskip_debt_us, frameskip_last_debt_us);
         GWENESIS_PROFILER_INC(frames);
