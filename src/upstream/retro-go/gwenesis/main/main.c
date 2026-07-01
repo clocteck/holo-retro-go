@@ -2800,7 +2800,11 @@ typedef struct
     int64_t render_us;
 } gwenesis_vdp_async_job_t;
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static gwenesis_vdp_async_job_t *gwenesis_vdp_async_jobs;
+#else
 static gwenesis_vdp_async_job_t gwenesis_vdp_async_jobs[GWENESIS_VDP_ASYNC_JOBS];
+#endif
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_VRAM_MEM == MEM_FAST
 static unsigned char *gwenesis_vdp_async_reserved_vram[GWENESIS_VDP_ASYNC_JOBS];
 #endif
@@ -2917,6 +2921,10 @@ static void gwenesis_vdp_async_discard_frame(uint32_t frame_id)
 {
     if (frame_id == 0)
         return;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return;
+#endif
 
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
@@ -2980,6 +2988,10 @@ static bool gwenesis_vdp_async_can_submit_frame(void)
 
 static void gwenesis_vdp_async_release_displayed_jobs(void)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return;
+#endif
     if (!rg_display_sync(false))
         return;
 
@@ -2993,6 +3005,10 @@ static void gwenesis_vdp_async_release_displayed_jobs(void)
 
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_acquire_job(void)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return NULL;
+#endif
     gwenesis_vdp_async_release_displayed_jobs();
 
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
@@ -3010,6 +3026,10 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_acquire_job(void)
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_latest_ready_job(void)
 {
     gwenesis_vdp_async_job_t *best = NULL;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return NULL;
+#endif
 
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
@@ -3082,6 +3102,8 @@ static void gwenesis_vdp_async_wake_worker(void)
 static void gwenesis_vdp_async_pause_core(void)
 {
     __atomic_store_n(&gwenesis_vdp_async_paused, true, __ATOMIC_RELEASE);
+    if (!gwenesis_vdp_async_jobs)
+        return;
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
         __atomic_store_n(&gwenesis_vdp_async_jobs[i].discard, 1, __ATOMIC_RELEASE);
     gwenesis_vdp_async_wait_idle_for_sync();
@@ -3271,6 +3293,10 @@ static void gwenesis_vdp_async_wait_idle_for_sync(void)
 {
     if (!gwenesis_vdp_async_task_handle)
         return;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return;
+#endif
 
     bool need_display_sync = false;
     int waited = 0;
@@ -3324,6 +3350,10 @@ static bool gwenesis_vdp_async_wait_frame_done(uint32_t frame_id)
 {
     if (!frame_id || !gwenesis_vdp_async_task_handle)
         return false;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return false;
+#endif
 
     int waited = 0;
     while (__atomic_load_n(&gwenesis_vdp_async_task_running, __ATOMIC_ACQUIRE))
@@ -3357,6 +3387,10 @@ static bool gwenesis_vdp_async_wait_frame_done(uint32_t frame_id)
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_latest_done_job(void)
 {
     gwenesis_vdp_async_job_t *best = NULL;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+        return NULL;
+#endif
 
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
@@ -3443,6 +3477,29 @@ static bool gwenesis_vdp_async_start(void)
         return false;
 
     bool vram_fallback_used = false;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (!gwenesis_vdp_async_jobs)
+    {
+        gwenesis_vdp_async_jobs =
+            rg_alloc(sizeof(*gwenesis_vdp_async_jobs) * GWENESIS_VDP_ASYNC_JOBS,
+                     MEM_FAST | MEM_NOPANIC);
+        if (gwenesis_vdp_async_jobs && PTR_IN_SPIRAM(gwenesis_vdp_async_jobs))
+        {
+            free(gwenesis_vdp_async_jobs);
+            gwenesis_vdp_async_jobs = NULL;
+        }
+        if (!gwenesis_vdp_async_jobs)
+        {
+            RG_LOGW("Genesis VDP async disabled: job state allocation failed\n");
+            return false;
+        }
+        RG_LOGI("Genesis VDP async job state: ptr=%p size=%u requested=MEM_FAST addr_guess=%s",
+                gwenesis_vdp_async_jobs,
+                (unsigned)(sizeof(*gwenesis_vdp_async_jobs) * GWENESIS_VDP_ASYNC_JOBS),
+                PTR_IN_SPIRAM(gwenesis_vdp_async_jobs) ? "SPIRAM" : "not-SPIRAM");
+    }
+#endif
 
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
@@ -3535,6 +3592,9 @@ static void gwenesis_vdp_async_stop(void)
 {
     if (gwenesis_vdp_async_task_handle)
     {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        if (gwenesis_vdp_async_jobs)
+#endif
         for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
             __atomic_store_n(&gwenesis_vdp_async_jobs[i].discard, 1, __ATOMIC_RELEASE);
         __atomic_store_n(&gwenesis_vdp_async_task_running, false, __ATOMIC_RELEASE);
@@ -3551,6 +3611,10 @@ static void gwenesis_vdp_async_stop(void)
 
     gwenesis_vdp_async_task_handle = NULL;
     __atomic_store_n(&gwenesis_vdp_async_task_running, false, __ATOMIC_RELEASE);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (gwenesis_vdp_async_jobs)
+    {
+#endif
     for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
     {
         gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
@@ -3567,6 +3631,11 @@ static void gwenesis_vdp_async_stop(void)
         job->surface = NULL;
         __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
     }
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        free(gwenesis_vdp_async_jobs);
+        gwenesis_vdp_async_jobs = NULL;
+    }
+#endif
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_VRAM_MEM == MEM_FAST
     gwenesis_vdp_async_release_reserved_vram();
 #endif
