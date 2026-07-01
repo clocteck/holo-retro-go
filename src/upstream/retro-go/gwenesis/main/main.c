@@ -182,7 +182,7 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_YM_HOT_PATH_PROFILER 0
 #endif
 #ifndef GWENESIS_AUDIO_EQ_ENABLED
-#define GWENESIS_AUDIO_EQ_ENABLED 0
+#define GWENESIS_AUDIO_EQ_ENABLED 1
 #endif
 #ifndef GWENESIS_MONITOR_EXTRA_ENABLED
 #define GWENESIS_MONITOR_EXTRA_ENABLED 0
@@ -229,7 +229,7 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 52
+#define GWENESIS_FRAME_TARGET_FPS 51
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
@@ -1297,12 +1297,10 @@ typedef struct
 } gwenesis_audio_biquad_t;
 
 static gwenesis_audio_biquad_t gwenesis_audio_eq[] = {
-    /* 300Hz +5dB, Q=0.9, fs=11025 */
-    {1.051514123f, -1.840390624f, 0.816106367f, -1.840390624f, 0.867620491f, 0.0f, 0.0f},
-    /* 1.2kHz -2.5dB, Q=0.8, fs=11025 */
-    {0.921670089f, -1.064731065f, 0.451955682f, -1.064731065f, 0.373625771f, 0.0f, 0.0f},
-    /* 3.5kHz -3.5dB, Q=0.8, fs=11025 */
-    {0.863797863f, 0.484765342f, 0.314856508f, 0.484765342f, 0.178654371f, 0.0f, 0.0f},
+    /* 300Hz +5.5dB, Q=0.667 (150-600Hz), fs=11050 */
+    {1.075014327f, -1.803652724f, 0.755202606f, -1.803652724f, 0.830216932f, 0.0f, 0.0f},
+    /* 1.8kHz -3dB, Q=0.6 (1k-4kHz), fs=11050 */
+    {0.866175972f, -0.563862212f, 0.217391248f, -0.563862212f, 0.083567220f, 0.0f, 0.0f},
 };
 
 static void gwenesis_audio_eq_reset(void)
