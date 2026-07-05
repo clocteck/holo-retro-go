@@ -139,6 +139,14 @@ Invoke-WebRequest -Uri $uri -Method Put -Body $bytes -ContentType 'text/plain; c
 
 After uploading, exit and reopen the retrogo Lua app so the host loads the new module files.
 
+## Build/Upload Subagent
+
+For build-and-upload work, the main agent can spawn a worker sub-agent with
+the prompt in `.codex/agents/holo-retro-go-build-upload.md`. Pass the target
+`ref`, `device`, requested `profiles`, and whether to upload `package/main.lua`.
+The worker should preserve user work, build from `src` with `idf.py`/`ninja`,
+upload the generated `.so` files to the device, then report HTTP status codes.
+
 ## Dynamic Module IRAM
 
 The dynmod host loader only treats executable sections named `.mod_iram` or

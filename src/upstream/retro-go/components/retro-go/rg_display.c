@@ -19,7 +19,6 @@ static rg_display_counters_t counters;
 static rg_display_config_t config;
 static rg_surface_t *border;
 static rg_display_t display;
-static volatile bool display_busy;
 static int16_t map_viewport_to_source_x[RG_SCREEN_WIDTH + 1];
 static int16_t map_viewport_to_source_y[RG_SCREEN_HEIGHT + 1];
 static uint32_t screen_line_checksum[RG_SCREEN_HEIGHT + 1];
@@ -27,16 +26,6 @@ static uint32_t screen_line_checksum[RG_SCREEN_HEIGHT + 1];
 #define LINE_IS_REPEATED(Y) (map_viewport_to_source_y[(Y)] == map_viewport_to_source_y[(Y) - 1])
 // This is to avoid flooring a number that is approximated to .9999999 and be explicit about it
 #define FLOAT_TO_INT(x) ((int)((x) + 0.1f))
-
-static inline bool display_is_busy(void)
-{
-    return __atomic_load_n(&display_busy, __ATOMIC_ACQUIRE);
-}
-
-static inline void display_set_busy(bool busy)
-{
-    __atomic_store_n(&display_busy, busy, __ATOMIC_RELEASE);
-}
 
 static const char *SETTING_BACKLIGHT = "DispBacklight";
 static const char *SETTING_SCALING = "DispScaling";
@@ -472,14 +461,11 @@ static void display_task(void *arg)
 
     while (rg_task_peek(&msg))
     {
-        display_set_busy(true);
-
         // Received a shutdown request!
         if (msg.type == RG_TASK_MSG_STOP)
         {
             rg_task_receive(&msg);
             lcd_sync();
-            display_set_busy(false);
             break;
         }
 
@@ -505,7 +491,6 @@ static void display_task(void *arg)
         rg_task_receive(&msg);
 
         lcd_sync();
-        display_set_busy(false);
     }
 }
 
@@ -648,9 +633,9 @@ bool rg_display_sync(bool block)
 {
     if (!display_task_queue)
         return true;
-    while (block && (display_is_busy() || rg_task_messages_waiting(display_task_queue)))
+    while (block && rg_task_messages_waiting(display_task_queue))
         rg_task_delay(1);
-    return !display_is_busy() && !rg_task_messages_waiting(display_task_queue);
+    return !rg_task_messages_waiting(display_task_queue);
 }
 
 void rg_display_write_rect(int left, int top, int width, int height, int stride, const uint16_t *buffer, uint32_t flags)
@@ -775,7 +760,6 @@ void rg_display_deinit(void)
             RG_LOGW("Display task still running during deinit.");
         display_task_queue = NULL;
     }
-    display_set_busy(false);
     // lcd_set_backlight(0);
     lcd_deinit();
     free(config.border_file);
@@ -788,7 +772,6 @@ void rg_display_deinit(void)
 void rg_display_init(void)
 {
     RG_LOGI("Initialization...\n");
-    display_set_busy(false);
     // TO DO: We probably should call the setters to ensure valid values...
     config = (rg_display_config_t){
         .backlight = rg_settings_get_number(NS_GLOBAL, SETTING_BACKLIGHT, 80),
