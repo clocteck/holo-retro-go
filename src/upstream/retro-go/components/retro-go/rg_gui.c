@@ -14,6 +14,14 @@
 #include "bitmaps/image_hourglass.h"
 #include "fonts/fonts.h"
 
+#ifndef RG_CHINESE_SUPPORT
+#define RG_CHINESE_SUPPORT 1
+#endif
+
+#if RG_CHINESE_SUPPORT
+extern const rg_font_t font_FusionPixel;
+#endif
+
 static struct
 {
     uint16_t *screen_buffer, *draw_buffer;
@@ -119,8 +127,13 @@ void rg_gui_init(void)
     gui.show_clock = rg_settings_get_boolean(NS_GLOBAL, SETTING_CLOCK, false);
     if (!rg_gui_set_language_id(rg_settings_get_number(NS_GLOBAL, SETTING_LANGUAGE, RG_LANG_DEFAULT)))
         rg_gui_set_language_id(0);
-    if (!rg_gui_set_font(rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_DEFAULT)))
-        rg_gui_set_font(0);
+    int font_type = rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_DEFAULT);
+#if RG_CHINESE_SUPPORT
+    if (font_type == RG_FONT_BASIC_8)
+        font_type = RG_FONT_DEFAULT;
+#endif
+    if (!rg_gui_set_font(font_type))
+        rg_gui_set_font(RG_FONT_DEFAULT);
     char *theme_name = rg_settings_get_string(NS_GLOBAL, SETTING_THEME, NULL);
     rg_gui_set_theme(theme_name);
     free(theme_name);
@@ -324,7 +337,26 @@ static int normalize_text_codepoint(int c)
     return c;
 }
 
-static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int c)
+static const rg_font_glyph_t *find_glyph(const rg_font_t *font, int c)
+{
+    if (!font || !font->data)
+        return NULL;
+
+    const uint8_t *ptr = font->data;
+    for (size_t i = 0; i < font->chars; ++i)
+    {
+        const rg_font_glyph_t *glyph = (const rg_font_glyph_t *)ptr;
+        if (glyph->code == c)
+            return glyph;
+        if (glyph->width != 0)
+            ptr += (((size_t)glyph->width * glyph->height - 1) / 8) + 1;
+        ptr += sizeof(rg_font_glyph_t);
+    }
+
+    return NULL;
+}
+
+static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int c, bool cjk_fallback)
 {
     c = normalize_text_codepoint(c);
 
@@ -335,16 +367,17 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
     if (points <= 0)
         points = font->height;
 
-    const uint8_t *ptr = font->data;
-    const rg_font_glyph_t *glyph = (rg_font_glyph_t *)ptr;
-    // for (size_t i = 0; i < font->chars && glyph->code && glyph->code != c; ++i)
-    while (glyph->code && glyph->code != c)
+    const rg_font_glyph_t *glyph = find_glyph(font, c);
+#if RG_CHINESE_SUPPORT
+    if (!glyph && cjk_fallback && font != &font_FusionPixel && points >= font_FusionPixel.height)
     {
-        if (glyph->width != 0)
-            ptr += (((glyph->width * glyph->height) - 1) / 8) + 1;
-        ptr += sizeof(rg_font_glyph_t);
-        glyph = (rg_font_glyph_t *)ptr;
+        glyph = find_glyph(&font_FusionPixel, c);
+        if (glyph)
+            font = &font_FusionPixel;
     }
+#else
+    (void)cjk_fallback;
+#endif
 
     if (glyph && glyph->code == c) // Glyph found
     {
@@ -370,30 +403,38 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
                         ch = *data++;
                     }
                     if ((ch & mask) != 0)
-                        row |= (1 << (xOffset + x));
+                    {
+                        int bit = xOffset + x;
+                        if (bit >= 0 && bit < 32)
+                            row |= (1u << bit);
+                    }
                     mask >>= 1;
                 }
-                output[yOffset + y] = row;
+                if (yOffset + y < points)
+                    output[yOffset + y] = row;
             }
             // Vertical stretching
             if (points != font->height)
             {
                 float scale = (float)points / font->height;
                 for (int y = points - 1; y >= 0; y--)
-                    output[y] = output[(int)(y / scale)];
+                {
+                    int src_y = (int)(y / scale);
+                    if (src_y < 0)
+                        src_y = 0;
+                    if (src_y >= points)
+                        src_y = points - 1;
+                    output[y] = output[src_y];
+                }
             }
         }
         return RG_MAX(width, xDelta);
     }
-#if RG_CHINESE_SUPPORT
-    else if (font != &font_FusionPixel)
-    {
-        return get_glyph(output, &font_FusionPixel, points, c);
-    }
-#endif
     else // Glyph not found, no fallback
     {
         size_t box_width = font->width ?: 8;
+        if (box_width < 2 || box_width >= 32)
+            box_width = 8;
         if (output) // draw missing box
         {
             uint32_t mask = ~((0xFFFFFFFF << (box_width - 1)) | 1);
@@ -414,6 +455,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
     int line_height = font_height + padding * 2;
     int line_count = 0;
     bool transparency = color_fg == C_TRANSPARENT || color_bg == C_TRANSPARENT;
+    bool cjk_fallback = (flags & RG_TEXT_CJK_FALLBACK) != 0;
     // int16_t line_breaks[64], line_width_cache[64];
 
     if (!text || *text == 0)
@@ -426,7 +468,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
         for (const char *ptr = text; *ptr;)
         {
             int chr = rg_utf8_decode(&ptr);
-            line_width += monospace ?: get_glyph(NULL, font, font_height, chr);
+            line_width += monospace ?: get_glyph(NULL, font, font_height, chr, cjk_fallback);
 
             if (chr == '\n' || *ptr == 0)
             {
@@ -465,7 +507,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
             while (x_offset < draw_width && *line && *line != '\n')
             {
                 int chr = rg_utf8_decode(&line);
-                int width = monospace ?: get_glyph(NULL, font, font_height, chr);
+                int width = monospace ?: get_glyph(NULL, font, font_height, chr, cjk_fallback);
                 if (draw_width - x_offset < width) // Do not truncate glyphs
                     break;
                 x_offset += width;
@@ -485,7 +527,7 @@ rg_rect_t rg_gui_draw_text(int x_pos, int y_pos, int width, const char *text, //
         {
             uint32_t bitmap[font_height];
             const char *prev_ptr = ptr;
-            int glyph_width = get_glyph(bitmap, font, font_height, rg_utf8_decode(&ptr));
+            int glyph_width = get_glyph(bitmap, font, font_height, rg_utf8_decode(&ptr), cjk_fallback);
             int width = monospace ?: glyph_width;
 
             if (draw_width - x_offset < width) // Do not truncate glyphs

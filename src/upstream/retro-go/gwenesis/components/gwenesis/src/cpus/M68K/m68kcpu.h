@@ -946,33 +946,36 @@ INLINE void m68ki_write_8(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xE00000) {
+        uint address_68k = ADDRESS_68K(address);
+        if (address_68k >= 0xE00000) {
           GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
-          WRITE8RAM(ADDRESS_68K(address), value);
+          WRITE8RAM(address_68k, value);
         } else
-        m68k_write_memory_8(ADDRESS_68K(address), value);
+        m68k_write_memory_8(address_68k, value);
 }
 
 INLINE void m68ki_write_16(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xE00000) {
+        uint address_68k = ADDRESS_68K(address);
+        if (address_68k >= 0xE00000) {
           GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
-          WRITE16RAM(ADDRESS_68K(address), value);
+          WRITE16RAM(address_68k, value);
         } else
-	m68k_write_memory_16(ADDRESS_68K(address), value);
+	m68k_write_memory_16(address_68k, value);
 }
 
 INLINE void m68ki_write_32(uint address, uint value)
 {
 
   m68ki_set_fc(FLAG_S | FUNCTION_CODE_USER_DATA) /* auto-disable (see m68kcpu.h) */
-        if (ADDRESS_68K(address) >= 0xE00000) {
+        uint address_68k = ADDRESS_68K(address);
+        if (address_68k >= 0xE00000) {
           GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_RAM_W);
-          WRITE32RAM(ADDRESS_68K(address), value);
+          WRITE32RAM(address_68k, value);
         } else
-	m68k_write_memory_32(ADDRESS_68K(address), value);
+	m68k_write_memory_32(address_68k, value);
 }
 
 

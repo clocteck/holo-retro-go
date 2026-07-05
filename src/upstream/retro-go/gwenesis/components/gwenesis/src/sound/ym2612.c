@@ -2572,11 +2572,29 @@ void GWENESIS_HOT ym2612_run(int target)
     return;
   }
   int ym2612_prev_index = ym2612_index;
-  ym2612_index += (target - ym2612_clock) / ym2612.divisor;
-  if (ym2612_index > ym2612_prev_index)
+  int samples = (target - ym2612_clock) / ym2612.divisor;
+  if (samples <= 0)
+    return;
+
+  if (ym2612_prev_index >= GWENESIS_AUDIO_BUFFER_CAPACITY)
   {
-    YM2612Update(gwenesis_ym2612_buffer + ym2612_prev_index, ym2612_index - ym2612_prev_index);
-    ym2612_clock = ym2612_index * ym2612.divisor;
+    ym2612_index = GWENESIS_AUDIO_BUFFER_CAPACITY;
+    ym2612_clock = target;
+    return;
+  }
+
+  bool clipped = false;
+  if (samples > GWENESIS_AUDIO_BUFFER_CAPACITY - ym2612_prev_index)
+  {
+    samples = GWENESIS_AUDIO_BUFFER_CAPACITY - ym2612_prev_index;
+    clipped = true;
+  }
+
+  ym2612_index = ym2612_prev_index + samples;
+  if (samples > 0)
+  {
+    YM2612Update(gwenesis_ym2612_buffer + ym2612_prev_index, samples);
+    ym2612_clock = clipped ? target : ym2612_index * ym2612.divisor;
   }
   else
   {

@@ -174,7 +174,7 @@
 #endif
 
 #ifndef RG_FONT_DEFAULT
-#define RG_FONT_DEFAULT RG_FONT_VERA_11
+#define RG_FONT_DEFAULT RG_FONT_DEJAVU_12
 #endif
 
 #ifndef RG_FONT_CHINESE

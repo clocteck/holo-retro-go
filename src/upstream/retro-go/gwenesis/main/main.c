@@ -27,7 +27,7 @@
 #else
 #define AUDIO_OUTPUT_SAMPLE_RATE (AUDIO_SYNTH_SAMPLE_RATE)
 #endif
-#define AUDIO_BUFFER_LENGTH (GWENESIS_AUDIO_BUFFER_LENGTH_PAL + 8)
+#define AUDIO_BUFFER_LENGTH GWENESIS_AUDIO_BUFFER_CAPACITY
 
 extern unsigned char *VRAM;
 extern unsigned char *gwenesis_vdp_regs;
@@ -319,6 +319,7 @@ static rg_task_t *gwenesis_audio_task_handle;
 static rg_task_t *gwenesis_audio_output_task_handle;
 #endif
 static volatile bool gwenesis_audio_task_running;
+static bool gwenesis_audio_queue_full_logged;
 static uint32_t gwenesis_audio_queue_read;
 static uint32_t gwenesis_audio_queue_write;
 #if GWENESIS_PROFILER_DETAILED
@@ -356,6 +357,7 @@ static gwenesis_ym_frame_packet_t *gwenesis_ym_frame_queue;
 static gwenesis_ym_frame_packet_t *gwenesis_ym_pending_frame;
 static uint32_t gwenesis_ym_frame_queue_read;
 static uint32_t gwenesis_ym_frame_queue_write;
+static bool gwenesis_ym_queue_full_logged;
 static int gwenesis_ym_next_submit_sample;
 static size_t gwenesis_ym_audio_submitted;
 static volatile uint32_t gwenesis_audio_ring_overflows;
@@ -1164,8 +1166,6 @@ static bool gwenesis_frameskip_should_draw(bool audio_enabled, int64_t now)
     frameskip_last_debt_us = (int)debt_us;
 
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_FIXED_DRAW_SKIP
-    // Render pattern: draw-skip-draw-skip-draw-draw-skip
-    // (D-S-D-S-D-D-S), cycle length 7.
     const bool draw = frameskip_fixed_phase == 0 ||
                       frameskip_fixed_phase == 2 ||
                       frameskip_fixed_phase == 4 ||
@@ -1499,9 +1499,16 @@ static bool gwenesis_audio_queue_push(const rg_audio_frame_t *frames, size_t cou
             memcpy(packet->frames, frames, count * sizeof(packet->frames[0]));
             __atomic_store_n(&gwenesis_audio_queue_write, write + 1, __ATOMIC_RELEASE);
             gwenesis_audio_queue_stat_max(used + 1);
+            gwenesis_audio_queue_full_logged = false;
             return true;
         }
 
+        if (!gwenesis_audio_queue_full_logged)
+        {
+            printf("[warn] Genesis audio queue full used=%u/%u count=%u\n",
+                   (unsigned)used, (unsigned)GWENESIS_AUDIO_QUEUE_PACKETS, (unsigned)count);
+            gwenesis_audio_queue_full_logged = true;
+        }
 #if GWENESIS_PROFILER_DETAILED
         gwenesis_audio_queue_full_waits++;
 #endif
@@ -1656,6 +1663,7 @@ static bool gwenesis_ym_async_submit_pending(int target, bool final, bool block)
             gwenesis_ym_async_copy_packet(packet, pending);
             __atomic_store_n(&gwenesis_ym_frame_queue_write, write + 1, __ATOMIC_RELEASE);
             gwenesis_audio_queue_stat_max(used + 1);
+            gwenesis_ym_queue_full_logged = false;
 
             pending->target = target;
             pending->divisor = gwenesis_audio_divisor(REG1_PAL != 0);
@@ -1682,6 +1690,13 @@ static bool gwenesis_ym_async_submit_pending(int target, bool final, bool block)
         if (!block)
             return false;
 
+        if (!gwenesis_ym_queue_full_logged)
+        {
+            printf("[warn] Genesis YM queue full used=%u/%u final=%d events=%u\n",
+                   (unsigned)used, (unsigned)GWENESIS_YM_QUEUE_PACKETS,
+                   final ? 1 : 0, (unsigned)pending->count);
+            gwenesis_ym_queue_full_logged = true;
+        }
         __atomic_store_n(&gwenesis_ym_block_draw_request, 1, __ATOMIC_RELEASE);
 #if GWENESIS_PROFILER_DETAILED
         if (gwenesis_profiler_active())
@@ -1901,8 +1916,9 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
         if (used >= GWENESIS_AUDIO_RING_FRAMES)
         {
             const size_t dropped = count - offset;
-            RG_LOGW("audio ring full: dropped %u frames (used=%u write=%u read=%u)", (unsigned)dropped, (unsigned)used,
-                    (unsigned)write, (unsigned)read);
+            printf("[warn] Genesis audio ring full drop=%u used=%u/%u count=%u\n",
+                   (unsigned)dropped, (unsigned)used,
+                   (unsigned)GWENESIS_AUDIO_RING_FRAMES, (unsigned)count);
 #if GWENESIS_PROFILER_DETAILED
             gwenesis_audio_ring_overflows += (uint32_t)dropped;
 #endif
@@ -1937,7 +1953,6 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
 static void gwenesis_audio_output_task(void *arg)
 {
     bool prebuffering = true;
-    bool empty_water_reported = false;
     (void)arg;
 
     while (gwenesis_audio_task_running || gwenesis_audio_ring_fill() > 0)
@@ -1946,22 +1961,18 @@ static void gwenesis_audio_output_task(void *arg)
 
         if (fill == 0)
         {
-            if (!empty_water_reported)
-            {
-                RG_LOGW("audio ring 0-water: fill=%u, waiting", (unsigned)fill);
-                empty_water_reported = true;
-            }
             if (!gwenesis_audio_task_running)
                 break;
 #if GWENESIS_PROFILER_DETAILED
             if (!prebuffering)
                 gwenesis_audio_queue_empty_waits++;
 #endif
+            if (!prebuffering)
+                printf("[warn] Genesis audio underflow ring empty\n");
             prebuffering = true;
             rg_task_delay(1);
             continue;
         }
-        empty_water_reported = false;
 
         if (gwenesis_audio_task_running && prebuffering)
         {
@@ -2159,6 +2170,7 @@ static void gwenesis_audio_task(void *arg)
             gwenesis_audio_queue_stat_min(0);
             if (have_last_frame)
             {
+                printf("[warn] Genesis audio underflow queue empty\n");
                 gwenesis_audio_make_fade_out(generated, RG_COUNT(generated), last_frame);
                 have_last_frame = false;
                 rg_audio_submit(generated, RG_COUNT(generated));
@@ -2271,6 +2283,8 @@ static bool gwenesis_audio_start(void)
     __atomic_store_n(&gwenesis_audio_queue_write, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&gwenesis_ym_frame_queue_read, 0, __ATOMIC_RELEASE);
     __atomic_store_n(&gwenesis_ym_frame_queue_write, 0, __ATOMIC_RELEASE);
+    gwenesis_audio_queue_full_logged = false;
+    gwenesis_ym_queue_full_logged = false;
     gwenesis_ym_block_draw_clear();
     gwenesis_ym_async_capture_active = false;
     gwenesis_ym_next_submit_sample = GWENESIS_YM_PACKET_MIN_SAMPLES;
@@ -2618,14 +2632,10 @@ static size_t gwenesis_audio_submit_frame(size_t count)
 
     for (size_t i = 0; i < count; ++i)
     {
-        int32_t left = 0;
-        int32_t right = 0;
-
-        left += gwenesis_audio_scale(gwenesis_ym2612_buffer[i]);
-        right += gwenesis_audio_scale(gwenesis_ym2612_buffer[i]);
-
-        gwenesis_audio_mix_buffer[i].left = gwenesis_audio_clip(left);
-        gwenesis_audio_mix_buffer[i].right = gwenesis_audio_clip(right);
+        const int32_t sample = gwenesis_audio_scale(gwenesis_ym2612_buffer[i]);
+        const int16_t clipped = gwenesis_audio_clip(sample);
+        gwenesis_audio_mix_buffer[i].left = clipped;
+        gwenesis_audio_mix_buffer[i].right = clipped;
     }
 
     gwenesis_audio_submit_frames(gwenesis_audio_mix_buffer, count);
@@ -3279,15 +3289,19 @@ static bool gwenesis_vdp_async_prepare_surface(gwenesis_vdp_async_job_t *job)
 }
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-static bool gwenesis_vdp_async_display_job_blocking(gwenesis_vdp_async_job_t *job)
+static bool gwenesis_vdp_async_display_job_nonblocking(gwenesis_vdp_async_job_t *job)
 {
     if (!job || __atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         return false;
+
+    if (!rg_display_sync(false))
+        return false;
+    gwenesis_vdp_async_release_displayed_jobs();
+
+    if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
+        return false;
     if (!gwenesis_vdp_async_prepare_surface(job))
         return false;
-
-    rg_display_sync(true);
-    gwenesis_vdp_async_release_displayed_jobs();
 
     if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         return false;
@@ -3379,7 +3393,7 @@ static void gwenesis_vdp_async_worker_task(void *arg)
         {
 #if defined(RG_TARGET_HOLO_DYNMOD)
             __atomic_store_n(&job->state, GWENESIS_VDP_JOB_DISPLAYING, __ATOMIC_RELEASE);
-            if (gwenesis_vdp_async_display_job_blocking(job))
+            if (gwenesis_vdp_async_display_job_nonblocking(job))
             {
                 __atomic_store_n(&job->state, GWENESIS_VDP_JOB_HELD, __ATOMIC_RELEASE);
             }
@@ -4279,7 +4293,9 @@ void app_main(void)
     extern int screen_width, screen_height;
     extern int hint_pending;
 
-    uint32_t keymap[8] = {RG_KEY_UP, RG_KEY_DOWN, RG_KEY_LEFT, RG_KEY_RIGHT, RG_KEY_X, RG_KEY_B, RG_KEY_A, RG_KEY_START};
+    // Gwenesis button bits are U,D,L,R,C,B,A,Start. Keep MD B/C aligned
+    // with package/main.lua: retrogo BTN_X => MD B, retrogo BTN_B => MD C.
+    uint32_t keymap[8] = {RG_KEY_UP, RG_KEY_DOWN, RG_KEY_LEFT, RG_KEY_RIGHT, RG_KEY_B, RG_KEY_X, RG_KEY_A, RG_KEY_START};
     uint32_t joystick = 0, joystick_old;
 #if defined(RG_TARGET_HOLO_DYNMOD)
     int last_screen_width = 0;
