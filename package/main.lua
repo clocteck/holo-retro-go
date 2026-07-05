@@ -45,7 +45,7 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-07-01-runtime-light-v16",
+  VERSION = "2026-07-05-runtime-light-v17",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
@@ -574,6 +574,10 @@ local function stat_is_dir(st)
   return st and (st.is_dir or st.dir or st.directory or st.type == "dir") and true or false
 end
 
+local function stat_size(st)
+  return st and tonumber(st.size or st.file_size or st.filesize or st.len or st.length) or nil
+end
+
 local function ensure_dir(path)
   if not file or not file.mkdir then
     return false, "file API unavailable"
@@ -603,6 +607,40 @@ local function ensure_dir(path)
   return true
 end
 
+local function remove_path(path)
+  local funcs = {}
+  local function add_remove(fn)
+    if type(fn) == "function" then
+      funcs[#funcs + 1] = fn
+    end
+  end
+  if file then
+    add_remove(file.remove)
+    add_remove(file.delete)
+    add_remove(file.unlink)
+  end
+  if sd then
+    add_remove(sd.remove)
+    add_remove(sd.delete)
+    add_remove(sd.unlink)
+  end
+  local os_api = rawget(_G, "os")
+  if os_api then
+    add_remove(os_api.remove)
+  end
+
+  for _, fn in ipairs(funcs) do
+    local ok, result = pcall(fn, path)
+    if ok and result then
+      return true
+    end
+    if ok and file and file.stat and not file.stat(path) then
+      return true
+    end
+  end
+  return file and file.stat and not file.stat(path) or false
+end
+
 local function rom_item_path(parent, item)
   if type(item) == "table" then
     return item.path or item.fullpath or item.full_path or (parent .. "/" .. tostring(item.name or item[1] or ""))
@@ -626,7 +664,7 @@ local function rom_item_size(path, item)
     return item.size or item.file_size or 0
   end
   local st = file and file.stat and file.stat(path) or nil
-  return st and (st.size or st.file_size or 0) or 0
+  return stat_size(st) or 0
 end
 
 local function rom_listdir(path)
@@ -1242,6 +1280,7 @@ local function sync_legacy_roms()
   end
 
   local moved = 0
+  local cleaned = 0
   local skipped = 0
   local failed = 0
   local moved_bytes = 0
@@ -1257,10 +1296,22 @@ local function sync_legacy_roms()
     local dst = APP.ROM_ROOT .. "/" .. item.rel
     local action = "Moving"
     local item_size = tonumber(item.size) or 0
-    if file.stat(dst) then
-      skipped = skipped + 1
-      action = "Skipped"
-      log("rom sync skip exists", item.src, dst)
+    local dst_st = file.stat(dst)
+    if dst_st then
+      local dst_size = stat_size(dst_st)
+      if stat_is_dir(dst_st) or dst_size ~= item_size then
+        skipped = skipped + 1
+        action = "Conflict"
+        log("rom sync conflict exists", item.src, dst, "src_size", item_size, "dst_size", tostring(dst_size))
+      elseif remove_path(item.src) then
+        cleaned = cleaned + 1
+        action = "Cleaned"
+        log("rom sync removed legacy duplicate", item.src, dst)
+      else
+        failed = failed + 1
+        action = "Failed"
+        log("rom sync cleanup failed", item.src, dst)
+      end
     else
       ensure_dir(dirname(dst))
       if file.rename(item.src, dst) then
@@ -1282,13 +1333,13 @@ local function sync_legacy_roms()
       moved_bytes,
       total_bytes,
       action .. " " .. basename(item.src),
-      string.format("Moved %d  Skipped %d  Failed %d", moved, skipped, failed)
+      string.format("Moved %d  Cleaned %d  Conflicts %d  Failed %d", moved, cleaned, skipped, failed)
     )
   end
 
   APP.rom_list_cache_ready = false
   close_rom_sync_ui(ui)
-  log("rom sync done", "moved", moved, "skipped", skipped, "failed", failed)
+  log("rom sync done", "moved", moved, "cleaned", cleaned, "conflicts", skipped, "failed", failed)
   return failed == 0
 end
 

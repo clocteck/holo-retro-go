@@ -526,7 +526,12 @@ int rg_display_get_height(void)
 
 void rg_display_set_scaling(display_scaling_t scaling)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+    (void)scaling;
+    config.scaling = RG_DISPLAY_SCALING_OFF;
+#else
     config.scaling = RG_MIN(RG_MAX(0, scaling), RG_DISPLAY_SCALING_COUNT - 1);
+#endif
     rg_settings_set_number(NS_APP, SETTING_SCALING, config.scaling);
     display.changed = true;
 }
@@ -550,7 +555,12 @@ double rg_display_get_custom_zoom(void)
 
 void rg_display_set_filter(display_filter_t filter)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+    (void)filter;
+    config.filter = RG_DISPLAY_FILTER_OFF;
+#else
     config.filter = RG_MIN(RG_MAX(0, filter), RG_DISPLAY_FILTER_COUNT - 1);
+#endif
     rg_settings_set_number(NS_APP, SETTING_FILTER, config.filter);
     display.changed = true;
 }
@@ -775,8 +785,13 @@ void rg_display_init(void)
     // TO DO: We probably should call the setters to ensure valid values...
     config = (rg_display_config_t){
         .backlight = rg_settings_get_number(NS_GLOBAL, SETTING_BACKLIGHT, 80),
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+        .scaling = RG_DISPLAY_SCALING_OFF,
+        .filter = RG_DISPLAY_FILTER_OFF,
+#else
         .scaling = rg_settings_get_number(NS_APP, SETTING_SCALING, RG_DISPLAY_SCALING_OFF),
         .filter = rg_settings_get_number(NS_APP, SETTING_FILTER, RG_DISPLAY_FILTER_OFF),
+#endif
         .rotation = rg_settings_get_number(NS_APP, SETTING_ROTATION, RG_DISPLAY_ROTATION_AUTO),
         .border_file = rg_settings_get_string(NS_APP, SETTING_BORDER, NULL),
         .custom_zoom = rg_settings_get_number(NS_APP, SETTING_CUSTOM_ZOOM, 1.0),

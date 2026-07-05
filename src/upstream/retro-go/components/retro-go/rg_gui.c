@@ -1537,6 +1537,13 @@ static rg_gui_event_t audio_update_cb(rg_gui_option_t *option, rg_gui_event_t ev
 
 static rg_gui_event_t filter_update_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+    (void)event;
+    if (rg_display_get_filter() != RG_DISPLAY_FILTER_OFF)
+        rg_display_set_filter(RG_DISPLAY_FILTER_OFF);
+    strcpy(option->value, _("Off"));
+    return RG_DIALOG_VOID;
+#else
     int max = RG_DISPLAY_FILTER_COUNT - 1;
     int mode = rg_display_get_filter();
     int prev_mode = mode;
@@ -1562,10 +1569,18 @@ static rg_gui_event_t filter_update_cb(rg_gui_option_t *option, rg_gui_event_t e
         strcpy(option->value, _("Both"));
 
     return RG_DIALOG_VOID;
+#endif
 }
 
 static rg_gui_event_t scaling_update_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && HOLO_RETRO_GWENESIS_ONLY
+    (void)event;
+    if (rg_display_get_scaling() != RG_DISPLAY_SCALING_OFF)
+        rg_display_set_scaling(RG_DISPLAY_SCALING_OFF);
+    strcpy(option->value, _("Off"));
+    return RG_DIALOG_VOID;
+#else
     int max = RG_DISPLAY_SCALING_COUNT - 1;
     int mode = rg_display_get_scaling();
     int prev_mode = mode;
@@ -1591,6 +1606,7 @@ static rg_gui_event_t scaling_update_cb(rg_gui_option_t *option, rg_gui_event_t 
         strcpy(option->value, _("Zoom"));
 
     return RG_DIALOG_VOID;
+#endif
 }
 
 static rg_gui_event_t custom_zoom_cb(rg_gui_option_t *option, rg_gui_event_t event)

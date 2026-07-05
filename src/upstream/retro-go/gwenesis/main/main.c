@@ -128,8 +128,8 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_AUDIO_RING_CRITICAL_FRAMES 256
 #define GWENESIS_AUDIO_RING_LOW_FRAMES 768
 #define GWENESIS_AUDIO_RING_TARGET_FRAMES 1024
-#define GWENESIS_AUDIO_RING_HIGH_FRAMES 1280
-#define GWENESIS_AUDIO_RING_BLOCK_FRAMES 1500
+#define GWENESIS_AUDIO_RING_HIGH_FRAMES 1100
+#define GWENESIS_AUDIO_RING_BLOCK_FRAMES 1400
 #define GWENESIS_AUDIO_HIGH_WATER_PAUSE_MS 10
 #define GWENESIS_AUDIO_RING_STRETCH_FRAMES 1024
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -595,7 +595,7 @@ static bool gwenesis_audio_block_water_now(void)
 static void gwenesis_audio_wait_below_block_water(void)
 {
     while (gwenesis_audio_task_running && gwenesis_audio_block_water_now())
-        rg_task_delay(2);
+        rg_task_delay(4);
 }
 
 static int32_t gwenesis_clamp_i32(int32_t value, int32_t min_value, int32_t max_value)
@@ -1164,6 +1164,8 @@ static bool gwenesis_frameskip_should_draw(bool audio_enabled, int64_t now)
     frameskip_last_debt_us = (int)debt_us;
 
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_FIXED_DRAW_SKIP
+    // Render pattern: draw-skip-draw-skip-draw-draw-skip
+    // (D-S-D-S-D-D-S), cycle length 7.
     const bool draw = frameskip_fixed_phase == 0 ||
                       frameskip_fixed_phase == 2 ||
                       frameskip_fixed_phase == 4 ||
@@ -1889,7 +1891,7 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
 
         while (gwenesis_audio_task_running && used >= GWENESIS_AUDIO_RING_BLOCK_FRAMES)
         {
-            rg_task_delay(2);
+            rg_task_delay(4);
             read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
             used = write - read;
             if (used > GWENESIS_AUDIO_RING_FRAMES)
@@ -1899,6 +1901,8 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
         if (used >= GWENESIS_AUDIO_RING_FRAMES)
         {
             const size_t dropped = count - offset;
+            RG_LOGW("audio ring full: dropped %u frames (used=%u write=%u read=%u)", (unsigned)dropped, (unsigned)used,
+                    (unsigned)write, (unsigned)read);
 #if GWENESIS_PROFILER_DETAILED
             gwenesis_audio_ring_overflows += (uint32_t)dropped;
 #endif
@@ -1933,6 +1937,7 @@ static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, s
 static void gwenesis_audio_output_task(void *arg)
 {
     bool prebuffering = true;
+    bool empty_water_reported = false;
     (void)arg;
 
     while (gwenesis_audio_task_running || gwenesis_audio_ring_fill() > 0)
@@ -1941,6 +1946,11 @@ static void gwenesis_audio_output_task(void *arg)
 
         if (fill == 0)
         {
+            if (!empty_water_reported)
+            {
+                RG_LOGW("audio ring 0-water: fill=%u, waiting", (unsigned)fill);
+                empty_water_reported = true;
+            }
             if (!gwenesis_audio_task_running)
                 break;
 #if GWENESIS_PROFILER_DETAILED
@@ -1951,6 +1961,7 @@ static void gwenesis_audio_output_task(void *arg)
             rg_task_delay(1);
             continue;
         }
+        empty_water_reported = false;
 
         if (gwenesis_audio_task_running && prebuffering)
         {
@@ -3268,19 +3279,15 @@ static bool gwenesis_vdp_async_prepare_surface(gwenesis_vdp_async_job_t *job)
 }
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-static bool gwenesis_vdp_async_display_job_nonblocking(gwenesis_vdp_async_job_t *job)
+static bool gwenesis_vdp_async_display_job_blocking(gwenesis_vdp_async_job_t *job)
 {
     if (!job || __atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         return false;
-
-    if (!rg_display_sync(false))
-        return false;
-    gwenesis_vdp_async_release_displayed_jobs();
-
-    if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
-        return false;
     if (!gwenesis_vdp_async_prepare_surface(job))
         return false;
+
+    rg_display_sync(true);
+    gwenesis_vdp_async_release_displayed_jobs();
 
     if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         return false;
@@ -3372,7 +3379,7 @@ static void gwenesis_vdp_async_worker_task(void *arg)
         {
 #if defined(RG_TARGET_HOLO_DYNMOD)
             __atomic_store_n(&job->state, GWENESIS_VDP_JOB_DISPLAYING, __ATOMIC_RELEASE);
-            if (gwenesis_vdp_async_display_job_nonblocking(job))
+            if (gwenesis_vdp_async_display_job_blocking(job))
             {
                 __atomic_store_n(&job->state, GWENESIS_VDP_JOB_HELD, __ATOMIC_RELEASE);
             }

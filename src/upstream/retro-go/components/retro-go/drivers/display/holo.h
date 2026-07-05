@@ -2,10 +2,10 @@
 
 /*
  * The host display API keeps pushPixelsDMA() asynchronous until endWrite().
- * Its SPI DMA queue can hold two in-flight transactions, so the module needs
- * one extra staging buffer before reusing the first source buffer.
+ * Use two staging buffers and rely on endWrite() to drain the host DMA queue
+ * before either buffer is reused.
  */
-#define HOLO_LCD_DMA_BUFFER_COUNT 3
+#define HOLO_LCD_DMA_BUFFER_COUNT 2
 
 static uint16_t *lcd_buffers[HOLO_LCD_DMA_BUFFER_COUNT];
 static uint8_t lcd_buffer_count;
@@ -85,17 +85,9 @@ static void lcd_set_window(int left, int top, int width, int height)
     s_holo_window_offset = 0;
     s_holo_window_ready = false;
 
-    if (s_holo_write_active) {
-        /*
-         * pushPixelsDMA() is asynchronous. The host's setAddrWindow() sends
-         * commands immediately, so a new window must not be programmed until
-         * the previous pixel DMA stream has been drained by endWrite().
-         */
-        holo_display_end_write();
-        s_holo_write_active = false;
+    if (!s_holo_write_active) {
+        s_holo_write_active = holo_display_start_write() != 0;
     }
-
-    s_holo_write_active = holo_display_start_write() != 0;
 
     if (s_holo_write_active) {
         s_holo_window_ready = holo_display_set_addr_window(left, top, width, height) != 0;
@@ -113,9 +105,20 @@ static inline uint16_t *lcd_get_buffer(size_t length)
         return NULL;
     }
     uint16_t *buffer = lcd_buffers[lcd_buffer_index];
+#if HOLO_RETRO_GWENESIS_ONLY
     lcd_buffer_index = (lcd_buffer_index + 1) % lcd_buffer_count;
+#endif
     return buffer;
 }
+
+#if !HOLO_RETRO_GWENESIS_ONLY
+static inline void lcd_advance_buffer(uint16_t *buffer)
+{
+    if (lcd_buffer_count > 0 && buffer == lcd_buffers[lcd_buffer_index]) {
+        lcd_buffer_index = (lcd_buffer_index + 1) % lcd_buffer_count;
+    }
+}
+#endif
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
@@ -124,6 +127,10 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         return;
     }
 
+#if !HOLO_RETRO_GWENESIS_ONLY
+    uint16_t *source = buffer;
+    bool submitted = false;
+#endif
     const size_t window_width = (size_t)s_holo_window_width;
     const size_t window_height = (size_t)s_holo_window_height;
     const size_t total_pixels = window_width * window_height;
@@ -138,10 +145,19 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         if (!holo_display_push_pixels(buffer, sent)) {
             break;
         }
+#if !HOLO_RETRO_GWENESIS_ONLY
+        submitted = true;
+#endif
         buffer += sent;
         length -= sent;
         s_holo_window_offset += sent;
     }
+
+#if !HOLO_RETRO_GWENESIS_ONLY
+    if (submitted) {
+        lcd_advance_buffer(source);
+    }
+#endif
 }
 
 const rg_display_driver_t rg_display_driver_holo = {
