@@ -48,7 +48,8 @@ local APP = {
   VERSION = "2026-07-01-runtime-light-v16",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
-  ROM_ROOT = APP_DIR .. "/roms",
+  ROM_ROOT = "/sd/roms",
+  LEGACY_ROM_ROOT = APP_DIR .. "/roms",
   ROUTE_BASE = ROUTE_BASE,
   API_PREFIX = ROUTE_BASE .. "/api",
   CHUNK_SIZE = 64 * 1024,
@@ -63,6 +64,12 @@ local APP = {
   rom_list_cache_ready = false,
   AUTO_SELECT_MODULE = false,
   DEFAULT_MODULE_ID = "nes",
+  AUDIO_EQ = {
+    md = {
+      low = { type = "peak", freq = 240, gain = 6.5, q = 0.65 },
+      mid = { type = "peak", freq = 1200, gain = -4.0, q = 0.65 },
+    },
+  },
   MODULES = {
     {
       id = "nes",
@@ -596,8 +603,78 @@ local function ensure_dir(path)
   return true
 end
 
+local function rom_item_path(parent, item)
+  if type(item) == "table" then
+    return item.path or item.fullpath or item.full_path or (parent .. "/" .. tostring(item.name or item[1] or ""))
+  end
+  return parent .. "/" .. tostring(item)
+end
+
+local function rom_item_is_dir(path, item)
+  if type(item) == "table" then
+    if item.is_dir ~= nil then return item.is_dir end
+    if item.dir ~= nil then return item.dir end
+    if item.directory ~= nil then return item.directory end
+    if item.type == "dir" or item.category == "dir" then return true end
+  end
+  local st = file and file.stat and file.stat(path) or nil
+  return st and (st.is_dir or st.dir or st.directory) or false
+end
+
+local function rom_item_size(path, item)
+  if type(item) == "table" then
+    return item.size or item.file_size or 0
+  end
+  local st = file and file.stat and file.stat(path) or nil
+  return st and (st.size or st.file_size or 0) or 0
+end
+
+local function rom_listdir(path)
+  if file and file.listdir then
+    return file.listdir(path) or {}
+  end
+  if sd and sd.listdir then
+    return sd.listdir(path) or {}
+  end
+  return {}
+end
+
+local function scan_rom_list(path, seen)
+  if seen[path] then
+    return
+  end
+  seen[path] = true
+  for _, item in ipairs(rom_listdir(path)) do
+    local child = rom_item_path(path, item)
+    if child ~= path and child ~= "" then
+      if rom_item_is_dir(child, item) then
+        scan_rom_list(child, seen)
+      else
+        APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+          name = basename(child),
+          path = child,
+          size = tonumber(rom_item_size(child, item)) or 0,
+        }
+      end
+    end
+  end
+end
+
+local function refresh_rom_list_cache()
+  ensure_dir(APP.ROM_ROOT)
+  APP.rom_list_cache = {}
+  APP.rom_list_cache_ready = false
+  scan_rom_list(APP.ROM_ROOT, {})
+  APP.rom_list_cache_ready = true
+  log("rom list cache", #APP.rom_list_cache, APP.ROM_ROOT)
+  return true
+end
+
 local function list_rom_files()
   local items = {}
+  if not APP.rom_list_cache_ready then
+    refresh_rom_list_cache()
+  end
   if not APP.rom_list_cache_ready then
     return items
   end
@@ -766,7 +843,7 @@ function setStatus(text,kind){statusEl.textContent=text;statusEl.className="stat
 function setProgress(done,total){const pct=total>0?Math.max(0,Math.min(100,Math.round(done*100/total))):0;bar.style.width=pct+"%"}
 async function parseJson(res){const text=await res.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){throw new Error(text||res.statusText)}if(!res.ok||data.ok===false)throw new Error(data.error||res.statusText);return data}
 async function loadInfo(){const data=await parseJson(await fetch(api("/info"),{cache:"no-store"}));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root}
-async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent=data.pending?"Waiting for module...":"No ROMs yet";if(data.pending)setTimeout(()=>loadList().catch(()=>{}),1000);return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
+async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent=data.pending?"Scanning ROMs...":"No ROMs yet";if(data.pending)setTimeout(()=>loadList().catch(()=>{}),1000);return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
 function selectedFiles(files){return Array.from(files||input.files||[]).filter(file=>file&&file.name)}
 async function uploadOne(file,index,totalFiles){if(file.size>serverInfo.max_file_size)throw new Error(file.name+" is too large");let offset=0;const chunkSize=serverInfo.chunk_size||65536;const safeName=file.name.replace(/[\\/]/g,"_");const path=(serverInfo.rom_root||"__ROM_ROOT__")+"/"+safeName;while(offset<file.size||file.size===0){const end=file.size===0?0:Math.min(offset+chunkSize,file.size);setStatus(`Uploading ${index}/${totalFiles}: ${file.name}`,"");const res=await fetch(api("/upload")+"?path="+encodeURIComponent(path)+"&offset="+offset+"&total="+file.size,{method:"PUT",body:file.size===0?new Blob([]):file.slice(offset,end)});const data=await parseJson(res);const next=data.next_offset||end;if(file.size>0&&next<=offset)throw new Error("Upload did not advance");offset=next;setProgress(offset,file.size);if(file.size===0||data.done)break}}
 async function uploadFiles(files){files=selectedFiles(files);if(!files.length){setStatus("Select files first","err");return}uploadBtn.disabled=true;setProgress(0,1);try{for(let i=0;i<files.length;i++){await uploadOne(files[i],i+1,files.length)}setStatus("Upload complete","ok");setProgress(1,1);input.value="";await loadList()}catch(err){setStatus(err.message||"Upload failed","err")}finally{uploadBtn.disabled=false}}
@@ -828,16 +905,17 @@ function APP.api_info()
     rom_root = APP.ROM_ROOT,
     chunk_size = APP.CHUNK_SIZE,
     max_file_size = APP.MAX_ROM_FILE_SIZE,
-    catalog_dirty = APP.catalog_dirty and true or false,
+    rom_list_ready = APP.rom_list_cache_ready and true or false,
   })
 end
 
 function APP.api_list()
+  local items = list_rom_files()
   return json_response("200 OK", {
     ok = true,
     rom_root = APP.ROM_ROOT,
     pending = not APP.rom_list_cache_ready,
-    items = list_rom_files(),
+    items = items,
   })
 end
 
@@ -866,7 +944,9 @@ function APP.api_upload(req)
   if not st or stat_is_dir(st) then
     return error_response("500 Internal Server Error", "write result invalid")
   end
-  APP.catalog_dirty = true
+  if next_offset >= total then
+    APP.rom_list_cache_ready = false
+  end
   return json_response("200 OK", {
     ok = true,
     path = path,
@@ -1024,6 +1104,192 @@ local function lv_label(parent, text, x, y, w, h, color, font, align)
     align = align or rawget(_G, "LV_TEXT_ALIGN_CENTER") or 1,
   })
   return label
+end
+
+local function relative_path_under(root, path)
+  local normalized_root = normalize_absolute_path(root or "") or text_or(root, "")
+  local normalized_path = normalize_absolute_path(path or "") or text_or(path, "")
+  if normalized_path == normalized_root then
+    return ""
+  end
+  local prefix = normalized_root .. "/"
+  if normalized_path:sub(1, #prefix) == prefix then
+    return normalized_path:sub(#prefix + 1)
+  end
+  return basename(normalized_path)
+end
+
+local function collect_rom_files(root, path, out, seen)
+  local normalized = normalize_absolute_path(path or "") or path
+  if not normalized or normalized == "" or seen[normalized] then
+    return
+  end
+  seen[normalized] = true
+  for _, item in ipairs(rom_listdir(normalized)) do
+    local child = normalize_absolute_path(rom_item_path(normalized, item)) or rom_item_path(normalized, item)
+    if child ~= normalized and child ~= "" then
+      if rom_item_is_dir(child, item) then
+        collect_rom_files(root, child, out, seen)
+      else
+        local rel = relative_path_under(root, child)
+        if rel ~= "" then
+          out[#out + 1] = {
+            src = child,
+            rel = rel,
+            size = tonumber(rom_item_size(child, item)) or 0,
+          }
+        end
+      end
+    end
+  end
+end
+
+local function format_mb(bytes)
+  return string.format("%.2f MB", (tonumber(bytes) or 0) / (1024 * 1024))
+end
+
+local function make_rom_sync_ui(total_files, total_bytes)
+  if not lv_scr_act or not lv_obj_create or not lv_label_create then
+    return nil
+  end
+  local root = lv_scr_act()
+  local overlay = lv_obj_create(root)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, overlay, 0, 0) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, overlay, 320, 240) end
+  lv_disable_scroll(overlay)
+  lv_style(overlay, { bg = 0x000000, bg_opa = 180, border_w = 0, radius = 0, pad = 0 })
+
+  local panel = lv_obj_create(overlay)
+  if lv_obj_set_pos then pcall(lv_obj_set_pos, panel, 30, 54) end
+  if lv_obj_set_size then pcall(lv_obj_set_size, panel, 260, 132) end
+  lv_disable_scroll(panel)
+  lv_style(panel, { bg = 0x202428, bg_opa = 255, border = 0x3A4652, border_w = 1, radius = 8, pad = 0 })
+
+  local title = lv_label(panel, "ROM Syncing", 0, 14, 260, 22, 0xFFFFFF, "LV_FONT_MONTSERRAT_16")
+  local detail = lv_label(panel, string.format("0 / %d files", total_files), 18, 42, 224, 18, 0xB0B0B0, "LV_FONT_MONTSERRAT_12")
+  local bytes = lv_label(panel, "Moved 0.00 MB / Total " .. format_mb(total_bytes), 18, 88, 224, 18, 0xD6D6D6, "LV_FONT_MONTSERRAT_12")
+  local result = lv_label(panel, "", 18, 108, 224, 16, 0x7F8790, "LV_FONT_MONTSERRAT_12")
+  local bar = nil
+  if lv_bar_create and lv_bar_set_range and lv_bar_set_value then
+    bar = lv_bar_create(panel)
+    if lv_obj_set_pos then pcall(lv_obj_set_pos, bar, 18, 68) end
+    if lv_obj_set_size then pcall(lv_obj_set_size, bar, 224, 12) end
+    pcall(lv_bar_set_range, bar, 0, 1000)
+    pcall(lv_bar_set_value, bar, 0, rawget(_G, "LV_ANIM_OFF") or 0)
+  end
+  return {
+    root = overlay,
+    panel = panel,
+    title = title,
+    detail = detail,
+    bytes = bytes,
+    result = result,
+    bar = bar,
+  }
+end
+
+local function update_rom_sync_ui(ui, done_files, total_files, processed_bytes, moved_bytes, total_bytes, message, summary)
+  if not ui then
+    return
+  end
+  if ui.detail and lv_label_set_text then
+    pcall(lv_label_set_text, ui.detail, string.format("%d / %d files  %s", done_files, total_files, message or ""))
+  end
+  if ui.bytes and lv_label_set_text then
+    pcall(lv_label_set_text, ui.bytes, string.format("Moved %s / Total %s", format_mb(moved_bytes), format_mb(total_bytes)))
+  end
+  if ui.result and summary and lv_label_set_text then
+    pcall(lv_label_set_text, ui.result, summary)
+  end
+  if ui.bar and lv_bar_set_value then
+    local progress = 0
+    if (tonumber(total_bytes) or 0) > 0 then
+      progress = math.floor(((tonumber(processed_bytes) or 0) * 1000) / total_bytes)
+    elseif (tonumber(total_files) or 0) > 0 then
+      progress = math.floor(((tonumber(done_files) or 0) * 1000) / total_files)
+    end
+    if progress < 0 then progress = 0 end
+    if progress > 1000 then progress = 1000 end
+    pcall(lv_bar_set_value, ui.bar, progress, rawget(_G, "LV_ANIM_OFF") or 0)
+  end
+  sleep_ms(15)
+end
+
+local function close_rom_sync_ui(ui)
+  if not ui then
+    return
+  end
+  sleep_ms(120)
+  if ui.root and lv_obj_del then
+    pcall(lv_obj_del, ui.root)
+  end
+end
+
+local function sync_legacy_roms()
+  ensure_dir(APP.ROM_ROOT)
+  if APP.LEGACY_ROM_ROOT == APP.ROM_ROOT or not file or not file.stat or not file.rename then
+    return true
+  end
+  local legacy_st = file.stat(APP.LEGACY_ROM_ROOT)
+  if not stat_is_dir(legacy_st) then
+    return true
+  end
+
+  local files = {}
+  collect_rom_files(APP.LEGACY_ROM_ROOT, APP.LEGACY_ROM_ROOT, files, {})
+  if #files == 0 then
+    return true
+  end
+
+  local moved = 0
+  local skipped = 0
+  local failed = 0
+  local moved_bytes = 0
+  local processed_bytes = 0
+  local total_bytes = 0
+  for _, item in ipairs(files) do
+    total_bytes = total_bytes + (tonumber(item.size) or 0)
+  end
+  local ui = make_rom_sync_ui(#files, total_bytes)
+  update_rom_sync_ui(ui, 0, #files, 0, 0, total_bytes, "Preparing", "")
+
+  for i, item in ipairs(files) do
+    local dst = APP.ROM_ROOT .. "/" .. item.rel
+    local action = "Moving"
+    local item_size = tonumber(item.size) or 0
+    if file.stat(dst) then
+      skipped = skipped + 1
+      action = "Skipped"
+      log("rom sync skip exists", item.src, dst)
+    else
+      ensure_dir(dirname(dst))
+      if file.rename(item.src, dst) then
+        moved = moved + 1
+        moved_bytes = moved_bytes + item_size
+        log("rom sync moved", item.src, dst)
+      else
+        failed = failed + 1
+        action = "Failed"
+        log("rom sync failed", item.src, dst)
+      end
+    end
+    processed_bytes = processed_bytes + item_size
+    update_rom_sync_ui(
+      ui,
+      i,
+      #files,
+      processed_bytes,
+      moved_bytes,
+      total_bytes,
+      action .. " " .. basename(item.src),
+      string.format("Moved %d  Skipped %d  Failed %d", moved, skipped, failed)
+    )
+  end
+
+  APP.rom_list_cache_ready = false
+  close_rom_sync_ui(ui)
+  log("rom sync done", "moved", moved, "skipped", skipped, "failed", failed)
+  return failed == 0
 end
 
 local function selector_gamepad_status(state, phase)
@@ -1513,6 +1779,18 @@ end
 
 log("module", tostring(retrogo.VERSION), tostring(retrogo.RETRO_GO_CORE))
 
+local audio_eq = APP.AUDIO_EQ and APP.AUDIO_EQ[APP.MODULE_ID]
+if type(audio_eq) == "table" and type(retrogo.set_audio_eq) == "function" then
+  local ok_eq, eq_result, eq_err = pcall(function()
+    return retrogo.set_audio_eq(audio_eq)
+  end)
+  if ok_eq and eq_result then
+    log("set_audio_eq ok", APP.MODULE_ID)
+  else
+    log("set_audio_eq failed", tostring(eq_err or eq_result))
+  end
+end
+
 local retrogo_button_defs = {
   { "A", retrogo.BTN_A },
   { "B", retrogo.BTN_B },
@@ -1631,100 +1909,6 @@ local function debug_input_aliases(state)
   return table.concat(aliases, ",")
 end
 
-local function add_row(rows, kind, path, size, mtime)
-  rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
-  if kind == "F" and APP.rom_list_cache then
-    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
-      name = basename(path),
-      path = path,
-      size = tonumber(size) or 0,
-    }
-  end
-end
-
-local function item_path(parent, item)
-  if type(item) == "table" then
-    return item.path or item.fullpath or item.full_path or (parent .. "/" .. tostring(item.name or item[1] or ""))
-  end
-  return parent .. "/" .. tostring(item)
-end
-
-local function item_is_dir(path, item)
-  if type(item) == "table" then
-    if item.is_dir ~= nil then return item.is_dir end
-    if item.dir ~= nil then return item.dir end
-    if item.directory ~= nil then return item.directory end
-    if item.type == "dir" or item.category == "dir" then return true end
-  end
-  local st = file and file.stat and file.stat(path) or nil
-  return st and (st.is_dir or st.dir or st.directory) or false
-end
-
-local function item_size(path, item)
-  if type(item) == "table" then
-    return item.size or item.file_size or 0
-  end
-  local st = file and file.stat and file.stat(path) or nil
-  return st and (st.size or st.file_size or 0) or 0
-end
-
-local function listdir(path)
-  if file and file.listdir then
-    return file.listdir(path) or {}
-  end
-  if sd and sd.listdir then
-    return sd.listdir(path) or {}
-  end
-  return {}
-end
-
-local function scan(path, rows, seen)
-  if seen[path] then
-    return
-  end
-  seen[path] = true
-  add_row(rows, "D", path, 0, 0)
-  for _, item in ipairs(listdir(path)) do
-    local child = item_path(path, item)
-    if child ~= path and child ~= "" then
-      if item_is_dir(child, item) then
-        scan(child, rows, seen)
-      else
-        add_row(rows, "F", child, item_size(child, item), 0)
-      end
-    end
-  end
-end
-
-local function build_catalog_blob()
-  ensure_dir(APP.ROM_ROOT)
-  APP.rom_list_cache = {}
-  APP.rom_list_cache_ready = false
-  local rows = {}
-  scan(APP.ROM_ROOT, rows, {})
-  APP.rom_list_cache_ready = true
-  return table.concat(rows), #rows
-end
-
-local function load_catalog()
-  local blob, row_count = build_catalog_blob()
-  log("catalog root", APP.ROM_ROOT)
-  log("catalog bytes", #blob, "rows", row_count)
-  log("set_catalog call")
-  local ok, set_err = retrogo.set_catalog(blob)
-  if not ok then
-    log("set_catalog failed", tostring(set_err))
-    return false
-  end
-  APP.catalog_dirty = false
-  log("set_catalog ok")
-  return true
-end
-
-if not load_catalog() then
-  APP.stop_web("catalog failed")
-  return
-end
 APP.stop_web("runtime")
 
 local function retrogo_info()
@@ -1995,10 +2179,6 @@ local function schedule_restart(info)
     return
   end
   log("restart request", app_name, rom_path, flags)
-  if APP.catalog_dirty and not load_catalog() then
-    request_exit_to_home("catalog reload failed")
-    return
-  end
   pending_restart = {
     app_name = app_name,
     rom_path = rom_path,
@@ -2084,6 +2264,7 @@ if not start_runtime_timer() then
 end
 end
 
+sync_legacy_roms()
 start_rom_web()
 
 if APP.AUTO_SELECT_MODULE then

@@ -9,7 +9,7 @@
 #define RG_BASE_PATH_CONFIG        RG_BASE_PATH "/config"
 #define RG_BASE_PATH_COVERS        RG_BASE_PATH "/covers"
 #define RG_BASE_PATH_MUSIC         RG_BASE_PATH "/music"
-#define RG_BASE_PATH_ROMS          RG_BASE_PATH "/roms"
+#define RG_BASE_PATH_ROMS          RG_STORAGE_ROOT "/roms"
 #define RG_BASE_PATH_SAVES         RG_BASE_PATH "/saves"
 #define RG_BASE_PATH_THEMES        RG_BASE_PATH "/themes"
 #define RG_BASE_PATH_BORDERS       RG_BASE_PATH "/borders"
@@ -42,3 +42,8 @@
 #define RG_LOG_COLORS              0
 #define RG_PATH_MAX                255
 #define RG_BATTERY_DRIVER          0
+
+// Use a compact CJK font so UTF-8 Chinese ROM names render in the launcher.
+#define RG_CHINESE_SUPPORT         1
+#define RG_FONT_DEFAULT            RG_FONT_FUSIONPIXEL_12
+#define RG_FONT_CHINESE            RG_FONT_FUSIONPIXEL_12

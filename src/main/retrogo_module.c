@@ -36,11 +36,16 @@ void rg_system_deinit_for_holo(void);
 #if HOLO_RETRO_GWENESIS_ONLY
 bool gwenesis_vdp_async_reserve_vram_early(void);
 bool gwenesis_alloc_vram_fast(void);
+void gwenesis_audio_eq_restore_default(void);
+bool gwenesis_audio_eq_set_peaking_bands(const float *freq_hz,
+                                         const float *gain_db,
+                                         const float *q,
+                                         size_t count);
 #endif
 
 typedef struct retrogo_instance_t
 {
-    const module_host_api_v1 *host;
+    const module_host_api_v2 *host;
     void *task;
     volatile uint8_t running;
     volatile uint8_t stop_requested;
@@ -48,9 +53,9 @@ typedef struct retrogo_instance_t
     char module_path[MODULE_PATH_MAX];
 } retrogo_instance_t;
 
-static const module_host_api_v1 *s_host;
+static const module_host_api_v2 *s_host;
 static retrogo_instance_t s_static_instance;
-static module_host_api_v1 s_resolved_host;
+static module_host_api_v2 s_resolved_host;
 
 static const module_manifest_t s_manifest = {
     MODULE_MANIFEST_MAGIC,
@@ -83,11 +88,11 @@ static void copy_text(char *dst, size_t dst_size, const char *src)
     dst[i] = '\0';
 }
 
-static int host_abi_is_compatible(const module_host_api_v1 *host)
+static int host_abi_is_compatible(const module_host_api_v2 *host)
 {
     const uint32_t module_major = MODULE_ABI_VERSION & 0xFFFF0000u;
-    const size_t need_lua = offsetof(module_host_api_v1, lua) + sizeof(host->lua);
-    const size_t need_heap = offsetof(module_host_api_v1, heap) + sizeof(host->heap);
+    const size_t need_lua = offsetof(module_host_api_v2, lua) + sizeof(host->lua);
+    const size_t need_heap = offsetof(module_host_api_v2, heap) + sizeof(host->heap);
     if (!host)
     {
         return 0;
@@ -118,10 +123,11 @@ static int host_abi_is_compatible(const module_host_api_v1 *host)
            host->lua.pushcclosure && host->lua.gettop &&
            host->lua.settop && host->lua.getfield &&
            host->lua.isstring && host->lua.istable &&
-           host->lua.tostring && host->lua.tointeger;
+           host->lua.isnumber && host->lua.tostring &&
+           host->lua.tointeger && host->lua.tonumber;
 }
 
-static int push_error(lua_State *L, const module_host_api_v1 *host, const char *err)
+static int push_error(lua_State *L, const module_host_api_v2 *host, const char *err)
 {
     if (!host)
     {
@@ -132,26 +138,26 @@ static int push_error(lua_State *L, const module_host_api_v1 *host, const char *
     return 2;
 }
 
-static void set_string_field(lua_State *L, const module_host_api_v1 *host, const char *key, const char *value)
+static void set_string_field(lua_State *L, const module_host_api_v2 *host, const char *key, const char *value)
 {
     host->lua.pushstring(L, value ? value : "");
     host->lua.setfield(L, -2, key);
 }
 
-static void set_integer_field(lua_State *L, const module_host_api_v1 *host, const char *key, int64_t value)
+static void set_integer_field(lua_State *L, const module_host_api_v2 *host, const char *key, int64_t value)
 {
     host->lua.pushinteger(L, value);
     host->lua.setfield(L, -2, key);
 }
 
-static void set_boolean_field(lua_State *L, const module_host_api_v1 *host, const char *key, int value)
+static void set_boolean_field(lua_State *L, const module_host_api_v2 *host, const char *key, int value)
 {
     host->lua.pushboolean(L, value ? 1 : 0);
     host->lua.setfield(L, -2, key);
 }
 
 static void set_closure_field(lua_State *L,
-                              const module_host_api_v1 *host,
+                              const module_host_api_v2 *host,
                               const char *key,
                               module_lua_cfunction_t fn,
                               void *upvalue)
@@ -161,7 +167,7 @@ static void set_closure_field(lua_State *L,
     host->lua.setfield(L, -2, key);
 }
 
-static void create_log(const module_host_api_v1 *host, const char *text)
+static void create_log(const module_host_api_v2 *host, const char *text)
 {
     if (host && host->serial.println)
     {
@@ -169,7 +175,7 @@ static void create_log(const module_host_api_v1 *host, const char *text)
     }
 }
 
-static void set_gamepad_constants(lua_State *L, const module_host_api_v1 *host)
+static void set_gamepad_constants(lua_State *L, const module_host_api_v2 *host)
 {
     set_integer_field(L, host, "BTN_A", HOLO_MODULE_GAMEPAD_A);
     set_integer_field(L, host, "BTN_B", HOLO_MODULE_GAMEPAD_B);
@@ -197,7 +203,7 @@ static retrogo_instance_t *instance_from_lua(lua_State *L)
 }
 
 static int read_table_string(lua_State *L,
-                             const module_host_api_v1 *host,
+                             const module_host_api_v2 *host,
                              int table_index,
                              const char *key,
                              char *out,
@@ -216,7 +222,7 @@ static int read_table_string(lua_State *L,
 }
 
 static int read_table_integer(lua_State *L,
-                              const module_host_api_v1 *host,
+                              const module_host_api_v2 *host,
                               int table_index,
                               const char *key,
                               int64_t *out)
@@ -233,10 +239,127 @@ static int read_table_integer(lua_State *L,
     return found;
 }
 
+static int read_table_number(lua_State *L,
+                             const module_host_api_v2 *host,
+                             int table_index,
+                             const char *key,
+                             double *out)
+{
+    int top = host->lua.gettop(L);
+    int found = 0;
+    host->lua.getfield(L, table_index, key);
+    if (host->lua.isnumber(L, -1))
+    {
+        *out = host->lua.tonumber(L, -1);
+        found = 1;
+    }
+    host->lua.settop(L, top);
+    return found;
+}
+
+static int read_table_number_any(lua_State *L,
+                                 const module_host_api_v2 *host,
+                                 int table_index,
+                                 const char *key_a,
+                                 const char *key_b,
+                                 double *out)
+{
+    if (read_table_number(L, host, table_index, key_a, out))
+        return 1;
+    if (key_b && read_table_number(L, host, table_index, key_b, out))
+        return 1;
+    return 0;
+}
+
+#if HOLO_RETRO_GWENESIS_ONLY
+static int read_audio_eq_band(lua_State *L,
+                              const module_host_api_v2 *host,
+                              int table_index,
+                              const char *key,
+                              float *freq_hz,
+                              float *gain_db,
+                              float *q)
+{
+    int top = host->lua.gettop(L);
+    int found = 0;
+    double freq = 0.0;
+    double gain = 0.0;
+    double q_value = 0.0;
+
+    host->lua.getfield(L, table_index, key);
+    if (host->lua.istable(L, -1) &&
+        read_table_number_any(L, host, -1, "freq", "frequency", &freq) &&
+        read_table_number_any(L, host, -1, "gain", "gain_db", &gain) &&
+        read_table_number(L, host, -1, "q", &q_value))
+    {
+        *freq_hz = (float)freq;
+        *gain_db = (float)gain;
+        *q = (float)q_value;
+        found = 1;
+    }
+    host->lua.settop(L, top);
+    return found;
+}
+
+static int read_audio_eq_band_any(lua_State *L,
+                                  const module_host_api_v2 *host,
+                                  int table_index,
+                                  const char *key_a,
+                                  const char *key_b,
+                                  const char *key_c,
+                                  float *freq_hz,
+                                  float *gain_db,
+                                  float *q)
+{
+    if (read_audio_eq_band(L, host, table_index, key_a, freq_hz, gain_db, q))
+        return 1;
+    if (key_b && read_audio_eq_band(L, host, table_index, key_b, freq_hz, gain_db, q))
+        return 1;
+    if (key_c && read_audio_eq_band(L, host, table_index, key_c, freq_hz, gain_db, q))
+        return 1;
+    return 0;
+}
+
+static int l_set_audio_eq(lua_State *L)
+{
+    retrogo_instance_t *inst = instance_from_lua(L);
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
+    float freq_hz[2];
+    float gain_db[2];
+    float q[2];
+
+    if (!inst || !host)
+        return push_error(L, host, "retrogo.set_audio_eq: instance missing");
+
+    if (inst->running || inst->task)
+        return push_error(L, host, "retrogo.set_audio_eq: call before retrogo.start");
+
+    if (host->lua.gettop(L) < 1 || host->lua.isnil(L, 1))
+    {
+        gwenesis_audio_eq_restore_default();
+        host->lua.pushboolean(L, 1);
+        return 1;
+    }
+
+    if (!host->lua.istable(L, 1))
+        return push_error(L, host, "retrogo.set_audio_eq: expected {low={freq,gain,q}, mid={freq,gain,q}}");
+
+    if (!read_audio_eq_band_any(L, host, 1, "low", "band1", "eq1", &freq_hz[0], &gain_db[0], &q[0]) ||
+        !read_audio_eq_band_any(L, host, 1, "mid", "band2", "eq2", &freq_hz[1], &gain_db[1], &q[1]))
+        return push_error(L, host, "retrogo.set_audio_eq: missing low/mid band freq,gain,q");
+
+    if (!gwenesis_audio_eq_set_peaking_bands(freq_hz, gain_db, q, 2))
+        return push_error(L, host, "retrogo.set_audio_eq: invalid EQ or audio already running");
+
+    host->lua.pushboolean(L, 1);
+    return 1;
+}
+#endif
+
 static int l_catalog_info(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
     size_t entries = 0;
     size_t dirs = 0;
     size_t files = 0;
@@ -257,7 +380,7 @@ static int l_catalog_info(lua_State *L)
 static int l_set_catalog(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
     const char *blob = NULL;
     size_t len = 0;
     int top;
@@ -375,7 +498,7 @@ static void retrogo_task_entry(void *arg)
 static int l_start(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
     char app[16] = "launcher";
     char rom[MODULE_PATH_MAX] = "";
     int64_t flags = 0;
@@ -443,7 +566,7 @@ static int l_start(lua_State *L)
 static int l_stop(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
 
     if (!inst || !host)
     {
@@ -458,7 +581,7 @@ static int l_stop(lua_State *L)
 static int l_set_input_mask(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
     int64_t mask;
 
     if (!host)
@@ -478,7 +601,7 @@ static int l_set_input_mask(lua_State *L)
 static int l_info(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
     holo_launch_t launch;
 
     if (!inst || !host)
@@ -512,7 +635,7 @@ RETROGO_MODULE_EXPORT const module_manifest_t *module_query_v1(void)
     return &s_manifest;
 }
 
-static int32_t create_instance_from_host(const module_host_api_v1 *host,
+static int32_t create_instance_from_host(const module_host_api_v2 *host,
                                          const module_open_info_t *info,
                                          void **out_instance)
 {
@@ -551,12 +674,12 @@ static int32_t create_instance_from_host(const module_host_api_v1 *host,
     return MODULE_OK;
 }
 
-RETROGO_MODULE_EXPORT int32_t module_create_v2(module_host_resolve_v1_fn resolve,
+RETROGO_MODULE_EXPORT int32_t module_create_v2(module_host_resolve_v2_fn resolve,
                                                void *resolve_ctx,
                                                const module_open_info_t *info,
                                                void **out_instance)
 {
-    int32_t err = module_sdk_resolve_host_v1(resolve, resolve_ctx, &s_resolved_host);
+    int32_t err = module_sdk_resolve_host_v2(resolve, resolve_ctx, &s_resolved_host);
     if (err != MODULE_OK)
     {
         return err;
@@ -567,7 +690,7 @@ RETROGO_MODULE_EXPORT int32_t module_create_v2(module_host_resolve_v1_fn resolve
 RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
 {
     retrogo_instance_t *inst = (retrogo_instance_t *)instance;
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
 
     if (!inst || !host || !L)
     {
@@ -583,6 +706,11 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
     set_string_field(L, host, "OPTIMIZATION", RETROGO_PORT_OPTIMIZATION);
     set_boolean_field(L, host, "CATALOG_BLOB", 1);
     set_boolean_field(L, host, "RETRO_GO_CORE", 1);
+#if HOLO_RETRO_GWENESIS_ONLY
+    set_boolean_field(L, host, "AUDIO_EQ", 1);
+#else
+    set_boolean_field(L, host, "AUDIO_EQ", 0);
+#endif
     set_gamepad_constants(L, host);
     set_closure_field(L, host, "set_catalog", l_set_catalog, inst);
     set_closure_field(L, host, "catalog_info", l_catalog_info, inst);
@@ -591,13 +719,16 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
     set_closure_field(L, host, "stop", l_stop, inst);
     set_closure_field(L, host, "set_input_mask", l_set_input_mask, inst);
     set_closure_field(L, host, "info", l_info, inst);
+#if HOLO_RETRO_GWENESIS_ONLY
+    set_closure_field(L, host, "set_audio_eq", l_set_audio_eq, inst);
+#endif
     return MODULE_OK;
 }
 
 RETROGO_MODULE_EXPORT void module_destroy_v1(void *instance)
 {
     retrogo_instance_t *inst = (retrogo_instance_t *)instance;
-    const module_host_api_v1 *host = inst ? inst->host : s_host;
+    const module_host_api_v2 *host = inst ? inst->host : s_host;
 
     if (!inst || !host)
     {

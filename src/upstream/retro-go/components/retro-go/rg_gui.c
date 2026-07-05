@@ -313,8 +313,21 @@ void rg_gui_copy_buffer(int left, int top, int width, int height, int stride, co
     }
 }
 
+static int normalize_text_codepoint(int c)
+{
+    if (c == 0x3000)
+        return ' ';
+    if (c == 0x3001)
+        return ',';
+    if (c >= 0xFF01 && c <= 0xFF5E)
+        return c - 0xFEE0;
+    return c;
+}
+
 static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int c)
 {
+    c = normalize_text_codepoint(c);
+
     // Some glyphs are always zero width
     if (!font || c == '\r' || c == '\n' || c == 0) // || c < 8 || c > 0xFFFF)
         return 0;
@@ -372,10 +385,12 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
         }
         return RG_MAX(width, xDelta);
     }
-    // else if (font != &font_basic8x8) // Glyph not found, try fallback font
-    // {
-    //     return get_glyph(output, &font_basic8x8, points, c);
-    // }
+#if RG_CHINESE_SUPPORT
+    else if (font != &font_FusionPixel)
+    {
+        return get_glyph(output, &font_FusionPixel, points, c);
+    }
+#endif
     else // Glyph not found, no fallback
     {
         size_t box_width = font->width ?: 8;

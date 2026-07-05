@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-typedef struct module_host_api_v1 module_host_api_v1;
+typedef struct module_host_api_v2 module_host_api_v2;
 
 #ifndef HOLO_MODULE_PATH_MAX
 #define HOLO_MODULE_PATH_MAX 160u
@@ -19,8 +19,8 @@ typedef struct holo_launch_t {
     uint32_t boot_flags;
 } holo_launch_t;
 
-void holo_port_set_host(const module_host_api_v1 *host);
-const module_host_api_v1 *holo_port_host(void);
+void holo_port_set_host(const module_host_api_v2 *host);
+const module_host_api_v2 *holo_port_host(void);
 void holo_port_log(const char *text);
 
 void holo_input_set_mask(uint32_t mask);
@@ -54,6 +54,11 @@ int holo_audio_begin(uint32_t sample_rate, uint16_t bits_per_sample, uint16_t ch
 void holo_audio_end(void);
 int holo_audio_write(const void *samples, size_t bytes, size_t *out_written);
 int holo_audio_available(size_t *out_bytes);
+
+int holo_dir_open(const char *path, void **out_dir);
+int holo_dir_read(void *dir, char *name, size_t name_size, char *path, size_t path_size,
+                  int *out_is_dir, size_t *out_size);
+void holo_dir_close(void *dir);
 
 #ifdef __cplusplus
 }

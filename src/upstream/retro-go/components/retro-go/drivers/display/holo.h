@@ -1,6 +1,11 @@
 #include "holo_port.h"
 
-#define HOLO_LCD_DMA_BUFFER_COUNT 2
+/*
+ * The host display API keeps pushPixelsDMA() asynchronous until endWrite().
+ * Its SPI DMA queue can hold two in-flight transactions, so the module needs
+ * one extra staging buffer before reusing the first source buffer.
+ */
+#define HOLO_LCD_DMA_BUFFER_COUNT 3
 
 static uint16_t *lcd_buffers[HOLO_LCD_DMA_BUFFER_COUNT];
 static uint8_t lcd_buffer_count;
@@ -23,7 +28,7 @@ static void lcd_alloc_buffers(void)
             if (i == 0) {
                 holo_port_log("[retrogo.so] display dma buffer alloc failed; display updates disabled");
             } else {
-                holo_port_log("[retrogo.so] second display dma buffer alloc failed; falling back to single buffer");
+                holo_port_log("[retrogo.so] additional display dma buffer alloc failed; continuing with fewer buffers");
             }
             break;
         }
@@ -80,9 +85,17 @@ static void lcd_set_window(int left, int top, int width, int height)
     s_holo_window_offset = 0;
     s_holo_window_ready = false;
 
-    if (!s_holo_write_active) {
-        s_holo_write_active = holo_display_start_write() != 0;
+    if (s_holo_write_active) {
+        /*
+         * pushPixelsDMA() is asynchronous. The host's setAddrWindow() sends
+         * commands immediately, so a new window must not be programmed until
+         * the previous pixel DMA stream has been drained by endWrite().
+         */
+        holo_display_end_write();
+        s_holo_write_active = false;
     }
+
+    s_holo_write_active = holo_display_start_write() != 0;
 
     if (s_holo_write_active) {
         s_holo_window_ready = holo_display_set_addr_window(left, top, width, height) != 0;

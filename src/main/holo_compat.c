@@ -139,9 +139,9 @@ static void holo_memmove_backward(unsigned char *d, const unsigned char *s, size
     }
 }
 
-static int host_heap_usable(const module_host_api_v1 *host)
+static int host_heap_usable(const module_host_api_v2 *host)
 {
-    const size_t need_heap = offsetof(module_host_api_v1, heap) + sizeof(module_heap_api_t);
+    const size_t need_heap = offsetof(module_host_api_v2, heap) + sizeof(module_heap_api_t);
     const uint32_t module_major = MODULE_ABI_VERSION & 0xFFFF0000u;
 
     if (!host) {
@@ -516,7 +516,7 @@ int strncasecmp(const char *a, const char *b, size_t n)
 
 void *malloc(size_t size)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     void *ptr = NULL;
     if (size == 0) {
         size = 1;
@@ -539,7 +539,7 @@ void *malloc(size_t size)
 
 void *calloc(size_t n, size_t size)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host_heap_usable(host)) {
         void *ptr = host->heap.calloc(n, size, MODULE_HEAP_PSRAM | MODULE_HEAP_8BIT);
         if (!ptr) {
@@ -562,7 +562,7 @@ void *calloc(size_t n, size_t size)
 
 void *realloc(void *ptr, size_t size)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (!ptr) {
         return malloc(size);
     }
@@ -582,7 +582,7 @@ void *realloc(void *ptr, size_t size)
 
 void free(void *ptr)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (!ptr) {
         return;
     }
@@ -606,7 +606,7 @@ size_t heap_caps_get_largest_free_block(uint32_t caps)
 
 void heap_caps_get_info(multi_heap_info_t *info, uint32_t caps)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (!info) {
         return;
     }
@@ -626,7 +626,7 @@ int access(const char *path, int mode)
 
 int stat(const char *path, struct stat *st)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     rg_stat_t rgst;
     if (!path || !st) {
         s_errno_value = 22;
@@ -649,7 +649,7 @@ int stat(const char *path, struct stat *st)
 
 int mkdir(const char *path, mode_t mode)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     (void)mode;
     if (host && host->sd.mkdir) {
         return host->sd.mkdir(path) == MODULE_OK ? 0 : -1;
@@ -659,7 +659,7 @@ int mkdir(const char *path, mode_t mode)
 
 int remove(const char *path)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->sd.remove) {
         return host->sd.remove(path) == MODULE_OK ? 0 : -1;
     }
@@ -668,7 +668,7 @@ int remove(const char *path)
 
 int rename(const char *from, const char *to)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->sd.rename) {
         return host->sd.rename(from, to) == MODULE_OK ? 0 : -1;
     }
@@ -735,7 +735,7 @@ static uint32_t mode_from_string(const char *mode)
 
 FILE *fopen(const char *path, const char *mode)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     void *host_file = NULL;
     holo_file_t *file;
 
@@ -767,7 +767,7 @@ FILE *fopen(const char *path, const char *mode)
 
 size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
     size_t total;
     size_t out_read = 0;
@@ -791,7 +791,7 @@ size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream)
 
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
     size_t total;
     size_t out_written = 0;
@@ -825,7 +825,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream)
 
 int fclose(FILE *stream)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
     int ret = 0;
 
@@ -843,7 +843,7 @@ int fclose(FILE *stream)
 
 int fseek(FILE *stream, long offset, int whence)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
     uint32_t mode = MODULE_SEEK_SET;
 
@@ -861,7 +861,7 @@ int fseek(FILE *stream, long offset, int whence)
 
 long ftell(FILE *stream)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
     uint64_t pos = 0;
 
@@ -873,7 +873,7 @@ long ftell(FILE *stream)
 
 int fflush(FILE *stream)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     holo_file_t *file = lookup_file(stream);
 
     if (host && file && file->file && host->file.flush) {
@@ -930,7 +930,7 @@ static int serial_vprintf(const char *fmt, va_list ap)
 {
     char buf[256];
     int n = vsnprintf(buf, sizeof(buf), fmt, ap);
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->serial.print) {
         host->serial.print(buf);
     }
@@ -958,7 +958,7 @@ int fprintf(FILE *stream, const char *fmt, ...)
     if (stream) {
         fwrite(buf, 1, strlen(buf), stream);
     } else {
-        const module_host_api_v1 *host = holo_port_host();
+        const module_host_api_v2 *host = holo_port_host();
         if (host && host->serial.print) {
             host->serial.print(buf);
         }
@@ -968,7 +968,7 @@ int fprintf(FILE *stream, const char *fmt, ...)
 
 int puts(const char *s)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->serial.println) {
         host->serial.println(s ? s : "");
     }
@@ -1009,7 +1009,7 @@ void qsort(void *base, size_t nmemb, size_t size, int (*compar)(const void *, co
 
 time_t time(time_t *out)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     time_t now = 0;
     if (host && host->time.millis) {
         now = (time_t)(host->time.millis() / 1000u);
@@ -1089,7 +1089,7 @@ int setenv(const char *name, const char *value, int overwrite)
 
 int64_t esp_timer_get_time(void)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->time.micros) {
         return (int64_t)host->time.micros();
     }
@@ -1119,7 +1119,7 @@ void *esp_partition_find_first(int type, int subtype, const char *label)
 
 void vPortYield(void)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->task.yield) {
         host->task.yield();
     } else if (host && host->time.yield) {
@@ -1129,7 +1129,7 @@ void vPortYield(void)
 
 void vTaskDelay(const TickType_t ticks)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     uint32_t ms = (uint32_t)ticks;
     if (host && host->task.delay) {
         host->task.delay(ms);
@@ -1140,7 +1140,7 @@ void vTaskDelay(const TickType_t ticks)
 
 void vTaskDelete(TaskHandle_t task)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     if (host && host->task.remove) {
         host->task.remove(task);
     }
@@ -1175,7 +1175,7 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t entry,
                                    TaskHandle_t *out_task,
                                    const BaseType_t core_id)
 {
-    const module_host_api_v1 *host = holo_port_host();
+    const module_host_api_v2 *host = holo_port_host();
     void *task = NULL;
     const char *task_name = name ? name : "retrogo";
     if (host && host->task.create_ex &&

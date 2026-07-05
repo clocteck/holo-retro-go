@@ -18,6 +18,7 @@ static rg_surface_t *currentUpdate;
 #define NES_SURFACE_FORMAT RG_PIXEL_PAL565_LE
 #define NES_HOLO_RENDER_FRAMES 5
 #define NES_HOLO_FRAME_CYCLE 6
+#define NES_STARTUP_ERROR_DELAY_MS 3000
 #else
 #define NES_SURFACE_FORMAT RG_PIXEL_PAL565_BE
 #endif
@@ -213,6 +214,70 @@ static void nes_cleanup(void)
     currentUpdate = NULL;
 }
 
+static int nes_load_rom(const char *path, int *mapper_number, bool *nes_already_shutdown)
+{
+    rom_t *cart = NULL;
+    int ret = -1;
+
+    if (mapper_number)
+        *mapper_number = -1;
+    if (nes_already_shutdown)
+        *nes_already_shutdown = false;
+
+    if (rg_extension_match(path, "zip"))
+    {
+        void *data = NULL;
+        size_t size = 0;
+
+        if (!rg_storage_unzip_file(path, NULL, &data, &size, RG_FILE_ALIGN_8KB))
+            return -1;
+
+        cart = rom_loadmem((uint8 *)data, size);
+        if (!cart)
+        {
+            free(data);
+            return -1;
+        }
+        cart->free_data_ptr = true;
+    }
+    else
+    {
+        cart = rom_loadfile(path);
+    }
+
+    if (!cart)
+        return -1;
+
+    if (mapper_number)
+        *mapper_number = cart->mapper_number;
+
+    ret = nes_insertcart(cart);
+    if (ret < 0 && nes_already_shutdown)
+        *nes_already_shutdown = true;
+
+    return ret;
+}
+
+static void nes_startup_error(const char *panic_message, const char *display_message, bool nes_already_shutdown)
+{
+    if (nes_already_shutdown)
+        nes = NULL;
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    const char *message = display_message ? display_message : "NES startup failed.\nReturning to launcher...";
+    RG_LOGE("%s", panic_message ? panic_message : message);
+    nes_cleanup();
+    rg_display_clear(C_BLACK);
+    rg_gui_draw_message("%s", message);
+    rg_display_sync(true);
+    rg_task_delay(NES_STARTUP_ERROR_DELAY_MS);
+    holo_runtime_request_switch("launcher", "", 0);
+#else
+    nes_cleanup();
+    RG_PANIC(panic_message ? panic_message : "NES startup failed.");
+#endif
+}
+
 void nes_main(void)
 {
     const rg_handlers_t handlers = {
@@ -233,34 +298,58 @@ void nes_main(void)
     updates[0] = rg_surface_create(NES_SCREEN_PITCH, NES_SCREEN_HEIGHT, NES_SURFACE_FORMAT, MEM_FAST);
     updates[1] = rg_surface_create(NES_SCREEN_PITCH, NES_SCREEN_HEIGHT, NES_SURFACE_FORMAT, MEM_FAST);
     currentUpdate = updates[0];
+    if (!updates[0] || !updates[1])
+    {
+        nes_startup_error("NES video surface allocation failed.",
+                          "NES video allocation failed.\nReturning to launcher...",
+                          false);
+        return;
+    }
 
     nes = nes_init(SYS_DETECT, app->sampleRate, true, RG_BASE_PATH_BIOS "/fds_bios.bin");
     if (!nes)
-        RG_PANIC("Init failed.");
-
-    int ret = -1;
-
-    if (rg_extension_match(app->romPath, "zip"))
     {
-        void *data;
-        size_t size;
-        if (!rg_storage_unzip_file(app->romPath, NULL, &data, &size, RG_FILE_ALIGN_8KB))
-            RG_PANIC("ROM file unzipping failed!");
-        ret = nes_insertcart(rom_loadmem(data, size));
+        nes_startup_error("Init failed.",
+                          "NES init failed.\nReturning to launcher...",
+                          false);
+        return;
     }
-    else
-    {
-        ret = nes_loadfile(app->romPath);
-    }
+
+    int mapper_number = -1;
+    bool nes_already_shutdown = false;
+    int ret = nes_load_rom(app->romPath, &mapper_number, &nes_already_shutdown);
 
     if (ret == -1)
-        RG_PANIC("ROM load failed.");
+    {
+        nes_startup_error("ROM load failed.",
+                          "NES ROM load failed.\nReturning to launcher...",
+                          nes_already_shutdown);
+        return;
+    }
     else if (ret == -2)
-        RG_PANIC("Unsupported mapper.");
+    {
+        char message[128];
+        if (mapper_number >= 0)
+            snprintf(message, sizeof(message), "Unsupported NES mapper %d.\nThis ROM cannot run here.\nReturning to launcher...", mapper_number);
+        else
+            snprintf(message, sizeof(message), "Unsupported NES mapper.\nThis ROM cannot run here.\nReturning to launcher...");
+        nes_startup_error("Unsupported mapper.", message, nes_already_shutdown);
+        return;
+    }
     else if (ret == -3)
-        RG_PANIC("BIOS file required.");
+    {
+        nes_startup_error("BIOS file required.",
+                          "NES BIOS file required.\nReturning to launcher...",
+                          nes_already_shutdown);
+        return;
+    }
     else if (ret < 0)
-        RG_PANIC("Unsupported ROM.");
+    {
+        nes_startup_error("Unsupported ROM.",
+                          "Unsupported NES ROM.\nReturning to launcher...",
+                          nes_already_shutdown);
+        return;
+    }
 
     nes->blit_func = blit_screen;
 
