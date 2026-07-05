@@ -3,4 +3,4 @@ entry = main.lua
 icon = main.png
 allow_webui = true
 description = Retro-Go dynmod launcher
-version = 1.11
+version = 1.12
