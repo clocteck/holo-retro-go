@@ -35,6 +35,7 @@ enum
     RG_TEXT_NO_PADDING   = (1 << 5),
     RG_TEXT_BIGGER       = (1 << 6),
     RG_TEXT_MONOSPACE    = (1 << 7),
+    RG_TEXT_CJK_FALLBACK = (1 << 8),
 };
 
 enum

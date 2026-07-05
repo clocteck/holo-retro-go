@@ -509,7 +509,8 @@ void gui_draw_list(tab_t *tab)
     {
         char buffer[64];
         snprintf(buffer, 63, "[%s]",  tab->navpath);
-        top += rg_gui_draw_text(0, top, gui.width, buffer, gui.theme->foreground, C_TRANSPARENT, 0).height;
+        top += rg_gui_draw_text(0, top, gui.width, buffer, gui.theme->foreground, C_TRANSPARENT,
+                                RG_TEXT_CJK_FALLBACK).height;
     }
 
     top += ((gui.height - top) - (lines * line_height)) / 2;
@@ -528,7 +529,8 @@ void gui_draw_list(tab_t *tab)
         int idx = line_offset + i;
         int selected = idx == list->cursor;
         char *label = (idx >= 0 && idx < list->length) ? list->items[idx].text : "";
-        top += rg_gui_draw_text(0, top, gui.width, label, fg[selected], bg[selected], 0).height;
+        top += rg_gui_draw_text(0, top, gui.width, label, fg[selected], bg[selected],
+                                RG_TEXT_CJK_FALLBACK).height;
     }
 }
 
