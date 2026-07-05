@@ -45,7 +45,8 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-07-05-runtime-light-v17",
+  VERSION = "2026-07-06-runtime-light-v18",
+  RELEASE_NOTES = "优化gb/gbc显示bug,支持中文rom名称",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
@@ -54,10 +55,12 @@ local APP = {
   API_PREFIX = ROUTE_BASE .. "/api",
   CHUNK_SIZE = 64 * 1024,
   MAX_ROM_FILE_SIZE = 32 * 1024 * 1024,
-  POLL_DELAY_MS = 200,
-  STATUS_POLL_DELAY_MS = 200,
-  EXIT_POLL_DELAY_MS = 200,
+  POLL_DELAY_MS = 250,
+  STATUS_POLL_DELAY_MS = 1000,
+  EXIT_POLL_DELAY_MS = 250,
+  GAMEPAD_FALLBACK_POLL_DELAY_MS = 800,
   AXIS_THRESHOLD = 0.60,
+  DEBUG_INPUT_LOG = false,
   routes = {},
   web_ready = false,
   rom_list_cache = {},
@@ -939,6 +942,7 @@ function APP.api_info()
   return json_response("200 OK", {
     ok = true,
     version = APP.VERSION,
+    release_notes = APP.RELEASE_NOTES,
     route_base = APP.ROUTE_BASE,
     rom_root = APP.ROM_ROOT,
     chunk_size = APP.CHUNK_SIZE,
@@ -1909,6 +1913,9 @@ local function simple_pad_text(mask)
 end
 
 local function log_pad_mask(mask)
+  if not APP.DEBUG_INPUT_LOG then
+    return
+  end
   local text = simple_pad_text(mask)
   if text then
     print(text)
@@ -2026,6 +2033,7 @@ local pending_restart = nil
 local runtime_tick_busy = false
 local next_status_poll_ms = 0
 local next_exit_poll_ms = 0
+local next_gamepad_poll_ms = 0
 
 local function stop_timer(timer_obj)
   if not timer_obj then
@@ -2132,7 +2140,7 @@ local function update_gamepad_input(force)
 end
 
 local gamepad_service_started = false
-local gamepad_poll_while_running = true
+local gamepad_poll_while_running = false
 
 local function register_cb(evt, cb)
   if not gamepad or not gamepad.on or not evt then
@@ -2187,7 +2195,7 @@ local function start_gamepad()
 
   update_gamepad_input(true)
   gamepad_service_started = true
-  gamepad_poll_while_running = true
+  gamepad_poll_while_running = false
   log("gamepad service started")
   return true
 end
@@ -2269,7 +2277,10 @@ local function runtime_tick()
       end
       return
     end
-    if not gamepad_service_started or gamepad_poll_while_running then
+    if not gamepad_service_started then
+      update_gamepad_input(false)
+    elseif gamepad_poll_while_running or now >= next_gamepad_poll_ms then
+      next_gamepad_poll_ms = now + APP.GAMEPAD_FALLBACK_POLL_DELAY_MS
       update_gamepad_input(false)
     end
     if exit_to_home_requested then
