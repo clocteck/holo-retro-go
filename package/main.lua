@@ -48,21 +48,90 @@ local APP = {
   VERSION = "2026-07-01-runtime-light-v16",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
-  ROM_ROOT = APP_DIR .. "/roms",
+  ROM_ROOT = "/sd/roms",
   ROUTE_BASE = ROUTE_BASE,
   API_PREFIX = ROUTE_BASE .. "/api",
-  CHUNK_SIZE = 64 * 1024,
+  CHUNK_SIZE = 256 * 1024,
   MAX_ROM_FILE_SIZE = 32 * 1024 * 1024,
   POLL_DELAY_MS = 200,
   STATUS_POLL_DELAY_MS = 200,
   EXIT_POLL_DELAY_MS = 200,
   AXIS_THRESHOLD = 0.60,
   routes = {},
-  web_ready = false,
   rom_list_cache = {},
   rom_list_cache_ready = false,
-  AUTO_SELECT_MODULE = false,
-  DEFAULT_MODULE_ID = "nes",
+  ROM_SYSTEMS = {
+    {
+      id = "nes",
+      title = "NES",
+      detail = "retrogo: nes fc fds nsf zip",
+      folder = "nes",
+      accept = ".nes,.fc,.fds,.nsf,.zip",
+    },
+    {
+      id = "gb",
+      title = "GB",
+      detail = "retrogo: gb gbc zip",
+      folder = "gb",
+      accept = ".gb,.gbc,.zip",
+    },
+    {
+      id = "gbc",
+      title = "GBC",
+      detail = "retrogo: gbc gb zip",
+      folder = "gbc",
+      accept = ".gbc,.gb,.zip",
+    },
+    {
+      id = "gw",
+      title = "Game & Watch",
+      detail = "retrogo: gw",
+      folder = "gw",
+      accept = ".gw",
+    },
+    {
+      id = "sms",
+      title = "SMS",
+      detail = "retrogo: sms sg zip",
+      folder = "sms",
+      accept = ".sms,.sg,.zip",
+    },
+    {
+      id = "gg",
+      title = "Game Gear",
+      detail = "retrogo: gg zip",
+      folder = "gg",
+      accept = ".gg,.zip",
+    },
+    {
+      id = "col",
+      title = "ColecoVision",
+      detail = "retrogo: col rom zip",
+      folder = "col",
+      accept = ".col,.rom,.zip",
+    },
+    {
+      id = "pce",
+      title = "PC Engine",
+      detail = "retrogo: pce zip",
+      folder = "pce",
+      accept = ".pce,.zip",
+    },
+    {
+      id = "lnx",
+      title = "Atari Lynx",
+      detail = "retrogo: lnx zip",
+      folder = "lnx",
+      accept = ".lnx,.zip",
+    },
+    {
+      id = "md",
+      title = "MD / Genesis",
+      detail = "gwenesis: md gen bin zip",
+      folder = "md",
+      accept = ".md,.gen,.bin,.zip",
+    },
+  },
   MODULES = {
     {
       id = "nes",
@@ -142,29 +211,6 @@ local function any_true(state, names)
     end
   end
   return false
-end
-
-local function first_true_name(state, names)
-  for _, key in ipairs(names) do
-    if to_bool(state[key]) then
-      return key
-    end
-  end
-  return nil
-end
-
-local function names_from_mask(mask, defs)
-  local names = {}
-  mask = tonumber(mask) or 0
-  for _, def in ipairs(defs or {}) do
-    if has_bit(mask, def[2]) then
-      names[#names + 1] = def[1]
-    end
-  end
-  if #names == 0 then
-    return "-"
-  end
-  return table.concat(names, "+")
 end
 
 local function connected_state(state)
@@ -563,6 +609,59 @@ local function dirname(path)
   return "/" .. table.concat(parts, "/")
 end
 
+local function rom_system_path(system)
+  if type(system) ~= "table" then
+    return APP.ROM_ROOT
+  end
+  return APP.ROM_ROOT .. "/" .. text_or(system.folder or system.id, "")
+end
+
+local function rom_systems_payload()
+  local systems = {}
+  for _, system in ipairs(APP.ROM_SYSTEMS or {}) do
+    systems[#systems + 1] = {
+      id = system.id,
+      title = system.title,
+      detail = system.detail,
+      accept = system.accept,
+      path = rom_system_path(system),
+    }
+  end
+  return systems
+end
+
+local function rom_system_by_id(id)
+  id = text_or(id, ""):lower()
+  for _, system in ipairs(APP.ROM_SYSTEMS or {}) do
+    if system.id == id then
+      return system
+    end
+  end
+  return nil
+end
+
+local function normalize_rom_system_id(id)
+  local system = rom_system_by_id(id)
+  return system and system.id or nil
+end
+
+local function rom_relative_path(path)
+  local normalized = normalize_absolute_path(path or "")
+  if not normalized or not path_is_under(normalized, APP.ROM_ROOT) then
+    return ""
+  end
+  if normalized == APP.ROM_ROOT then
+    return ""
+  end
+  return normalized:sub(#APP.ROM_ROOT + 2)
+end
+
+local function rom_system_for_path(path)
+  local relative = rom_relative_path(path)
+  local first = relative:match("^([^/]+)")
+  return normalize_rom_system_id(first) or "other"
+end
+
 local function stat_is_dir(st)
   return st and (st.is_dir or st.dir or st.directory or st.type == "dir") and true or false
 end
@@ -596,6 +695,90 @@ local function ensure_dir(path)
   return true
 end
 
+local function ensure_rom_system_dirs()
+  ensure_dir(APP.ROM_ROOT)
+  for _, system in ipairs(APP.ROM_SYSTEMS or {}) do
+    ensure_dir(rom_system_path(system))
+  end
+end
+
+local function add_row(rows, kind, path, size, mtime)
+  rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
+  if kind == "F" and APP.rom_list_cache then
+    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+      name = basename(path),
+      path = path,
+      relative_path = rom_relative_path(path),
+      system = rom_system_for_path(path),
+      size = tonumber(size) or 0,
+    }
+  end
+end
+
+local function item_path(parent, item)
+  if type(item) == "table" then
+    return item.path or item.fullpath or item.full_path or (parent .. "/" .. tostring(item.name or item[1] or ""))
+  end
+  return parent .. "/" .. tostring(item)
+end
+
+local function item_is_dir(path, item)
+  if type(item) == "table" then
+    if item.is_dir ~= nil then return item.is_dir end
+    if item.dir ~= nil then return item.dir end
+    if item.directory ~= nil then return item.directory end
+    if item.type == "dir" or item.category == "dir" then return true end
+  end
+  local st = file and file.stat and file.stat(path) or nil
+  return st and (st.is_dir or st.dir or st.directory) or false
+end
+
+local function item_size(path, item)
+  if type(item) == "table" then
+    return item.size or item.file_size or 0
+  end
+  local st = file and file.stat and file.stat(path) or nil
+  return st and (st.size or st.file_size or 0) or 0
+end
+
+local function listdir(path)
+  if file and file.listdir then
+    return file.listdir(path) or {}
+  end
+  if sd and sd.listdir then
+    return sd.listdir(path) or {}
+  end
+  return {}
+end
+
+local function scan(path, rows, seen)
+  if seen[path] then
+    return
+  end
+  seen[path] = true
+  add_row(rows, "D", path, 0, 0)
+  for _, item in ipairs(listdir(path)) do
+    local child = item_path(path, item)
+    if child ~= path and child ~= "" then
+      if item_is_dir(child, item) then
+        scan(child, rows, seen)
+      else
+        add_row(rows, "F", child, item_size(child, item), 0)
+      end
+    end
+  end
+end
+
+local function build_catalog_blob()
+  ensure_rom_system_dirs()
+  APP.rom_list_cache = {}
+  APP.rom_list_cache_ready = false
+  local rows = {}
+  scan(APP.ROM_ROOT, rows, {})
+  APP.rom_list_cache_ready = true
+  return table.concat(rows), #rows
+end
+
 local function list_rom_files()
   local items = {}
   if not APP.rom_list_cache_ready then
@@ -605,13 +788,78 @@ local function list_rom_files()
     items[#items + 1] = {
       name = item.name,
       path = item.path,
+      relative_path = item.relative_path or rom_relative_path(item.path),
+      system = item.system or rom_system_for_path(item.path),
       size = item.size or 0,
     }
   end
   table.sort(items, function(a, b)
-    return text_or(a.name, ""):lower() < text_or(b.name, ""):lower()
+    local a_key = text_or(a.system, "") .. "/" .. text_or(a.name, ""):lower()
+    local b_key = text_or(b.system, "") .. "/" .. text_or(b.name, ""):lower()
+    return a_key < b_key
   end)
   return items
+end
+
+local function upsert_rom_cache_item(path, size)
+  if not APP.rom_list_cache_ready or not APP.rom_list_cache then
+    return
+  end
+  local normalized = normalize_absolute_path(path or "")
+  if not normalized or not path_is_under(normalized, APP.ROM_ROOT) then
+    return
+  end
+  for _, item in ipairs(APP.rom_list_cache) do
+    if item.path == normalized then
+      item.name = basename(normalized)
+      item.relative_path = rom_relative_path(normalized)
+      item.system = rom_system_for_path(normalized)
+      item.size = tonumber(size) or item.size or 0
+      return
+    end
+  end
+  APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+    name = basename(normalized),
+    path = normalized,
+    relative_path = rom_relative_path(normalized),
+    system = rom_system_for_path(normalized),
+    size = tonumber(size) or 0,
+  }
+end
+
+local function remove_rom_cache_item(path)
+  if not APP.rom_list_cache then
+    return
+  end
+  local normalized = normalize_absolute_path(path or "") or path
+  for i = #APP.rom_list_cache, 1, -1 do
+    if APP.rom_list_cache[i].path == normalized then
+      table.remove(APP.rom_list_cache, i)
+      return
+    end
+  end
+end
+
+local function remove_file(path)
+  if file and file.remove then
+    local ok = file.remove(path)
+    if ok then
+      return true
+    end
+  end
+  if sd and sd.remove then
+    local ok = sd.remove(path)
+    if ok then
+      return true
+    end
+  end
+  if os and os.remove then
+    local ok = os.remove(path)
+    if ok then
+      return true
+    end
+  end
+  return false, "remove failed"
 end
 
 local function write_request_body_to_file(req, fd, base_offset, total_size)
@@ -684,27 +932,43 @@ APP.HTML = [==[
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Retro-Go ROM Upload</title>
+<title>Retro-Go ROM Library</title>
 <style>
-:root{--bg:#f8fafc;--surface:#ffffff;--line:#d8e0ea;--text:#111827;--muted:#5b6472;--primary:#2563eb;--primary-dark:#1d4ed8;--ok:#15803d;--error:#b91c1c}
+:root{--bg:#f5f7fb;--surface:#fff;--surface-soft:#f8fafc;--line:#d8e0ea;--text:#111827;--muted:#596579;--primary:#2563eb;--primary-dark:#1d4ed8;--accent:#0f766e;--danger:#b42318;--danger-bg:#fff1f0;--ok:#15803d;--error:#b91c1c}
 *{box-sizing:border-box}
 html,body{min-height:100%}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{width:min(720px,100%);margin:0 auto;padding:32px 16px 48px}
-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}
-.eyebrow{margin:0 0 4px;color:var(--muted);font-size:13px;font-weight:700;text-transform:uppercase}
+body{margin:0;background:linear-gradient(180deg,#eef3fb 0,#f5f7fb 220px);color:var(--text);font:16px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:min(1040px,100%);margin:0 auto;padding:28px 16px 48px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:18px}
+.eyebrow{margin:0 0 4px;color:var(--accent);font-size:13px;font-weight:800;text-transform:uppercase}
 h1{margin:0;font-size:30px;line-height:1.15}
-.path{color:var(--muted);font-size:14px;word-break:break-all}
-.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:20px;box-shadow:0 12px 28px rgba(15,23,42,.08)}
-.drop{display:flex;align-items:center;justify-content:center;min-height:136px;margin:16px 0;border:1px dashed #9aa8bb;border-radius:8px;background:#fdfefe;text-align:center;transition:border-color .18s ease,background-color .18s ease}
-.drop.drag{border-color:var(--primary);background:#eff6ff}
+.sub{max-width:640px;margin:8px 0 0;color:var(--muted)}
+.path{max-width:320px;color:var(--muted);font-size:14px;text-align:right;word-break:break-all}
+.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:18px 0}
+.tab{display:flex;min-height:64px;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.82);color:var(--text);text-align:left;box-shadow:0 8px 20px rgba(15,23,42,.05)}
+.tab:hover{border-color:#9bb3d6;background:#fff}
+.tab[aria-pressed=true]{border-color:var(--primary);background:#eff6ff;box-shadow:0 0 0 3px rgba(37,99,235,.14)}
+.tab-title{display:block;font-weight:800}
+.tab-detail{display:block;color:var(--muted);font-size:12px}
+.tab-count{min-width:34px;padding:4px 8px;border-radius:999px;background:var(--surface-soft);color:var(--muted);font-size:13px;font-weight:800;text-align:center}
+.grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:16px;align-items:start}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px;box-shadow:0 12px 28px rgba(15,23,42,.08)}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:14px}
+h2{margin:0;font-size:18px;line-height:1.25}
+.hint{margin:4px 0 0;color:var(--muted);font-size:14px}
+.drop{display:flex;align-items:center;justify-content:center;min-height:150px;margin:14px 0;border:1px dashed #96a6bc;border-radius:8px;background:var(--surface-soft);text-align:center;cursor:pointer;transition:border-color .18s ease,background-color .18s ease,box-shadow .18s ease}
+.drop.drag{border-color:var(--primary);background:#eff6ff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
 .drop strong{display:block;margin-bottom:4px}
-.drop span{color:var(--muted);font-size:14px}
-label{display:block;margin:0 0 8px;font-weight:700}
+.drop span{display:block;color:var(--muted);font-size:14px}
+label{display:block;margin:0 0 8px;font-weight:800}
 input[type=file]{display:block;width:100%;min-height:48px;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--text)}
 .actions{display:flex;align-items:center;gap:12px;margin-top:16px}
-button{min-height:48px;padding:0 18px;border:0;border-radius:8px;background:var(--primary);color:#fff;font:700 16px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
+button{min-height:44px;padding:0 16px;border:1px solid transparent;border-radius:8px;background:var(--primary);color:#fff;font:800 15px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
 button:hover{background:var(--primary-dark)}
+button.secondary{background:#fff;color:var(--primary);border-color:#bfd0ea}
+button.secondary:hover{background:#eff6ff}
+button.danger{min-height:40px;background:#fff;color:var(--danger);border-color:#f0c5c0}
+button.danger:hover{background:var(--danger-bg)}
 button:focus-visible,input:focus-visible{outline:3px solid rgba(37,99,235,.32);outline-offset:2px}
 button:disabled{opacity:.5;cursor:not-allowed}
 .status{min-height:24px;color:var(--muted);font-size:14px}
@@ -712,14 +976,15 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .status.err{color:var(--error)}
 .bar{height:10px;margin-top:16px;overflow:hidden;border-radius:999px;background:#e6edf5}
 .bar span{display:block;width:0;height:100%;background:var(--primary);transition:width .18s ease}
-.list{margin-top:18px}
-.list h2{margin:0 0 10px;font-size:18px}
-.file{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
-.file:first-of-type{border-top:0}
-.file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.file-size{color:var(--muted);font-variant-numeric:tabular-nums}
-.empty{color:var(--muted);padding:8px 0}
-@media (max-width:520px){main{padding-top:24px}header{display:block}h1{font-size:26px}.card{padding:16px}.actions{display:block}button{width:100%;margin-top:12px}.status{margin-top:10px}}
+.list-tools{display:flex;align-items:center;gap:10px}
+.file-list{border-top:1px solid var(--line)}
+.file{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.file-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}
+.file-path{margin-top:2px;color:var(--muted);font-size:13px;word-break:break-all}
+.file-size{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.empty{color:var(--muted);padding:18px 0}
+@media (max-width:760px){main{padding-top:22px}header{display:block}.path{max-width:none;margin-top:10px;text-align:left}.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.card{padding:16px}.actions{display:block}button{width:100%;margin-top:12px}.status{margin-top:10px}.file{grid-template-columns:minmax(0,1fr) auto}.file .danger{grid-column:1 / -1;width:100%}}
+@media (max-width:420px){h1{font-size:26px}.tabs{grid-template-columns:1fr}.tab{min-height:56px}}
 </style>
 </head>
 <body>
@@ -727,50 +992,92 @@ button:disabled{opacity:.5;cursor:not-allowed}
   <header>
     <div>
       <p class="eyebrow">Retro-Go</p>
-      <h1>ROM Upload</h1>
-      <div class="path" id="romPath">__ROM_ROOT__</div>
+      <h1>ROM Library</h1>
+      <p class="sub">Choose a system, upload ROMs to its folder, and remove files you no longer need.</p>
     </div>
+    <div class="path" id="romPath">__ROM_ROOT__</div>
   </header>
-  <section class="card" aria-label="ROM upload">
-    <label for="fileInput">ROM files</label>
-    <input id="fileInput" type="file" multiple>
-    <div class="drop" id="dropzone">
-      <div><strong>Drop files here</strong><span>NES, GB, GBC, SMS, PCE, MD and other supported ROMs</span></div>
-    </div>
-    <div class="actions">
-      <button id="uploadBtn" type="button">Upload</button>
-      <div class="status" id="status" aria-live="polite">Ready</div>
-    </div>
-    <div class="bar" aria-hidden="true"><span id="bar"></span></div>
-    <div class="list">
-      <h2>ROMs</h2>
+  <nav class="tabs" id="systemTabs" aria-label="ROM systems"></nav>
+  <div class="grid">
+    <section class="card" aria-label="ROM upload">
+      <div class="card-head">
+        <div>
+          <h2 id="uploadTitle">Upload ROM</h2>
+          <p class="hint" id="uploadHint">Select a system first.</p>
+        </div>
+      </div>
+      <label for="fileInput">ROM files</label>
+      <input id="fileInput" type="file" multiple>
+      <div class="drop" id="dropzone" tabindex="0" role="button" aria-label="Choose ROM files">
+        <div><strong>Drop files here</strong><span id="dropHint">or click to choose files</span></div>
+      </div>
+      <div class="actions">
+        <button id="uploadBtn" type="button">Upload</button>
+        <div class="status" id="status" aria-live="polite">Ready</div>
+      </div>
+      <div class="bar" aria-hidden="true"><span id="bar"></span></div>
+    </section>
+    <section class="card" aria-label="ROM list">
+      <div class="card-head">
+        <div>
+          <h2 id="listTitle">ROMs</h2>
+          <p class="hint" id="listHint">Loading...</p>
+        </div>
+        <div class="list-tools">
+          <button class="secondary" id="refreshBtn" type="button">Refresh</button>
+        </div>
+      </div>
       <div id="romList" class="empty">Loading...</div>
-    </div>
-  </section>
+    </section>
+  </div>
 </main>
 <script>
 const CONFIG_BASE="__APP_BASE__";
 const pathBase=location.pathname.replace(/\/api\/.*$/,"").replace(/\/$/,"");
 const BASE=pathBase||CONFIG_BASE;
-let serverInfo={rom_root:"__ROM_ROOT__",chunk_size:65536,max_file_size:33554432};
+let serverInfo={rom_root:"__ROM_ROOT__",chunk_size:262144,max_file_size:33554432,systems:[]};
+let activeSystem="nes";
+let currentItems=[];
 const qs=id=>document.getElementById(id);
 const statusEl=qs("status");
 const bar=qs("bar");
 const input=qs("fileInput");
 const dropzone=qs("dropzone");
 const uploadBtn=qs("uploadBtn");
+const refreshBtn=qs("refreshBtn");
+const tabs=qs("systemTabs");
+const romList=qs("romList");
 function api(path){return BASE+"/api"+path}
 function esc(text){return String(text||"").replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]))}
 function fmtSize(bytes){bytes=Number(bytes)||0;if(bytes<1024)return bytes+" B";if(bytes<1048576)return (bytes/1024).toFixed(1)+" KB";return (bytes/1048576).toFixed(1)+" MB"}
 function setStatus(text,kind){statusEl.textContent=text;statusEl.className="status "+(kind||"")}
 function setProgress(done,total){const pct=total>0?Math.max(0,Math.min(100,Math.round(done*100/total))):0;bar.style.width=pct+"%"}
 async function parseJson(res){const text=await res.text();let data={};try{data=text?JSON.parse(text):{}}catch(_){throw new Error(text||res.statusText)}if(!res.ok||data.ok===false)throw new Error(data.error||res.statusText);return data}
-async function loadInfo(){const data=await parseJson(await fetch(api("/info"),{cache:"no-store"}));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root}
-async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));const items=data.items||[];const target=qs("romList");if(!items.length){target.className="empty";target.textContent=data.pending?"Waiting for module...":"No ROMs yet";if(data.pending)setTimeout(()=>loadList().catch(()=>{}),1000);return}target.className="";target.innerHTML=items.map(item=>`<div class="file"><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-size">${fmtSize(item.size)}</div></div>`).join("")}
+function systems(){const base=serverInfo.systems&&serverInfo.systems.length?serverInfo.systems:[{id:"nes",title:"NES",detail:"Nintendo Entertainment System",accept:".nes",path:(serverInfo.rom_root||"__ROM_ROOT__")+"/nes"}];let hasOther=false;for(let i=0;i<currentItems.length;i++){if(currentItems[i].system==="other")hasOther=true}return hasOther?base.concat([{id:"other",title:"Other",detail:"Root or unknown folder",accept:"",path:serverInfo.rom_root||"__ROM_ROOT__"}]):base}
+function currentSystem(){const list=systems();for(let i=0;i<list.length;i++){if(list[i].id===activeSystem)return list[i]}return list[0]}
+function countBySystem(){const counts={};for(let i=0;i<currentItems.length;i++){const key=currentItems[i].system||"other";counts[key]=(counts[key]||0)+1}return counts}
+function bindSystemButtons(){const buttons=tabs.getElementsByTagName("button");for(let i=0;i<buttons.length;i++){buttons[i].onclick=function(){activeSystem=this.getAttribute("data-system");setProgress(0,1);setStatus("Ready","");renderActiveSystem()}}}
+function renderTabs(){const counts=countBySystem();const list=systems();let html="";for(let i=0;i<list.length;i++){const system=list[i];html+=`<button class="tab" type="button" data-system="${esc(system.id)}" aria-pressed="${system.id===activeSystem}"><span><span class="tab-title">${esc(system.title)}</span><span class="tab-detail">${esc(system.detail)}</span></span><span class="tab-count">${counts[system.id]||0}</span></button>`}tabs.innerHTML=html;bindSystemButtons()}
+function renderActiveSystem(){const system=currentSystem();activeSystem=system.id;input.accept=system.accept||"";qs("uploadTitle").textContent="Upload to "+system.title;qs("uploadHint").textContent=system.path||"";qs("dropHint").textContent=(system.accept||"ROM")+" files go to "+(system.path||"");qs("listTitle").textContent=system.title+" ROMs";renderTabs();renderList(false)}
+function itemsForSystem(id){const items=[];for(let i=0;i<currentItems.length;i++){if(currentItems[i].system===id)items.push(currentItems[i])}return items}
+function bindDeleteButtons(){const buttons=romList.getElementsByTagName("button");for(let i=0;i<buttons.length;i++){buttons[i].onclick=function(){deleteRom(this.getAttribute("data-delete")).catch(err=>setStatus(err.message||"Delete failed","err"))}}}
+function renderList(pending){const system=currentSystem();const items=itemsForSystem(system.id);qs("listHint").textContent=items.length+" file"+(items.length===1?"":"s")+" in "+(system.path||"");
+  if(!items.length){romList.className="empty";romList.textContent=pending?"Waiting for module...":"No ROMs in this system yet";return}
+  romList.className="file-list";
+  let html="";for(let i=0;i<items.length;i++){const item=items[i];html+=`<div class="file"><div><div class="file-name" title="${esc(item.name)}">${esc(item.name)}</div><div class="file-path">${esc(item.relative_path||item.path)}</div></div><div class="file-size">${fmtSize(item.size)}</div><button class="danger" type="button" data-delete="${esc(item.path)}">Delete</button></div>`}romList.innerHTML=html;bindDeleteButtons()
+}
+function hasSystemId(id){const list=systems();for(let i=0;i<list.length;i++){if(list[i].id===id)return true}return false}
+async function loadInfo(){const data=await parseJson(await fetch(api("/info"),{cache:"no-store"}));serverInfo=data;qs("romPath").textContent=data.rom_root||serverInfo.rom_root;if(!hasSystemId(activeSystem))activeSystem=systems()[0].id;renderActiveSystem()}
+async function loadList(){const data=await parseJson(await fetch(api("/list"),{cache:"no-store"}));currentItems=data.items||[];renderActiveSystem();if(data.pending)setTimeout(()=>loadList().catch(()=>{}),1000)}
 function selectedFiles(files){return Array.from(files||input.files||[]).filter(file=>file&&file.name)}
-async function uploadOne(file,index,totalFiles){if(file.size>serverInfo.max_file_size)throw new Error(file.name+" is too large");let offset=0;const chunkSize=serverInfo.chunk_size||65536;const safeName=file.name.replace(/[\\/]/g,"_");const path=(serverInfo.rom_root||"__ROM_ROOT__")+"/"+safeName;while(offset<file.size||file.size===0){const end=file.size===0?0:Math.min(offset+chunkSize,file.size);setStatus(`Uploading ${index}/${totalFiles}: ${file.name}`,"");const res=await fetch(api("/upload")+"?path="+encodeURIComponent(path)+"&offset="+offset+"&total="+file.size,{method:"PUT",body:file.size===0?new Blob([]):file.slice(offset,end)});const data=await parseJson(res);const next=data.next_offset||end;if(file.size>0&&next<=offset)throw new Error("Upload did not advance");offset=next;setProgress(offset,file.size);if(file.size===0||data.done)break}}
+async function uploadOne(file,index,totalFiles){if(file.size>serverInfo.max_file_size)throw new Error(file.name+" is too large");let offset=0;const chunkSize=serverInfo.chunk_size||65536;const safeName=file.name.replace(/[\\/]/g,"_");const system=currentSystem();const path=(system.path||((serverInfo.rom_root||"__ROM_ROOT__")+"/"+system.id))+"/"+safeName;while(offset<file.size||file.size===0){const end=file.size===0?0:Math.min(offset+chunkSize,file.size);setStatus(`Uploading ${index}/${totalFiles}: ${file.name}`,"");const res=await fetch(api("/upload")+"?path="+encodeURIComponent(path)+"&offset="+offset+"&total="+file.size,{method:"PUT",body:file.size===0?new Blob([]):file.slice(offset,end)});const data=await parseJson(res);const next=data.next_offset||end;if(file.size>0&&next<=offset)throw new Error("Upload did not advance");offset=next;setProgress(offset,file.size);if(file.size===0||data.done)break}}
 async function uploadFiles(files){files=selectedFiles(files);if(!files.length){setStatus("Select files first","err");return}uploadBtn.disabled=true;setProgress(0,1);try{for(let i=0;i<files.length;i++){await uploadOne(files[i],i+1,files.length)}setStatus("Upload complete","ok");setProgress(1,1);input.value="";await loadList()}catch(err){setStatus(err.message||"Upload failed","err")}finally{uploadBtn.disabled=false}}
+function itemByPath(path){for(let i=0;i<currentItems.length;i++){if(currentItems[i].path===path)return currentItems[i]}return null}
+async function deleteRom(path){const item=itemByPath(path);if(!item)return;if(!confirm("Delete "+item.name+"?"))return;setStatus("Deleting "+item.name,"");let res=await fetch(api("/delete")+"?path="+encodeURIComponent(path),{method:"DELETE"});if(res.status===404||res.status===405)res=await fetch(api("/delete")+"?path="+encodeURIComponent(path),{method:"POST"});await parseJson(res);setStatus("Deleted "+item.name,"ok");await loadList()}
 uploadBtn.onclick=()=>uploadFiles();
+refreshBtn.onclick=()=>loadList().catch(err=>setStatus(err.message||"Refresh failed","err"));
+dropzone.addEventListener("click",()=>input.click());
+dropzone.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();input.click()}});
 ["dragenter","dragover"].forEach(name=>dropzone.addEventListener(name,ev=>{ev.preventDefault();dropzone.classList.add("drag")}));
 ["dragleave","drop"].forEach(name=>dropzone.addEventListener(name,ev=>{ev.preventDefault();dropzone.classList.remove("drag")}));
 dropzone.addEventListener("drop",ev=>uploadFiles(ev.dataTransfer&&ev.dataTransfer.files));
@@ -826,6 +1133,7 @@ function APP.api_info()
     version = APP.VERSION,
     route_base = APP.ROUTE_BASE,
     rom_root = APP.ROM_ROOT,
+    systems = rom_systems_payload(),
     chunk_size = APP.CHUNK_SIZE,
     max_file_size = APP.MAX_ROM_FILE_SIZE,
     catalog_dirty = APP.catalog_dirty and true or false,
@@ -833,9 +1141,11 @@ function APP.api_info()
 end
 
 function APP.api_list()
+  build_catalog_blob()
   return json_response("200 OK", {
     ok = true,
     rom_root = APP.ROM_ROOT,
+    systems = rom_systems_payload(),
     pending = not APP.rom_list_cache_ready,
     items = list_rom_files(),
   })
@@ -866,15 +1176,44 @@ function APP.api_upload(req)
   if not st or stat_is_dir(st) then
     return error_response("500 Internal Server Error", "write result invalid")
   end
+  upsert_rom_cache_item(path, st.size or st.file_size or total)
   APP.catalog_dirty = true
   return json_response("200 OK", {
     ok = true,
     path = path,
     name = basename(path),
+    relative_path = rom_relative_path(path),
+    system = rom_system_for_path(path),
     next_offset = next_offset,
     total = total,
     done = next_offset >= total,
     size = st.size or st.file_size or 0,
+  })
+end
+
+function APP.api_delete(req)
+  local q = parse_query(req.query)
+  local path, err = normalize_rom_path(q.path or "")
+  if not path or path == APP.ROM_ROOT then
+    return error_response("400 Bad Request", err or "missing file path")
+  end
+  local st = file.stat and file.stat(path) or nil
+  if not st then
+    return error_response("404 Not Found", "file not found")
+  end
+  if stat_is_dir(st) then
+    return error_response("400 Bad Request", "cannot delete directory")
+  end
+  local ok, remove_err = remove_file(path)
+  if not ok then
+    return error_response("500 Internal Server Error", remove_err or "delete failed")
+  end
+  remove_rom_cache_item(path)
+  APP.catalog_dirty = true
+  return json_response("200 OK", {
+    ok = true,
+    path = path,
+    name = basename(path),
   })
 end
 
@@ -890,13 +1229,17 @@ end
 
 function APP.register_web_routes()
   local get = httpd.GET or "GET"
+  local post = httpd.POST or "POST"
   local put = httpd.PUT or "PUT"
+  local delete = httpd.DELETE or "DELETE"
   APP.register_route(get, APP.ROUTE_BASE, APP.route_redirect)
   APP.register_route(get, APP.ROUTE_BASE .. "/", APP.route_index)
   APP.register_route(get, APP.ROUTE_BASE .. "/favicon.ico", APP.route_favicon)
   APP.register_route(get, APP.API_PREFIX .. "/info", APP.api_info)
   APP.register_route(get, APP.API_PREFIX .. "/list", APP.api_list)
   APP.register_route(put, APP.API_PREFIX .. "/upload", APP.api_upload)
+  APP.register_route(delete, APP.API_PREFIX .. "/delete", APP.api_delete)
+  APP.register_route(post, APP.API_PREFIX .. "/delete", APP.api_delete)
 end
 
 function APP.unregister_routes()
@@ -920,7 +1263,6 @@ function APP.stop_web(reason)
       app.set_webui(false)
     end)
   end
-  APP.web_ready = false
   log("web stopped", reason or "")
 end
 
@@ -935,7 +1277,7 @@ local function start_rom_web()
       previous.stop("reload")
     end)
   end
-  ensure_dir(APP.ROM_ROOT)
+  ensure_rom_system_dirs()
   if httpd.start then
     pcall(function()
       httpd.start({
@@ -956,7 +1298,6 @@ local function start_rom_web()
       app.set_webui(true)
     end)
   end
-  APP.web_ready = true
   log("web ready", APP.ROUTE_BASE .. "/", APP.ROM_ROOT)
   return true
 end
@@ -1470,29 +1811,6 @@ local function choose_module_async(on_selected)
   return true
 end
 
-local function module_by_id(id)
-  if type(id) ~= "string" or id == "" then
-    return nil
-  end
-  for _, mod in ipairs(APP.MODULES) do
-    if mod.id == id then
-      return mod
-    end
-  end
-  return nil
-end
-
-local function select_module()
-  if APP.AUTO_SELECT_MODULE then
-    local selected = module_by_id(APP.DEFAULT_MODULE_ID) or APP.MODULES[1]
-    if selected then
-      log("auto selected", selected.id, selected.path)
-    end
-    return selected
-  end
-  return choose_module()
-end
-
 local function start_selected_module(selected_module)
 if not selected_module then
   log("module selection canceled")
@@ -1512,23 +1830,6 @@ if not ok_module or type(retrogo) ~= "table" then
 end
 
 log("module", tostring(retrogo.VERSION), tostring(retrogo.RETRO_GO_CORE))
-
-local retrogo_button_defs = {
-  { "A", retrogo.BTN_A },
-  { "B", retrogo.BTN_B },
-  { "SELECT", retrogo.BTN_SELECT },
-  { "START", retrogo.BTN_START },
-  { "UP", retrogo.BTN_UP },
-  { "DOWN", retrogo.BTN_DOWN },
-  { "LEFT", retrogo.BTN_LEFT },
-  { "RIGHT", retrogo.BTN_RIGHT },
-  { "X", retrogo.BTN_X },
-  { "Y", retrogo.BTN_Y },
-  { "L", retrogo.BTN_L },
-  { "R", retrogo.BTN_R },
-  { "HOME", retrogo.BTN_HOME },
-  { "MENU", retrogo.BTN_MENU },
-}
 
 local function simple_pad_text(mask)
   local defs
@@ -1584,126 +1885,6 @@ local function log_pad_mask(mask)
   if text then
     print(text)
   end
-end
-
-local function gamepad_button_defs()
-  if not gamepad then
-    return {}
-  end
-  return {
-    { "A", gamepad.BTN_A },
-    { "B", gamepad.BTN_B },
-    { "SELECT", gamepad.BTN_SELECT },
-    { "START", gamepad.BTN_START },
-    { "UP", gamepad.BTN_UP },
-    { "DOWN", gamepad.BTN_DOWN },
-    { "LEFT", gamepad.BTN_LEFT },
-    { "RIGHT", gamepad.BTN_RIGHT },
-    { "X", gamepad.BTN_X },
-    { "Y", gamepad.BTN_Y },
-    { "L", gamepad.BTN_L },
-    { "R", gamepad.BTN_R },
-    { "HOME", gamepad.BTN_HOME },
-    { "MENU", gamepad.BTN_MENU },
-  }
-end
-
-local function debug_input_aliases(state)
-  if type(state) ~= "table" then
-    return "-"
-  end
-  local aliases = {}
-  local checks = {
-    { "SELECT", { "select", "btn_select", "back" } },
-    { "START", { "start", "btn_start", "menu" } },
-    { "HOME", { "xbox", "home", "btn_home", "guide", "system" } },
-    { "MENU", { "view", "menu_btn", "option", "btn_menu" } },
-  }
-  for _, check in ipairs(checks) do
-    local name = first_true_name(state, check[2])
-    if name then
-      aliases[#aliases + 1] = check[1] .. ":" .. name
-    end
-  end
-  if #aliases == 0 then
-    return "-"
-  end
-  return table.concat(aliases, ",")
-end
-
-local function add_row(rows, kind, path, size, mtime)
-  rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
-  if kind == "F" and APP.rom_list_cache then
-    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
-      name = basename(path),
-      path = path,
-      size = tonumber(size) or 0,
-    }
-  end
-end
-
-local function item_path(parent, item)
-  if type(item) == "table" then
-    return item.path or item.fullpath or item.full_path or (parent .. "/" .. tostring(item.name or item[1] or ""))
-  end
-  return parent .. "/" .. tostring(item)
-end
-
-local function item_is_dir(path, item)
-  if type(item) == "table" then
-    if item.is_dir ~= nil then return item.is_dir end
-    if item.dir ~= nil then return item.dir end
-    if item.directory ~= nil then return item.directory end
-    if item.type == "dir" or item.category == "dir" then return true end
-  end
-  local st = file and file.stat and file.stat(path) or nil
-  return st and (st.is_dir or st.dir or st.directory) or false
-end
-
-local function item_size(path, item)
-  if type(item) == "table" then
-    return item.size or item.file_size or 0
-  end
-  local st = file and file.stat and file.stat(path) or nil
-  return st and (st.size or st.file_size or 0) or 0
-end
-
-local function listdir(path)
-  if file and file.listdir then
-    return file.listdir(path) or {}
-  end
-  if sd and sd.listdir then
-    return sd.listdir(path) or {}
-  end
-  return {}
-end
-
-local function scan(path, rows, seen)
-  if seen[path] then
-    return
-  end
-  seen[path] = true
-  add_row(rows, "D", path, 0, 0)
-  for _, item in ipairs(listdir(path)) do
-    local child = item_path(path, item)
-    if child ~= path and child ~= "" then
-      if item_is_dir(child, item) then
-        scan(child, rows, seen)
-      else
-        add_row(rows, "F", child, item_size(child, item), 0)
-      end
-    end
-  end
-end
-
-local function build_catalog_blob()
-  ensure_dir(APP.ROM_ROOT)
-  APP.rom_list_cache = {}
-  APP.rom_list_cache_ready = false
-  local rows = {}
-  scan(APP.ROM_ROOT, rows, {})
-  APP.rom_list_cache_ready = true
-  return table.concat(rows), #rows
 end
 
 local function load_catalog()
@@ -1875,9 +2056,7 @@ end
 local function update_gamepad_input(force)
   local state = read_gamepad_state()
   local next_mask = 0
-  local raw_mask = 0
   if connected_state(state) then
-    raw_mask = read_raw_gamepad_mask(state)
     next_mask = build_gamepad_mask(state, retrogo)
   else
     next_mask = 0
@@ -1897,7 +2076,6 @@ local function update_gamepad_input(force)
 end
 
 local gamepad_service_started = false
-local gamepad_poll_while_running = true
 
 local function register_cb(evt, cb)
   if not gamepad or not gamepad.on or not evt then
@@ -1952,7 +2130,6 @@ local function start_gamepad()
 
   update_gamepad_input(true)
   gamepad_service_started = true
-  gamepad_poll_while_running = true
   log("gamepad service started")
   return true
 end
@@ -2038,9 +2215,7 @@ local function runtime_tick()
       end
       return
     end
-    if not gamepad_service_started or gamepad_poll_while_running then
-      update_gamepad_input(false)
-    end
+    update_gamepad_input(false)
     if exit_to_home_requested then
       return
     end
@@ -2086,8 +2261,6 @@ end
 
 start_rom_web()
 
-if APP.AUTO_SELECT_MODULE then
-  start_selected_module(select_module())
-elseif not choose_module_async(start_selected_module) then
+if not choose_module_async(start_selected_module) then
   start_selected_module(choose_module())
 end
