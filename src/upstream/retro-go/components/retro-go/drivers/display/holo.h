@@ -1,5 +1,10 @@
 #include "holo_port.h"
 
+/*
+ * The host display API keeps pushPixelsDMA() asynchronous until endWrite().
+ * Use two staging buffers and rely on endWrite() to drain the host DMA queue
+ * before either buffer is reused.
+ */
 #define HOLO_LCD_DMA_BUFFER_COUNT 2
 
 static uint16_t *lcd_buffers[HOLO_LCD_DMA_BUFFER_COUNT];
@@ -23,7 +28,7 @@ static void lcd_alloc_buffers(void)
             if (i == 0) {
                 holo_port_log("[retrogo.so] display dma buffer alloc failed; display updates disabled");
             } else {
-                holo_port_log("[retrogo.so] second display dma buffer alloc failed; falling back to single buffer");
+                holo_port_log("[retrogo.so] additional display dma buffer alloc failed; continuing with fewer buffers");
             }
             break;
         }
@@ -100,9 +105,20 @@ static inline uint16_t *lcd_get_buffer(size_t length)
         return NULL;
     }
     uint16_t *buffer = lcd_buffers[lcd_buffer_index];
+#if HOLO_RETRO_GWENESIS_ONLY
     lcd_buffer_index = (lcd_buffer_index + 1) % lcd_buffer_count;
+#endif
     return buffer;
 }
+
+#if !HOLO_RETRO_GWENESIS_ONLY
+static inline void lcd_advance_buffer(uint16_t *buffer)
+{
+    if (lcd_buffer_count > 0 && buffer == lcd_buffers[lcd_buffer_index]) {
+        lcd_buffer_index = (lcd_buffer_index + 1) % lcd_buffer_count;
+    }
+}
+#endif
 
 static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
 {
@@ -111,6 +127,10 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         return;
     }
 
+#if !HOLO_RETRO_GWENESIS_ONLY
+    uint16_t *source = buffer;
+    bool submitted = false;
+#endif
     const size_t window_width = (size_t)s_holo_window_width;
     const size_t window_height = (size_t)s_holo_window_height;
     const size_t total_pixels = window_width * window_height;
@@ -125,10 +145,19 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length)
         if (!holo_display_push_pixels(buffer, sent)) {
             break;
         }
+#if !HOLO_RETRO_GWENESIS_ONLY
+        submitted = true;
+#endif
         buffer += sent;
         length -= sent;
         s_holo_window_offset += sent;
     }
+
+#if !HOLO_RETRO_GWENESIS_ONLY
+    if (submitted) {
+        lcd_advance_buffer(source);
+    }
+#endif
 }
 
 const rg_display_driver_t rg_display_driver_holo = {

@@ -66,8 +66,8 @@ INLINE byte OpZ80(word A) { return(RAM[A>>13][A&0x1FFF]); }
 
 #ifdef GENESIS
 #define FAST_RDOP
-extern byte *Z80_RAM[];
-INLINE byte OpZ80(word A) { return(Z80_RAM[A>>13][A&0x1FFF]); }
+extern byte *Z80_RAM;
+INLINE byte OpZ80(word A) { return(Z80_RAM ? Z80_RAM[A&0x1FFF] : 0xFF); }
 #endif
 
 /** FAST_RDOP ************************************************/

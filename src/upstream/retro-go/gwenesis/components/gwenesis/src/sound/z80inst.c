@@ -431,7 +431,10 @@ byte GWENESIS_HOT RdZ80(register word Addr) {
 #if GWENESIS_Z80_YM_STATUS_FAST_READ
     return gwenesis_ym_async_status_mirror & 0x7f;
 #else
-    return YM2612Read(zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR));
+  {
+    const int timestamp = zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR);
+    return YM2612Read(timestamp);
+  }
 #endif
 
   z80_log(__FUNCTION__, "addr= %x", Addr);
@@ -459,8 +462,9 @@ void GWENESIS_HOT WrZ80(register word Addr, register byte Value) {
 
   // @4000-4003
   if (Addr < 0x6000) {
-    z80_log("Z80","ZZYM(%x,%x) zk=%d,tgt=%d",Addr&0x3,Value, zclk, zclk + current_timeslice -(cpu.ICount * Z80_FREQ_DIVISOR) );
-    YM2612Write(Addr&0x3, Value, zclk + current_timeslice -(cpu.ICount * Z80_FREQ_DIVISOR) );
+    const int timestamp = zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR);
+    z80_log("Z80","ZZYM(%x,%x) zk=%d,tgt=%d",Addr&0x3,Value, zclk, timestamp);
+    YM2612Write(Addr&0x3, Value, timestamp);
     return;
   }
 
@@ -472,8 +476,9 @@ void GWENESIS_HOT WrZ80(register word Addr, register byte Value) {
 
   // @7F11
   if (Addr ==  0x7F11) {
-    z80_log("Z80","ZZSN zk=%d,tgt=%d", zclk, zclk + current_timeslice -(cpu.ICount * Z80_FREQ_DIVISOR) );
-    gwenesis_SN76489_Write(Value,zclk + current_timeslice -(cpu.ICount * Z80_FREQ_DIVISOR) );
+    const int timestamp = zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR);
+    z80_log("Z80","ZZSN zk=%d,tgt=%d", zclk, timestamp);
+    gwenesis_SN76489_Write(Value, timestamp);
     return;
   }
  

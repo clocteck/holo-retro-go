@@ -4,13 +4,12 @@
 #include <string.h>
 
 #ifndef HOLO_CATALOG_PATH_MAX
-#define HOLO_CATALOG_PATH_MAX 255
+#define HOLO_CATALOG_PATH_MAX RG_PATH_MAX
 #endif
 
 typedef struct holo_catalog_entry_t {
     char path[HOLO_CATALOG_PATH_MAX + 1];
     char dirname[HOLO_CATALOG_PATH_MAX + 1];
-    char basename[96];
     size_t size;
     time_t mtime;
     uint8_t is_dir;
@@ -27,6 +26,45 @@ static size_t text_len(const char *text)
     return text ? strlen(text) : 0;
 }
 
+static size_t utf8_safe_prefix_len(const char *src, size_t len)
+{
+    size_t lead_index;
+    size_t available;
+    size_t needed;
+    unsigned char lead;
+
+    if (!src || len == 0) {
+        return 0;
+    }
+
+    lead_index = len;
+    while (lead_index > 0 && (((unsigned char)src[lead_index - 1] & 0xC0) == 0x80)) {
+        --lead_index;
+    }
+
+    if (lead_index == len) {
+        lead = (unsigned char)src[len - 1];
+        return (lead >= 0xC2) ? len - 1 : len;
+    }
+    if (lead_index == 0) {
+        return 0;
+    }
+
+    lead = (unsigned char)src[lead_index - 1];
+    if (lead >= 0xF0) {
+        needed = 4;
+    } else if (lead >= 0xE0) {
+        needed = 3;
+    } else if (lead >= 0xC2) {
+        needed = 2;
+    } else {
+        return (lead < 0x80) ? lead_index : lead_index - 1;
+    }
+
+    available = len - (lead_index - 1);
+    return (available >= needed) ? len : lead_index - 1;
+}
+
 static void copy_text(char *dst, size_t dst_size, const char *src, size_t src_len)
 {
     size_t n;
@@ -40,6 +78,7 @@ static void copy_text(char *dst, size_t dst_size, const char *src, size_t src_le
     n = src_len;
     if (n + 1 > dst_size) {
         n = dst_size - 1;
+        n = utf8_safe_prefix_len(src, n);
     }
     memcpy(dst, src, n);
     dst[n] = '\0';
@@ -98,11 +137,9 @@ static void split_path(holo_catalog_entry_t *entry)
     slash = strrchr(entry->path, '/');
     if (!slash) {
         entry->dirname[0] = '\0';
-        copy_text(entry->basename, sizeof(entry->basename), entry->path, text_len(entry->path));
         return;
     }
     copy_text(entry->dirname, sizeof(entry->dirname), entry->path, (size_t)(slash - entry->path));
-    copy_text(entry->basename, sizeof(entry->basename), slash + 1, text_len(slash + 1));
     if (entry->dirname[0] == '\0') {
         copy_text(entry->dirname, sizeof(entry->dirname), "/", 1);
     }
@@ -110,11 +147,14 @@ static void split_path(holo_catalog_entry_t *entry)
 
 static const char *entry_extension(const holo_catalog_entry_t *entry)
 {
+    const char *basename;
     const char *dot;
     if (!entry || entry->is_dir) {
         return "";
     }
-    dot = strrchr(entry->basename, '.');
+    basename = strrchr(entry->path, '/');
+    basename = basename ? basename + 1 : entry->path;
+    dot = strrchr(basename, '.');
     return dot ? dot + 1 : "";
 }
 
@@ -286,7 +326,7 @@ int holo_catalog_stat(const char *path, rg_stat_t *out)
         const holo_catalog_entry_t *entry = &s_entries[i];
         if (same_path(entry->path, path)) {
             memset(out, 0, sizeof(*out));
-            out->basename = entry->basename;
+            out->basename = path_basename_ptr(entry->path);
             out->extension = entry_extension(entry);
             out->size = entry->size;
             out->mtime = entry->mtime;

@@ -133,6 +133,14 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 #define MODULE_PROC_DIAG_SET_ROM_PATH_V1 0x000B0002u
 #define MODULE_PROC_DIAG_HEARTBEAT_V1 0x000B0003u
 
+#define MODULE_PROC_DIR_OPEN_V2 0x000C0001u
+#define MODULE_PROC_DIR_OPEN_NEXT_V2 0x000C0002u
+#define MODULE_PROC_DIR_NAME_V2 0x000C0003u
+#define MODULE_PROC_DIR_PATH_V2 0x000C0004u
+#define MODULE_PROC_DIR_IS_DIR_V2 0x000C0005u
+#define MODULE_PROC_DIR_SIZE_BYTES_V2 0x000C0006u
+#define MODULE_PROC_DIR_CLOSE_V2 0x000C0007u
+
 #define DYNMOD_LAST_CONTEXT_MAGIC 0x4D4F4443u /* "MODC" */
 #define DYNMOD_LAST_CONTEXT_VERSION 1u
 #define DYNMOD_LAST_MODULE_PATH_MAX 128u
@@ -463,7 +471,18 @@ typedef struct module_diag_api_t {
     void (*heartbeat)(void);
 } module_diag_api_t;
 
-typedef struct module_host_api_v1 {
+typedef struct module_dir_api_t {
+    uint32_t size;
+    int32_t (*open)(const char *path, void **out_dir);
+    int32_t (*open_next)(void *dir, void **out_entry);
+    const char *(*name)(void *entry);
+    const char *(*path)(void *entry);
+    int32_t (*is_dir)(void *entry, int32_t *out_is_dir);
+    int32_t (*size_bytes)(void *entry, uint64_t *out_size);
+    int32_t (*close)(void *handle);
+} module_dir_api_t;
+
+typedef struct module_host_api_v2 {
     uint32_t abi_version;
     uint32_t size;
     module_serial_api_t serial;
@@ -477,11 +496,12 @@ typedef struct module_host_api_v1 {
     module_lua_api_t lua;
     module_i2s_api_t i2s;
     module_diag_api_t diag;
-} module_host_api_v1;
+    module_dir_api_t dir;
+} module_host_api_v2;
 
 typedef const module_manifest_t *(*module_query_v1_fn)(void);
-typedef int32_t (*module_host_resolve_v1_fn)(void *resolve_ctx, uint32_t proc_id, void **out_proc);
-typedef int32_t (*module_create_v2_fn)(module_host_resolve_v1_fn resolve,
+typedef int32_t (*module_host_resolve_v2_fn)(void *resolve_ctx, uint32_t proc_id, void **out_proc);
+typedef int32_t (*module_create_v2_fn)(module_host_resolve_v2_fn resolve,
                                        void *resolve_ctx,
                                        const module_open_info_t *info,
                                        void **out_instance);
@@ -495,7 +515,7 @@ typedef void (*module_destroy_v1_fn)(void *instance);
 /**
  * @brief Resolve one required host function by stable procedure ID.
  */
-static inline int32_t module_sdk_resolve_required_v1(module_host_resolve_v1_fn resolve,
+static inline int32_t module_sdk_resolve_required_v2(module_host_resolve_v2_fn resolve,
                                                      void *resolve_ctx,
                                                      uint32_t proc_id,
                                                      void **out_proc)
@@ -516,9 +536,37 @@ static inline int32_t module_sdk_resolve_required_v1(module_host_resolve_v1_fn r
 }
 
 /**
+ * @brief Resolve one optional host function by stable procedure ID.
+ */
+static inline int32_t module_sdk_resolve_optional_v2(module_host_resolve_v2_fn resolve,
+                                                     void *resolve_ctx,
+                                                     uint32_t proc_id,
+                                                     void **out_proc)
+{
+    int32_t err = MODULE_OK;
+    if (!resolve || !out_proc)
+    {
+        return MODULE_ERR_INVALID_ARG;
+    }
+
+    *out_proc = NULL;
+    err = resolve(resolve_ctx, proc_id, out_proc);
+    if (err == MODULE_ERR_NOT_FOUND || err == MODULE_ERR_UNSUPPORTED)
+    {
+        *out_proc = NULL;
+        return MODULE_OK;
+    }
+    if (err != MODULE_OK)
+    {
+        return err;
+    }
+    return MODULE_OK;
+}
+
+/**
  * @brief Clear a module-local host table without depending on libc memset.
  */
-static inline void module_sdk_zero_host_v1(module_host_api_v1 *out)
+static inline void module_sdk_zero_host_v2(module_host_api_v2 *out)
 {
     unsigned char *p = NULL;
     size_t i = 0;
@@ -539,11 +587,11 @@ static inline void module_sdk_zero_host_v1(module_host_api_v1 *out)
 #define MODULE_SDK_CAST_PROC(slot, proc) ((__typeof__(slot))(proc))
 #endif
 
-#define MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, proc_id, slot) \
+#define MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, proc_id, slot) \
     do                                                                 \
     {                                                                  \
         void *_module_sdk_proc = NULL;                                 \
-        int32_t _module_sdk_err = module_sdk_resolve_required_v1(      \
+        int32_t _module_sdk_err = module_sdk_resolve_required_v2(      \
             (resolve), (resolve_ctx), (proc_id), &_module_sdk_proc);   \
         if (_module_sdk_err != MODULE_OK)                              \
         {                                                              \
@@ -552,149 +600,171 @@ static inline void module_sdk_zero_host_v1(module_host_api_v1 *out)
         (slot) = MODULE_SDK_CAST_PROC(slot, _module_sdk_proc);         \
     } while (0)
 
+#define MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, proc_id, slot) \
+    do                                                                          \
+    {                                                                           \
+        void *_module_sdk_proc = NULL;                                          \
+        int32_t _module_sdk_err = module_sdk_resolve_optional_v2(               \
+            (resolve), (resolve_ctx), (proc_id), &_module_sdk_proc);            \
+        if (_module_sdk_err != MODULE_OK)                                       \
+        {                                                                       \
+            return _module_sdk_err;                                             \
+        }                                                                       \
+        (slot) = MODULE_SDK_CAST_PROC(slot, _module_sdk_proc);                  \
+    } while (0)
+
 /**
  * @brief Build the module-local host table from stable host procedure IDs.
  *
- * The table is owned by the .so, so its field order is no longer part of the
- * firmware/module boundary. Old modules keep using the layout they compiled
- * with while the firmware only promises the stable MODULE_PROC_* IDs.
+ * The table is owned by the .so, so its field order is not part of the
+ * firmware/module boundary. V2 modules cache only the stable MODULE_PROC_* IDs.
  */
-static inline int32_t module_sdk_resolve_host_v1(module_host_resolve_v1_fn resolve,
+static inline int32_t module_sdk_resolve_host_v2(module_host_resolve_v2_fn resolve,
                                                  void *resolve_ctx,
-                                                 module_host_api_v1 *out)
+                                                 module_host_api_v2 *out)
 {
     if (!out)
     {
         return MODULE_ERR_INVALID_ARG;
     }
 
-    module_sdk_zero_host_v1(out);
+    module_sdk_zero_host_v2(out);
     out->abi_version = MODULE_SDK_VERSION;
     out->size = sizeof(*out);
 
     out->serial.size = sizeof(out->serial);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_WRITE_V1, out->serial.write);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINT_V1, out->serial.print);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINTLN_V1, out->serial.println);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SERIAL_FLUSH_V1, out->serial.flush);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SERIAL_WRITE_V1, out->serial.write);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINT_V1, out->serial.print);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SERIAL_PRINTLN_V1, out->serial.println);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SERIAL_FLUSH_V1, out->serial.flush);
 
     out->sd.size = sizeof(out->sd);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_BEGIN_V1, out->sd.begin);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MOUNTED_V1, out->sd.mounted);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MOUNT_POINT_V1, out->sd.mount_point);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_EXISTS_V1, out->sd.exists);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_MKDIR_V1, out->sd.mkdir);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_REMOVE_V1, out->sd.remove);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_RENAME_V1, out->sd.rename);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_SD_OPEN_V1, out->sd.open);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_BEGIN_V1, out->sd.begin);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_MOUNTED_V1, out->sd.mounted);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_MOUNT_POINT_V1, out->sd.mount_point);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_EXISTS_V1, out->sd.exists);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_MKDIR_V1, out->sd.mkdir);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_REMOVE_V1, out->sd.remove);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_RENAME_V1, out->sd.rename);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SD_OPEN_V1, out->sd.open);
 
     out->file.size = sizeof(out->file);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_CLOSE_V1, out->file.close);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_AVAILABLE_V1, out->file.available);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_READ_V1, out->file.read);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_WRITE_V1, out->file.write);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_SEEK_V1, out->file.seek);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_POSITION_V1, out->file.position);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_SIZE_BYTES_V1, out->file.size_bytes);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_FLUSH_V1, out->file.flush);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_FILE_IS_DIRECTORY_V1, out->file.is_directory);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_CLOSE_V1, out->file.close);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_AVAILABLE_V1, out->file.available);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_READ_V1, out->file.read);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_WRITE_V1, out->file.write);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_SEEK_V1, out->file.seek);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_POSITION_V1, out->file.position);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_SIZE_BYTES_V1, out->file.size_bytes);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_FLUSH_V1, out->file.flush);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_FILE_IS_DIRECTORY_V1, out->file.is_directory);
 
     out->display.size = sizeof(out->display);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_WIDTH_V1, out->display.width);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_HEIGHT_V1, out->display.height);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_GET_CAPS_V1, out->display.get_caps);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_ACQUIRE_V1, out->display.acquire);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_RELEASE_V1, out->display.release);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_START_WRITE_V1, out->display.startWrite);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_IMAGE_DMA_V1, out->display.pushImageDMA);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_END_WRITE_V1, out->display.endWrite);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_FILL_SCREEN_V1, out->display.fillScreen);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_SET_ADDR_WINDOW_V1, out->display.setAddrWindow);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_PIXELS_DMA_V1, out->display.pushPixelsDMA);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_WIDTH_V1, out->display.width);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_HEIGHT_V1, out->display.height);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_GET_CAPS_V1, out->display.get_caps);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_ACQUIRE_V1, out->display.acquire);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_RELEASE_V1, out->display.release);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_START_WRITE_V1, out->display.startWrite);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_IMAGE_DMA_V1, out->display.pushImageDMA);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_END_WRITE_V1, out->display.endWrite);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_FILL_SCREEN_V1, out->display.fillScreen);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_SET_ADDR_WINDOW_V1, out->display.setAddrWindow);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DISPLAY_PUSH_PIXELS_DMA_V1, out->display.pushPixelsDMA);
 
     out->audio.size = sizeof(out->audio);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_BEGIN_V1, out->audio.begin);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_WRITE_V1, out->audio.write);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_AVAILABLE_V1, out->audio.available);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_AUDIO_END_V1, out->audio.end);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_AUDIO_BEGIN_V1, out->audio.begin);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_AUDIO_WRITE_V1, out->audio.write);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_AUDIO_AVAILABLE_V1, out->audio.available);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_AUDIO_END_V1, out->audio.end);
 
     out->time.size = sizeof(out->time);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_MILLIS_V1, out->time.millis);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_MICROS_V1, out->time.micros);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_DELAY_V1, out->time.delay);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TIME_YIELD_V1, out->time.yield);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TIME_MILLIS_V1, out->time.millis);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TIME_MICROS_V1, out->time.micros);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TIME_DELAY_V1, out->time.delay);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TIME_YIELD_V1, out->time.yield);
 
     out->heap.size = sizeof(out->heap);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_MALLOC_V1, out->heap.malloc);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_CALLOC_V1, out->heap.calloc);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_REALLOC_V1, out->heap.realloc);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_V1, out->heap.free);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_SIZE_V1, out->heap.free_size);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_HEAP_LARGEST_FREE_BLOCK_V1, out->heap.largest_free_block);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_MALLOC_V1, out->heap.malloc);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_CALLOC_V1, out->heap.calloc);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_REALLOC_V1, out->heap.realloc);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_V1, out->heap.free);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_FREE_SIZE_V1, out->heap.free_size);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_HEAP_LARGEST_FREE_BLOCK_V1, out->heap.largest_free_block);
 
     out->task.size = sizeof(out->task);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_V1, out->task.create);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_REMOVE_V1, out->task.remove);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_YIELD_V1, out->task.yield);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_DELAY_V1, out->task.delay);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_EX_V1, out->task.create_ex);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_V1, out->task.create);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TASK_REMOVE_V1, out->task.remove);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TASK_YIELD_V1, out->task.yield);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TASK_DELAY_V1, out->task.delay);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_TASK_CREATE_EX_V1, out->task.create_ex);
 
     out->lua.size = sizeof(out->lua);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETTOP_V1, out->lua.gettop);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETTOP_V1, out->lua.settop);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TYPE_V1, out->lua.type);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISTABLE_V1, out->lua.istable);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISNIL_V1, out->lua.isnil);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISNUMBER_V1, out->lua.isnumber);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ISSTRING_V1, out->lua.isstring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOBOOLEAN_V1, out->lua.toboolean);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOINTEGER_V1, out->lua.tointeger);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TONUMBER_V1, out->lua.tonumber);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOSTRING_V1, out->lua.tostring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKINTEGER_V1, out->lua.checkinteger);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKNUMBER_V1, out->lua.checknumber);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKSTRING_V1, out->lua.checkstring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOUSERDATA_V1, out->lua.touserdata);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNIL_V1, out->lua.pushnil);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHBOOLEAN_V1, out->lua.pushboolean);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHINTEGER_V1, out->lua.pushinteger);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNUMBER_V1, out->lua.pushnumber);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHSTRING_V1, out->lua.pushstring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLIGHTUSERDATA_V1, out->lua.pushlightuserdata);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCFUNCTION_V1, out->lua.pushcfunction);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCCLOSURE_V1, out->lua.pushcclosure);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHVALUE_V1, out->lua.pushvalue);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_NEWTABLE_V1, out->lua.newtable);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CREATETABLE_V1, out->lua.createtable);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETFIELD_V1, out->lua.getfield);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETFIELD_V1, out->lua.setfield);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_GETGLOBAL_V1, out->lua.getglobal);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_SETGLOBAL_V1, out->lua.setglobal);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_REF_V1, out->lua.registry_ref);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_UNREF_V1, out->lua.registry_unref);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_RAWGETI_V1, out->lua.registry_rawgeti);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_UPVALUE_INDEX_V1, out->lua.upvalue_index);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_ERROR_V1, out->lua.error);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_TOLSTRING_V1, out->lua.tolstring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKLSTRING_V1, out->lua.checklstring);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLSTRING_V1, out->lua.pushlstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_GETTOP_V1, out->lua.gettop);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_SETTOP_V1, out->lua.settop);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TYPE_V1, out->lua.type);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_ISTABLE_V1, out->lua.istable);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_ISNIL_V1, out->lua.isnil);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_ISNUMBER_V1, out->lua.isnumber);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_ISSTRING_V1, out->lua.isstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TOBOOLEAN_V1, out->lua.toboolean);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TOINTEGER_V1, out->lua.tointeger);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TONUMBER_V1, out->lua.tonumber);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TOSTRING_V1, out->lua.tostring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKINTEGER_V1, out->lua.checkinteger);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKNUMBER_V1, out->lua.checknumber);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKSTRING_V1, out->lua.checkstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TOUSERDATA_V1, out->lua.touserdata);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNIL_V1, out->lua.pushnil);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHBOOLEAN_V1, out->lua.pushboolean);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHINTEGER_V1, out->lua.pushinteger);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHNUMBER_V1, out->lua.pushnumber);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHSTRING_V1, out->lua.pushstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLIGHTUSERDATA_V1, out->lua.pushlightuserdata);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCFUNCTION_V1, out->lua.pushcfunction);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHCCLOSURE_V1, out->lua.pushcclosure);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHVALUE_V1, out->lua.pushvalue);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_NEWTABLE_V1, out->lua.newtable);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_CREATETABLE_V1, out->lua.createtable);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_GETFIELD_V1, out->lua.getfield);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_SETFIELD_V1, out->lua.setfield);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_GETGLOBAL_V1, out->lua.getglobal);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_SETGLOBAL_V1, out->lua.setglobal);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_REF_V1, out->lua.registry_ref);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_UNREF_V1, out->lua.registry_unref);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_REGISTRY_RAWGETI_V1, out->lua.registry_rawgeti);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_UPVALUE_INDEX_V1, out->lua.upvalue_index);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_ERROR_V1, out->lua.error);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_TOLSTRING_V1, out->lua.tolstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_CHECKLSTRING_V1, out->lua.checklstring);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_LUA_PUSHLSTRING_V1, out->lua.pushlstring);
 
     out->i2s.size = sizeof(out->i2s);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_BEGIN_V1, out->i2s.begin);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_WRITE_V1, out->i2s.write);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_READ_V1, out->i2s.read);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_AVAILABLE_FOR_WRITE_V1, out->i2s.availableForWrite);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_FLUSH_V1, out->i2s.flush);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_MUTE_V1, out->i2s.mute);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_I2S_END_V1, out->i2s.end);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_BEGIN_V1, out->i2s.begin);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_WRITE_V1, out->i2s.write);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_READ_V1, out->i2s.read);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_AVAILABLE_FOR_WRITE_V1, out->i2s.availableForWrite);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_FLUSH_V1, out->i2s.flush);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_MUTE_V1, out->i2s.mute);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_I2S_END_V1, out->i2s.end);
 
     out->diag.size = sizeof(out->diag);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_UPDATE_CONTEXT_V1, out->diag.update_context);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_SET_ROM_PATH_V1, out->diag.set_rom_path);
-    MODULE_SDK_RESOLVE_PROC_V1(resolve, resolve_ctx, MODULE_PROC_DIAG_HEARTBEAT_V1, out->diag.heartbeat);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIAG_UPDATE_CONTEXT_V1, out->diag.update_context);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIAG_SET_ROM_PATH_V1, out->diag.set_rom_path);
+    MODULE_SDK_RESOLVE_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIAG_HEARTBEAT_V1, out->diag.heartbeat);
+
+    out->dir.size = sizeof(out->dir);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_OPEN_V2, out->dir.open);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_OPEN_NEXT_V2, out->dir.open_next);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_NAME_V2, out->dir.name);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_PATH_V2, out->dir.path);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_IS_DIR_V2, out->dir.is_dir);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_SIZE_BYTES_V2, out->dir.size_bytes);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_CLOSE_V2, out->dir.close);
 
     return MODULE_OK;
 }
 
-#undef MODULE_SDK_RESOLVE_PROC_V1
+#undef MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2
+#undef MODULE_SDK_RESOLVE_PROC_V2
 #undef MODULE_SDK_CAST_PROC

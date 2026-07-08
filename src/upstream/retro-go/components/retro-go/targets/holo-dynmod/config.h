@@ -42,3 +42,8 @@
 #define RG_LOG_COLORS              0
 #define RG_PATH_MAX                255
 #define RG_BATTERY_DRIVER          0
+
+// Use a compact CJK font so UTF-8 Chinese ROM names render in the launcher.
+#define RG_CHINESE_SUPPORT         1
+#define RG_FONT_DEFAULT            RG_FONT_FUSIONPIXEL_12
+#define RG_FONT_CHINESE            RG_FONT_FUSIONPIXEL_12

@@ -248,10 +248,25 @@ void GWENESIS_HOT gwenesis_SN76489_run(int target) {
 if ( sn76489_clock >= target) return;
 
   int sn76489_prev_index = sn76489_index;
-  sn76489_index += (target-sn76489_clock) / gwenesis_SN76489.divisor;
-  if (sn76489_index > sn76489_prev_index) {
-    gwenesis_SN76489_Update(gwenesis_sn76489_buffer + sn76489_prev_index, sn76489_index-sn76489_prev_index);
-    sn76489_clock = sn76489_index*gwenesis_SN76489.divisor;
+  int samples = (target - sn76489_clock) / gwenesis_SN76489.divisor;
+  if (samples <= 0) return;
+
+  if (sn76489_prev_index >= GWENESIS_AUDIO_BUFFER_CAPACITY) {
+    sn76489_index = GWENESIS_AUDIO_BUFFER_CAPACITY;
+    sn76489_clock = target;
+    return;
+  }
+
+  bool clipped = false;
+  if (samples > GWENESIS_AUDIO_BUFFER_CAPACITY - sn76489_prev_index) {
+    samples = GWENESIS_AUDIO_BUFFER_CAPACITY - sn76489_prev_index;
+    clipped = true;
+  }
+
+  sn76489_index = sn76489_prev_index + samples;
+  if (samples > 0) {
+    gwenesis_SN76489_Update(gwenesis_sn76489_buffer + sn76489_prev_index, samples);
+    sn76489_clock = clipped ? target : sn76489_index*gwenesis_SN76489.divisor;
   } else {
     sn76489_index = sn76489_prev_index;
   }
