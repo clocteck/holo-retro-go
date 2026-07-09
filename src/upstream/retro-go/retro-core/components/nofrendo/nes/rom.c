@@ -83,17 +83,42 @@ rom_t *rom_loadmem(uint8 *data, size_t size)
       MESSAGE_INFO("ROM: Found iNES file of size %d.\n", (int)size);
 
       rom.type = ROM_TYPE_INES;
-      rom.mapper_number = ((header->mapper_hinybble & 0xF0) | (header->rom_type >> 4));
+
+      const uint8 flags6 = header->rom_type;
+      const uint8 flags7 = header->mapper_hinybble;
+      const uint8 flags8 = data[8];
+      const bool nes2 = ((flags7 & 0x0C) == 0x08);
+      rom.mapper_number = ((flags7 & 0xF0) | (flags6 >> 4));
+      rom.submapper = 0;
+
+      if (nes2)
+      {
+         rom.mapper_number |= ((flags8 & 0x0F) << 8);
+         rom.submapper = (flags8 >> 4);
+      }
+
       // https://wiki.nesdev.com/w/index.php/INES
       // A general rule of thumb: if the last 4 bytes are not all zero, and the header is
       // not marked for NES 2.0 format, an emulator should either mask off the upper 4 bits
       // of the mapper number or simply refuse to load the ROM.
-      if (header->reserved2 != 0)
+      if (!nes2 && header->reserved2 != 0)
+      {
+         MESSAGE_WARN("ROM: Dirty iNES reserved bytes detected, masking mapper high nibble.\n");
          rom.mapper_number &= 0x0F;
+      }
+
+      MESSAGE_INFO("ROM: Header: %s mapper=%d submapper=%d flags6=%02X flags7=%02X flags8=%02X reserved1=%08X reserved2=%08X\n",
+                  nes2 ? "NES 2.0" : "iNES",
+                  rom.mapper_number,
+                  rom.submapper,
+                  flags6,
+                  flags7,
+                  flags8,
+                  header->reserved1,
+                  header->reserved2);
       rom.battery = (header->rom_type & ROM_FLAG_BATTERY);
       rom.fourscreen = (header->rom_type & ROM_FLAG_FOURSCREEN);
       rom.vertical = (header->rom_type & ROM_FLAG_VERTICAL);
-      rom.trainer = (header->rom_type & ROM_FLAG_TRAINER) ? data + 0x10 : NULL;
       rom.prg_rom_banks = header->prg_banks * 2;
       rom.chr_rom_banks = header->chr_banks;
       rom.prg_ram_banks = 1; // 8KB. Not specified by iNES
@@ -103,6 +128,29 @@ rom_t *rom_loadmem(uint8 *data, size_t size)
          rom.mirroring = PPU_MIRROR_FOUR;
       else if (rom.vertical)
          rom.mirroring = PPU_MIRROR_VERT;
+
+      const size_t prg_size = rom.prg_rom_banks * ROM_PRG_BANK_SIZE;
+      const size_t chr_size = rom.chr_rom_banks * ROM_CHR_BANK_SIZE;
+      const size_t expected_no_trainer = 0x10 + prg_size + chr_size;
+      const size_t expected_with_trainer = 0x210 + prg_size + chr_size;
+      const bool header_has_trainer = (header->rom_type & ROM_FLAG_TRAINER) != 0;
+
+      if (header_has_trainer)
+      {
+         if (size >= expected_with_trainer)
+         {
+            rom.trainer = data + 0x10;
+         }
+         else if (size >= expected_no_trainer)
+         {
+            MESSAGE_WARN("ROM: Trainer flag set but file has no 512-byte trainer; ignoring trainer flag.\n");
+            rom.trainer = NULL;
+         }
+         else
+         {
+            rom.trainer = data + 0x10;
+         }
+      }
 
       size_t data_offset = rom.trainer ? 0x210 : 0x010;
 

@@ -191,6 +191,11 @@ void nes_reset(bool hard_reset)
             memset(nes.cart->chr_ram, 0, nes.cart->chr_ram_banks * ROM_CHR_BANK_SIZE);
         if (nes.cart->prg_ram_banks > 0)
             memset(nes.cart->prg_ram, 0, nes.cart->prg_ram_banks * ROM_PRG_BANK_SIZE);
+        if (nes.cart->trainer && nes.cart->prg_ram_banks > 0)
+        {
+            memcpy(nes.cart->prg_ram + 0x1000, nes.cart->trainer, 0x200);
+            MESSAGE_INFO("NES: Trainer loaded to PRG-RAM $7000-$71FF\n");
+        }
     }
 
     apu_reset();

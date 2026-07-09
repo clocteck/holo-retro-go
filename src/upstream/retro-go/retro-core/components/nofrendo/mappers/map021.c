@@ -23,14 +23,14 @@
 
 #include "nes/nes.h"
 
-#define VRC_VBANK(bank, value, high) \
-{ \
-    if ((high)) \
-        highnybbles[(bank)] = (value) & 0x0F; \
-    else \
-        lownybbles[(bank)] = (value) & 0x0F; \
-    mmc_bankvrom(1, (bank) << 10, (highnybbles[(bank)] << 4)+lownybbles[(bank)]); \
-}
+typedef enum
+{
+    VRC_VARIANT_VRC4A,
+    VRC_VARIANT_VRC4B,
+    VRC_VARIANT_VRC4C,
+    VRC_VARIANT_VRC4D,
+    VRC_VARIANT_VRC2C,
+} vrc_variant_t;
 
 static struct
 {
@@ -38,102 +38,182 @@ static struct
     int counter, latch;
 } irq;
 
-static bool select_c000 = 0;
+static vrc_variant_t vrc_variant;
+static bool vrc_use_heuristics;
+static uint8 prg_bank0;
+static uint8 prg_bank1;
+static uint8 prg_mode;
 static uint8 lownybbles[8];
 static uint8 highnybbles[8];
 
+static bool vrc_is_vrc4(void)
+{
+    return vrc_variant != VRC_VARIANT_VRC2C;
+}
+
+static const char *vrc_variant_name(void)
+{
+    switch (vrc_variant)
+    {
+    case VRC_VARIANT_VRC4A: return "VRC4a";
+    case VRC_VARIANT_VRC4B: return "VRC4b";
+    case VRC_VARIANT_VRC4C: return "VRC4c";
+    case VRC_VARIANT_VRC4D: return "VRC4d";
+    case VRC_VARIANT_VRC2C: return "VRC2c";
+    default: return "unknown";
+    }
+}
+
+static uint32 vrc_translate_address(uint32 address)
+{
+    uint32 a0 = 0;
+    uint32 a1 = 0;
+
+    if (vrc_use_heuristics)
+    {
+        switch (vrc_variant)
+        {
+        case VRC_VARIANT_VRC4A:
+        case VRC_VARIANT_VRC4C:
+            a0 = ((address >> 1) & 1) | ((address >> 6) & 1);
+            a1 = ((address >> 2) & 1) | ((address >> 7) & 1);
+            break;
+        case VRC_VARIANT_VRC4B:
+        case VRC_VARIANT_VRC4D:
+        case VRC_VARIANT_VRC2C:
+            a0 = ((address >> 1) & 1) | ((address >> 3) & 1);
+            a1 = (address & 1) | ((address >> 2) & 1);
+            break;
+        default:
+            break;
+        }
+    }
+    else
+    {
+        switch (vrc_variant)
+        {
+        case VRC_VARIANT_VRC4A:
+            a0 = (address >> 1) & 1;
+            a1 = (address >> 2) & 1;
+            break;
+        case VRC_VARIANT_VRC4B:
+        case VRC_VARIANT_VRC2C:
+            a0 = (address >> 1) & 1;
+            a1 = address & 1;
+            break;
+        case VRC_VARIANT_VRC4C:
+            a0 = (address >> 6) & 1;
+            a1 = (address >> 7) & 1;
+            break;
+        case VRC_VARIANT_VRC4D:
+            a0 = (address >> 3) & 1;
+            a1 = (address >> 2) & 1;
+            break;
+        default:
+            break;
+        }
+    }
+
+    return (address & 0xFF00) | (a1 << 1) | a0;
+}
+
+static void vrc_update_prg(void)
+{
+    if (prg_mode)
+    {
+        mmc_bankrom(8, 0x8000, -2);
+        mmc_bankrom(8, 0xA000, prg_bank1);
+        mmc_bankrom(8, 0xC000, prg_bank0);
+    }
+    else
+    {
+        mmc_bankrom(8, 0x8000, prg_bank0);
+        mmc_bankrom(8, 0xA000, prg_bank1);
+        mmc_bankrom(8, 0xC000, -2);
+    }
+
+    mmc_bankrom(8, 0xE000, -1);
+}
+
+static void vrc_update_chr(int bank)
+{
+    int page = (highnybbles[bank] << 4) | lownybbles[bank];
+    mmc_bankvrom(1, bank << 10, page);
+}
 
 static void map_write(uint32 address, uint8 value)
 {
-    switch (address)
-    {
-    case 0x8000:
-        if (select_c000)
-            mmc_bankrom(8, 0xC000,value);
-        else
-            mmc_bankrom(8, 0x8000,value);
-        break;
+    address = vrc_translate_address(address) & 0xF00F;
 
-    case 0x9000:
-        switch (value & 3)
+    if (address >= 0x8000 && address <= 0x8003)
+    {
+        prg_bank0 = value & 0x1F;
+        vrc_update_prg();
+    }
+    else if (address >= 0x9000 && address <= 0x9001)
+    {
+        uint8 mask = vrc_is_vrc4() ? 3 : 1;
+        switch (value & mask)
         {
             case 0: ppu_setmirroring(PPU_MIRROR_VERT); break;
             case 1: ppu_setmirroring(PPU_MIRROR_HORI); break;
             case 2: ppu_setmirroring(PPU_MIRROR_SCR0); break;
             case 3: ppu_setmirroring(PPU_MIRROR_SCR1); break;
         }
-        break;
-    case 0x9002: select_c000=(value&0x02)>>1; break;
-    case 0xA000: mmc_bankrom(8, 0xA000,value); break;
-
-    case 0xB000: VRC_VBANK(0,value,0); break;
-    case 0xB002:
-    case 0xB040: VRC_VBANK(0,value,1); break;
-    case 0xB001:
-    case 0xB004:
-    case 0xB080: VRC_VBANK(1,value,0); break;
-    case 0xB003:
-    case 0xB006:
-    case 0xB0C0: VRC_VBANK(1,value,1); break;
-    case 0xC000: VRC_VBANK(2,value,0); break;
-    case 0xC002:
-    case 0xC040: VRC_VBANK(2,value,1); break;
-    case 0xC001:
-    case 0xC004:
-    case 0xC080: VRC_VBANK(3,value,0); break;
-    case 0xC003:
-    case 0xC006:
-    case 0xC0C0: VRC_VBANK(3,value,1); break;
-    case 0xD000: VRC_VBANK(4,value,0); break;
-    case 0xD002:
-    case 0xD040: VRC_VBANK(4,value,1); break;
-    case 0xD001:
-    case 0xD004:
-    case 0xD080: VRC_VBANK(5,value,0); break;
-    case 0xD003:
-    case 0xD006:
-    case 0xD0C0: VRC_VBANK(5,value,1); break;
-    case 0xE000: VRC_VBANK(6,value,0); break;
-    case 0xE002:
-    case 0xE040: VRC_VBANK(6,value,1); break;
-    case 0xE001:
-    case 0xE004:
-    case 0xE080: VRC_VBANK(7,value,0); break;
-    case 0xE003:
-    case 0xE006:
-    case 0xE0C0: VRC_VBANK(7,value,1); break;
-
-    case 0xF000:
+    }
+    else if (vrc_is_vrc4() && address >= 0x9002 && address <= 0x9003)
+    {
+        prg_mode = (value >> 1) & 1;
+        vrc_update_prg();
+    }
+    else if (address >= 0xA000 && address <= 0xA003)
+    {
+        prg_bank1 = value & 0x1F;
+        vrc_update_prg();
+    }
+    else if (address >= 0xB000 && address <= 0xE003)
+    {
+        int bank = ((((address >> 12) & 7) - 3) << 1) + ((address >> 1) & 1);
+        if ((address & 1) == 0)
+            lownybbles[bank] = value & 0x0F;
+        else
+            highnybbles[bank] = value & (vrc_is_vrc4() ? 0x1F : 0x0F);
+        vrc_update_chr(bank);
+    }
+    else if (vrc_is_vrc4())
+    {
+        switch (address)
+        {
+        case 0xF000:
         irq.latch &= 0xF0;
         irq.latch |= (value & 0x0F);
         break;
-    case 0xF002:
-    case 0xF040:
+        case 0xF001:
         irq.latch &= 0x0F;
         irq.latch |= ((value & 0x0F) << 4);
         break;
-    case 0xF004:
-    case 0xF001:
-    case 0xF080:
+        case 0xF002:
         irq.enabled = (value >> 1) & 0x01;
         irq.wait_state = value & 0x01;
         irq.counter = irq.latch;
         break;
-    case 0xF006:
-    case 0xF003:
-    case 0xF0C0:
+        case 0xF003:
         irq.enabled = irq.wait_state;
         break;
-
-    default:
-        MESSAGE_DEBUG("wrote $%02X to $%04X", value, address);
+        default:
+            MESSAGE_DEBUG("wrote $%02X to $%04X", value, address);
         break;
+        }
+    }
+    else
+    {
+        MESSAGE_DEBUG("wrote $%02X to $%04X", value, address);
     }
 }
 
 static void map_hblank(nes_t *nes)
 {
-    if (irq.enabled)
+    if (vrc_is_vrc4() && irq.enabled)
     {
         if (256 == ++irq.counter)
         {
@@ -149,18 +229,77 @@ static void map_getstate(uint8 *state)
 {
     state[0] = irq.counter;
     state[1] = irq.enabled;
+    state[2] = irq.wait_state;
+    state[3] = irq.latch;
+    state[4] = prg_bank0;
+    state[5] = prg_bank1;
+    state[6] = prg_mode;
+    for (int i = 0; i < 8; ++i)
+    {
+        state[8 + i] = lownybbles[i];
+        state[16 + i] = highnybbles[i];
+    }
 }
 
 static void map_setstate(uint8 *state)
 {
     irq.counter = state[0];
     irq.enabled = state[1];
+    irq.wait_state = state[2];
+    irq.latch = state[3];
+    prg_bank0 = state[4];
+    prg_bank1 = state[5];
+    prg_mode = state[6];
+    for (int i = 0; i < 8; ++i)
+    {
+        lownybbles[i] = state[8 + i];
+        highnybbles[i] = state[16 + i];
+        vrc_update_chr(i);
+    }
+    vrc_update_prg();
 }
 
 static void map_init(rom_t *cart)
 {
     irq.enabled = irq.wait_state = 0;
     irq.counter = irq.latch = 0;
+
+    prg_bank0 = 0;
+    prg_bank1 = 1;
+    prg_mode = 0;
+    for (int i = 0; i < 8; ++i)
+    {
+        lownybbles[i] = 0;
+        highnybbles[i] = 0;
+    }
+
+    vrc_variant = VRC_VARIANT_VRC4A;
+    if (cart->mapper_number == 25)
+    {
+        switch (cart->submapper)
+        {
+        case 2:
+            vrc_variant = VRC_VARIANT_VRC4D;
+            break;
+        case 3:
+            vrc_variant = VRC_VARIANT_VRC2C;
+            break;
+        case 0:
+        case 1:
+        default:
+            vrc_variant = VRC_VARIANT_VRC4B;
+            break;
+        }
+    }
+    else if (cart->mapper_number == 21)
+    {
+        vrc_variant = (cart->submapper == 2) ? VRC_VARIANT_VRC4C : VRC_VARIANT_VRC4A;
+    }
+
+    vrc_use_heuristics = (cart->submapper == 0);
+    MESSAGE_INFO("VRC2/4: mapper=%d submapper=%d variant=%s heuristics=%d\n",
+                 cart->mapper_number, cart->submapper, vrc_variant_name(), vrc_use_heuristics);
+    vrc_update_prg();
 }
 
 
@@ -183,11 +322,11 @@ mapintf_t map25_intf =
 {
     .number     = 25,
     .name       = "Konami VRC4 B",
-    .init       = NULL,
+    .init       = map_init,
     .vblank     = NULL,
     .hblank     = map_hblank,
-    .get_state  = NULL,
-    .set_state  = NULL,
+    .get_state  = map_getstate,
+    .set_state  = map_setstate,
     .mem_read   = {},
     .mem_write  = {
         { 0x8000, 0xFFFF, map_write }

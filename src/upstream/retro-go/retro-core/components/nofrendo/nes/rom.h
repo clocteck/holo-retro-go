@@ -84,7 +84,8 @@ typedef struct __attribute__((packed))
 typedef struct
 {
    rom_type_t type;
-   uint8 mapper_number;
+   int mapper_number;
+   uint8 submapper;
    uint8 mirroring;
    uint8 system;
    uint32 checksum;
