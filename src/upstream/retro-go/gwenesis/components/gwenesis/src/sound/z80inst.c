@@ -83,6 +83,8 @@ void ResetZ80(register Z80 *R);
 static void z80_init_fast_ram(void)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
+    z80_init_hot_tables();
+
     if (z80_fast_state == &z80_fast_state_fallback)
     {
         z80_fast_state_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
@@ -133,6 +135,7 @@ static void z80_init_fast_ram(void)
 void z80_deinit_fast_ram(void)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
+    z80_deinit_hot_tables();
     if (z80_cpu_ptr != &z80_cpu_fallback)
     {
         free(z80_cpu_ptr);
@@ -150,11 +153,6 @@ void z80_deinit_fast_ram(void)
 }
 
 #define Z80_INST_DISABLE_LOGGING 1
-#if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_Z80_YM_STATUS_FAST_READ 0
-#else
-#define GWENESIS_Z80_YM_STATUS_FAST_READ 0
-#endif
 
 #if !Z80_INST_DISABLE_LOGGING
 #include <stdarg.h>
@@ -428,14 +426,10 @@ byte GWENESIS_HOT RdZ80(register word Addr) {
     return ram ? ram[Addr & 0x1FFF] : 0xFF;
 
   if (Addr < 0x6000)
-#if GWENESIS_Z80_YM_STATUS_FAST_READ
-    return gwenesis_ym_async_status_mirror & 0x7f;
-#else
   {
     const int timestamp = zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR);
     return YM2612Read(timestamp);
   }
-#endif
 
   z80_log(__FUNCTION__, "addr= %x", Addr);
 

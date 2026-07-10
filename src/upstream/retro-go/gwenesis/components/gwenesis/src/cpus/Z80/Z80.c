@@ -19,10 +19,116 @@
 #define GENESIS 1
 
 #include "Z80.h"
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#define Cycles Cycles_rom
+#define CyclesCB CyclesCB_rom
+#define CyclesED CyclesED_rom
+#define CyclesXX CyclesXX_rom
+#define CyclesXXCB CyclesXXCB_rom
+#define ZSTable ZSTable_rom
+#define PZSTable PZSTable_rom
+#endif
 #include "Tables.h"
+#if defined(RG_TARGET_HOLO_DYNMOD)
+#undef Cycles
+#undef CyclesCB
+#undef CyclesED
+#undef CyclesXX
+#undef CyclesXXCB
+#undef ZSTable
+#undef PZSTable
+#include "rg_utils.h"
+#include <stdlib.h>
+#include <string.h>
+#endif
 #include <stdio.h>
 
 #define GWENESIS_HOT
+
+#if defined(RG_TARGET_HOLO_DYNMOD)
+typedef struct __attribute__((aligned(16)))
+{
+  byte cycles[256];
+  byte cycles_cb[256];
+  byte cycles_ed[256];
+  byte cycles_xx[256];
+  byte cycles_xxcb[256];
+  byte zs[256];
+  byte pzs[256];
+} z80_hot_tables_t;
+
+typedef char z80_hot_tables_must_be_1792_bytes[(sizeof(z80_hot_tables_t) == 1792) ? 1 : -1];
+
+static z80_hot_tables_t *z80_hot_tables;
+static const byte *z80_cycles = Cycles_rom;
+static const byte *z80_cycles_cb = CyclesCB_rom;
+static const byte *z80_cycles_ed = CyclesED_rom;
+static const byte *z80_cycles_xx = CyclesXX_rom;
+static const byte *z80_cycles_xxcb = CyclesXXCB_rom;
+static const byte *z80_zs = ZSTable_rom;
+static const byte *z80_pzs = PZSTable_rom;
+
+void z80_init_hot_tables(void)
+{
+  if (z80_hot_tables)
+    return;
+
+  z80_hot_tables_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+  if (ptr && PTR_IN_SPIRAM(ptr))
+  {
+    free(ptr);
+    ptr = NULL;
+  }
+  if (!ptr)
+  {
+    printf("[warn] Genesis Z80 hot tables: MEM_FAST allocation failed size=%u, using ROM tables\n",
+           (unsigned)sizeof(*ptr));
+    return;
+  }
+
+  memcpy(ptr->cycles, Cycles_rom, sizeof(ptr->cycles));
+  memcpy(ptr->cycles_cb, CyclesCB_rom, sizeof(ptr->cycles_cb));
+  memcpy(ptr->cycles_ed, CyclesED_rom, sizeof(ptr->cycles_ed));
+  memcpy(ptr->cycles_xx, CyclesXX_rom, sizeof(ptr->cycles_xx));
+  memcpy(ptr->cycles_xxcb, CyclesXXCB_rom, sizeof(ptr->cycles_xxcb));
+  memcpy(ptr->zs, ZSTable_rom, sizeof(ptr->zs));
+  memcpy(ptr->pzs, PZSTable_rom, sizeof(ptr->pzs));
+  z80_hot_tables = ptr;
+  z80_cycles = ptr->cycles;
+  z80_cycles_cb = ptr->cycles_cb;
+  z80_cycles_ed = ptr->cycles_ed;
+  z80_cycles_xx = ptr->cycles_xx;
+  z80_cycles_xxcb = ptr->cycles_xxcb;
+  z80_zs = ptr->zs;
+  z80_pzs = ptr->pzs;
+  printf("[info] Genesis Z80 hot tables: ptr=%p size=%u requested=MEM_FAST addr_guess=internal\n",
+         z80_hot_tables, (unsigned)sizeof(*z80_hot_tables));
+}
+
+void z80_deinit_hot_tables(void)
+{
+  free(z80_hot_tables);
+  z80_hot_tables = NULL;
+  z80_cycles = Cycles_rom;
+  z80_cycles_cb = CyclesCB_rom;
+  z80_cycles_ed = CyclesED_rom;
+  z80_cycles_xx = CyclesXX_rom;
+  z80_cycles_xxcb = CyclesXXCB_rom;
+  z80_zs = ZSTable_rom;
+  z80_pzs = PZSTable_rom;
+}
+
+#define Cycles z80_cycles
+#define CyclesCB z80_cycles_cb
+#define CyclesED z80_cycles_ed
+#define CyclesXX z80_cycles_xx
+#define CyclesXXCB z80_cycles_xxcb
+#define ZSTable z80_zs
+#define PZSTable z80_pzs
+#else
+void z80_init_hot_tables(void) {}
+void z80_deinit_hot_tables(void) {}
+#endif
 
 /** INLINE ***************************************************/
 /** C99 standard has "inline", but older compilers used     **/

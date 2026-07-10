@@ -106,6 +106,8 @@ typedef struct
 /** their initial values.                                   **/
 /*************************************************************/
 void ResetZ80(register Z80 *R);
+void z80_init_hot_tables(void);
+void z80_deinit_hot_tables(void);
 
 /** ExecZ80() ************************************************/
 /** This function will execute given number of Z80 cycles.  **/

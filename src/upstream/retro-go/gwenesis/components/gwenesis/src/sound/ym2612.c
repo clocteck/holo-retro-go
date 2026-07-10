@@ -243,7 +243,7 @@ static const UINT32 sl_table[16] = {
 #undef SC
 
 #define RATE_STEPS (8)
-static const UINT8 eg_inc[19 * RATE_STEPS] = {
+static const UINT8 eg_inc_rom[19 * RATE_STEPS] = {
 
     /*cycle:0 1  2 3  4 5  6 7*/
 
@@ -791,6 +791,23 @@ typedef struct
 
 } YM2612;
 
+#define YM2612_LFO_CACHE_LINES 16
+#define YM2612_LFO_CACHE_WIDTH 16
+
+typedef struct __attribute__((aligned(16)))
+{
+  UINT8 eg_data[19 * RATE_STEPS];
+#if GW_TARGET
+  UINT8 lfo_values[YM2612_LFO_CACHE_LINES][YM2612_LFO_CACHE_WIDTH];
+#endif
+} ym2612_hot_tables_t;
+
+#if GW_TARGET
+typedef char ym2612_hot_tables_must_be_416_bytes[(sizeof(ym2612_hot_tables_t) == 416) ? 1 : -1];
+#endif
+
+static UINT8 ym2612_lfo_cache_fallback[YM2612_LFO_CACHE_LINES][YM2612_LFO_CACHE_WIDTH];
+
 /* emulated chip */
 static YM2612 ym2612_fallback;
 static YM2612 *ym2612_ptr = &ym2612_fallback;
@@ -806,9 +823,15 @@ typedef struct
   bool lite_mode;
   bool ssg_eg_active;
   unsigned tables_initialized;
+  ym2612_hot_tables_t *hot_tables;
+  const UINT8 *eg_inc_ptr;
+  UINT8 (*lfo_cache)[YM2612_LFO_CACHE_WIDTH];
 } ym2612_fast_state_t;
 
-static ym2612_fast_state_t ym2612_fast_state_fallback;
+static ym2612_fast_state_t ym2612_fast_state_fallback = {
+  .eg_inc_ptr = eg_inc_rom,
+  .lfo_cache = ym2612_lfo_cache_fallback,
+};
 static ym2612_fast_state_t *ym2612_fast_state = &ym2612_fast_state_fallback;
 
 #define m2 (ym2612_fast_state->m2)
@@ -820,6 +843,9 @@ static ym2612_fast_state_t *ym2612_fast_state = &ym2612_fast_state_fallback;
 #define ym2612_lite_mode (ym2612_fast_state->lite_mode)
 #define ym2612_ssg_eg_active (ym2612_fast_state->ssg_eg_active)
 #define ym2612_tables_initialized (ym2612_fast_state->tables_initialized)
+#define ym2612_hot_tables (ym2612_fast_state->hot_tables)
+#define ym2612_lfo_cache (ym2612_fast_state->lfo_cache)
+#define eg_inc (ym2612_fast_state->eg_inc_ptr)
 
 #define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 2
 
@@ -865,6 +891,42 @@ bool gwenesis_ym2612_init_fast_ram(void)
 #endif
       RG_LOGW("Genesis YM2612 small state: MEM_FAST allocation failed size=%u, using static fallback",
               (unsigned)sizeof(*ym2612_fast_state));
+    }
+  }
+  if (!ym2612_hot_tables)
+  {
+    ym2612_hot_tables_t *ptr = rg_alloc(sizeof(*ptr), MEM_FAST | MEM_NOPANIC);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (ptr && PTR_IN_SPIRAM(ptr))
+    {
+      free(ptr);
+      ptr = NULL;
+    }
+#endif
+    if (ptr)
+    {
+      memcpy(ptr->eg_data, eg_inc_rom, sizeof(ptr->eg_data));
+#if GW_TARGET
+      memset(ptr->lfo_values, 0, sizeof(ptr->lfo_values));
+#endif
+      ym2612_hot_tables = ptr;
+      ym2612_fast_state->eg_inc_ptr = ptr->eg_data;
+      ym2612_fast_state->lfo_cache = ptr->lfo_values;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+      printf("[info] Genesis YM2612 hot tables: ptr=%p size=%u eg=%u lfo=%u requested=MEM_FAST addr_guess=internal\n",
+             ym2612_hot_tables, (unsigned)sizeof(*ym2612_hot_tables),
+             (unsigned)sizeof(ym2612_hot_tables->eg_data),
+             (unsigned)sizeof(ym2612_hot_tables->lfo_values));
+#endif
+    }
+    else
+    {
+      ym2612_fast_state->eg_inc_ptr = eg_inc_rom;
+      ym2612_fast_state->lfo_cache = ym2612_lfo_cache_fallback;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+      printf("[warn] Genesis YM2612 hot tables: MEM_FAST allocation failed size=%u, using ROM/fallback cache\n",
+             (unsigned)sizeof(*ptr));
+#endif
     }
   }
   if (ym2612_ptr == &ym2612_fallback)
@@ -916,12 +978,16 @@ void gwenesis_ym2612_deinit_fast_ram(void)
   OPNREGS = NULL;
   free(sin_tab);
   sin_tab = NULL;
+  free(ym2612_hot_tables);
+  ym2612_hot_tables = NULL;
   if (ym2612_fast_state != &ym2612_fast_state_fallback)
   {
     free(ym2612_fast_state);
     ym2612_fast_state = &ym2612_fast_state_fallback;
   }
   memset(&ym2612_fast_state_fallback, 0, sizeof(ym2612_fast_state_fallback));
+  ym2612_fast_state_fallback.eg_inc_ptr = eg_inc_rom;
+  ym2612_fast_state_fallback.lfo_cache = ym2612_lfo_cache_fallback;
   ym2612_tables_initialized = 0;
 #endif
 }
@@ -1606,11 +1672,38 @@ INLINE void update_ssg_eg_channels(FM_CH *CH)
   } while (--i);
 }
 
-INLINE void update_phase_lfo_slot(FM_SLOT *SLOT, INT32 pms, UINT32 block_fnum)
+#if GW_TARGET
+INLINE void ym2612_lfo_cache_refresh_line(unsigned int line, INT32 pms, UINT32 block_fnum)
+{
+  const unsigned int source = (((block_fnum & 0x7f0) >> 4) << 7) + pms;
+  memcpy(ym2612_lfo_cache[line], &lfo_pm_table[source], YM2612_LFO_CACHE_WIDTH);
+}
+
+INLINE void ym2612_lfo_cache_refresh_channel(unsigned int channel)
+{
+  FM_CH *CH = &ym2612.CH[channel];
+  ym2612_lfo_cache_refresh_line(channel, CH->pms, CH->block_fnum);
+
+  if (channel == 2)
+  {
+    ym2612_lfo_cache_refresh_line(6, CH->pms, ym2612.OPN.SL3.block_fnum[1]);
+    ym2612_lfo_cache_refresh_line(7, CH->pms, ym2612.OPN.SL3.block_fnum[2]);
+    ym2612_lfo_cache_refresh_line(8, CH->pms, ym2612.OPN.SL3.block_fnum[0]);
+  }
+}
+
+static void ym2612_lfo_cache_refresh_all(void)
+{
+  for (unsigned int channel = 0; channel < 6; ++channel)
+    ym2612_lfo_cache_refresh_channel(channel);
+}
+#endif
+
+INLINE void update_phase_lfo_slot(FM_SLOT *SLOT, INT32 pms, UINT32 block_fnum, unsigned int cache_line)
 {
 
 #if GW_TARGET
-  INT32 lfo_fn_table_index_offset = lfo_pm_table[(((block_fnum & 0x7f0) >> 4) << 7) + pms + (ym2612.OPN.LFO_PM & 0xF)];
+  INT32 lfo_fn_table_index_offset = ym2612_lfo_cache[cache_line][ym2612.OPN.LFO_PM & 0xF];
   if (ym2612.OPN.LFO_PM & 0x10)
     lfo_fn_table_index_offset = -lfo_fn_table_index_offset;
 #else
@@ -1643,12 +1736,12 @@ INLINE void update_phase_lfo_slot(FM_SLOT *SLOT, INT32 pms, UINT32 block_fnum)
   }
 }
 
-INLINE void update_phase_lfo_channel(FM_CH *CH)
+INLINE void update_phase_lfo_channel(FM_CH *CH, unsigned int cache_line)
 {
   UINT32 block_fnum = CH->block_fnum;
 
 #if GW_TARGET
-  INT32 lfo_fn_table_index_offset = lfo_pm_table[(((block_fnum & 0x7f0) >> 4) << 7) + CH->pms + (ym2612.OPN.LFO_PM & 0xF)];
+  INT32 lfo_fn_table_index_offset = ym2612_lfo_cache[cache_line][ym2612.OPN.LFO_PM & 0xF];
   if (ym2612.OPN.LFO_PM & 0x10)
     lfo_fn_table_index_offset = -lfo_fn_table_index_offset;
 #else
@@ -1774,6 +1867,7 @@ INLINE signed int op_calc1(UINT32 phase, unsigned int env, unsigned int pm)
 
 INLINE void chan_calc(FM_CH *CH, int num)
 {
+  unsigned int cache_line = 0;
   do
   {
     UINT32 AM = ym2612.OPN.LFO_AM >> CH->ams;
@@ -1828,14 +1922,14 @@ INLINE void chan_calc(FM_CH *CH, int num)
       /* add support for 3 slot mode */
       if ((ym2612.OPN.ST.mode & 0xC0) && (CH == &ym2612.CH[2]))
       {
-        update_phase_lfo_slot(&CH->SLOT[SLOT1], CH->pms, ym2612.OPN.SL3.block_fnum[1]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT2], CH->pms, ym2612.OPN.SL3.block_fnum[2]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT3], CH->pms, ym2612.OPN.SL3.block_fnum[0]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT4], CH->pms, CH->block_fnum);
+        update_phase_lfo_slot(&CH->SLOT[SLOT1], CH->pms, ym2612.OPN.SL3.block_fnum[1], 6);
+        update_phase_lfo_slot(&CH->SLOT[SLOT2], CH->pms, ym2612.OPN.SL3.block_fnum[2], 7);
+        update_phase_lfo_slot(&CH->SLOT[SLOT3], CH->pms, ym2612.OPN.SL3.block_fnum[0], 8);
+        update_phase_lfo_slot(&CH->SLOT[SLOT4], CH->pms, CH->block_fnum, 2);
       }
       else
       {
-        update_phase_lfo_channel(CH);
+        update_phase_lfo_channel(CH, cache_line);
       }
     }
     else /* no LFO phase modulation */
@@ -1848,25 +1942,27 @@ INLINE void chan_calc(FM_CH *CH, int num)
 
     /* next channel */
     CH++;
+    cache_line++;
   } while (--num);
 }
 
 INLINE void chan_advance_phase(FM_CH *CH, int num)
 {
+  unsigned int cache_line = 0;
   do
   {
     if (CH->pms)
     {
       if ((ym2612.OPN.ST.mode & 0xC0) && (CH == &ym2612.CH[2]))
       {
-        update_phase_lfo_slot(&CH->SLOT[SLOT1], CH->pms, ym2612.OPN.SL3.block_fnum[1]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT2], CH->pms, ym2612.OPN.SL3.block_fnum[2]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT3], CH->pms, ym2612.OPN.SL3.block_fnum[0]);
-        update_phase_lfo_slot(&CH->SLOT[SLOT4], CH->pms, CH->block_fnum);
+        update_phase_lfo_slot(&CH->SLOT[SLOT1], CH->pms, ym2612.OPN.SL3.block_fnum[1], 6);
+        update_phase_lfo_slot(&CH->SLOT[SLOT2], CH->pms, ym2612.OPN.SL3.block_fnum[2], 7);
+        update_phase_lfo_slot(&CH->SLOT[SLOT3], CH->pms, ym2612.OPN.SL3.block_fnum[0], 8);
+        update_phase_lfo_slot(&CH->SLOT[SLOT4], CH->pms, CH->block_fnum, 2);
       }
       else
       {
-        update_phase_lfo_channel(CH);
+        update_phase_lfo_channel(CH, cache_line);
       }
     }
     else
@@ -1877,6 +1973,7 @@ INLINE void chan_advance_phase(FM_CH *CH, int num)
       CH->SLOT[SLOT4].phase += CH->SLOT[SLOT4].Incr;
     }
     CH++;
+    cache_line++;
   } while (--num);
 }
 
@@ -2140,6 +2237,9 @@ INLINE void OPNWriteReg(int r, int v)
 
       /* store fnum in clear form for LFO PM calculations */
       CH->block_fnum = (blk << 11) | fn;
+#if GW_TARGET
+      ym2612_lfo_cache_refresh_channel(c);
+#endif
 
       CH->SLOT[SLOT1].Incr = -1;
       break;
@@ -2157,6 +2257,11 @@ INLINE void OPNWriteReg(int r, int v)
         /* phase increment counter */
         ym2612.OPN.SL3.fc[c] = (fn << 6) >> (7 - blk);
         ym2612.OPN.SL3.block_fnum[c] = (blk << 11) | fn;
+#if GW_TARGET
+        static const UINT8 cache_line_for_sl3[3] = {8, 6, 7};
+        ym2612_lfo_cache_refresh_line(cache_line_for_sl3[c], ym2612.CH[2].pms,
+                                     ym2612.OPN.SL3.block_fnum[c]);
+#endif
         ym2612.CH[2].SLOT[SLOT1].Incr = -1;
       }
       break;
@@ -2180,6 +2285,9 @@ INLINE void OPNWriteReg(int r, int v)
     case 1: /* 0xb4-0xb6 : L , R , AMS , PMS */
       /* b0-2 PMS */
       CH->pms = (v & 7) * 16; // 32; /* CH->pms = PM depth * 32 (index in lfo_pm_table) */
+#if GW_TARGET
+      ym2612_lfo_cache_refresh_channel(c);
+#endif
 
       /* b4-5 AMS */
       CH->ams = lfo_ams_depth_shift[(v >> 4) & 0x03];
@@ -2333,6 +2441,10 @@ static void init_tables(void)
       ym2612.OPN.ST.dt_tab[d + 4][i] = -ym2612.OPN.ST.dt_tab[d][i];
     }
   }
+
+#if GW_TARGET
+  ym2612_lfo_cache_refresh_all();
+#endif
 }
 
 /* initialize ym2612 emulator */
@@ -2652,22 +2764,6 @@ static inline void GWENESIS_HOT YM2612WriteCore(unsigned int a, unsigned int v)
   }
 }
 
-void GWENESIS_HOT YM2612WriteDirect(unsigned int a, unsigned int v, int target)
-{
-#if !GWENESIS_AUDIO_EMULATION
-  (void)a;
-  (void)v;
-  ym2612_clock = target;
-  return;
-#endif
-  ym_log(__FUNCTION__, " %06x : %02x", a, v);
-
-  if (ym2612_clock < target)
-    ym2612_run(target);
-
-  YM2612WriteCore(a, v);
-}
-
 void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v, int target)
 {
 #if !GWENESIS_AUDIO_EMULATION
@@ -2675,10 +2771,6 @@ void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v, int target)
   (void)v;
   ym2612_clock = target;
   return;
-#endif
-#if defined(RG_TARGET_HOLO_DYNMOD)
-  if (gwenesis_ym2612_async_write(a, v, target))
-    return;
 #endif
   ym_log(__FUNCTION__, " %06x : %02x", a, v);
 
@@ -2695,25 +2787,10 @@ unsigned int GWENESIS_HOT YM2612Read(int target)
   ym2612_clock = target;
   return 0;
 #endif
-#if defined(RG_TARGET_HOLO_DYNMOD)
-  if (gwenesis_ym2612_async_enabled())
-    return gwenesis_ym2612_async_read(target);
-  (void)target;
-  ym_log(__FUNCTION__, "%02x", ym2612.OPN.ST.status & 0x7f);
-  return ym2612.OPN.ST.status & 0x7f;
-#endif
   // //Sync
   if (GWENESIS_AUDIO_ACCURATE == 1)
     ym2612_run(target);
   ym_log(__FUNCTION__, "%02x", ym2612.OPN.ST.status & 0xff);
-  return ym2612.OPN.ST.status & 0xff;
-}
-
-unsigned int GWENESIS_HOT YM2612ReadStatusDirect(void)
-{
-#if !GWENESIS_AUDIO_EMULATION
-  return 0;
-#endif
   return ym2612.OPN.ST.status & 0xff;
 }
 
@@ -2844,4 +2921,7 @@ void gwenesis_ym2612_load_state()
   bitmask = saveGwenesisStateGet(state, "bitmask");
   saveGwenesisStateGetBuffer(state, "OPNREGS", OPNREGS, OPNREGS_SIZE);
   ym2612_refresh_ssg_eg_active();
+#if GW_TARGET
+  ym2612_lfo_cache_refresh_all();
+#endif
 }

@@ -33,17 +33,8 @@ extern void YM2612ResetChip(void);
 extern void ym2612_set_divisor(int divisor);
 extern void ym2612_set_lite_mode(bool enabled);
 extern void YM2612Write(unsigned int a, unsigned int v, int target);
-extern void YM2612WriteDirect(unsigned int a, unsigned int v, int target);
 extern void ym2612_run(int target);
 extern unsigned int YM2612Read(int target);
-extern unsigned int YM2612ReadStatusDirect(void);
-
-#if defined(RG_TARGET_HOLO_DYNMOD)
-extern volatile uint32_t gwenesis_ym_async_status_mirror;
-bool gwenesis_ym2612_async_enabled(void);
-bool gwenesis_ym2612_async_write(unsigned int a, unsigned int v, int target);
-unsigned int gwenesis_ym2612_async_read(int target);
-#endif
 
 #if 0
 extern int YM2612LoadContext(unsigned char *state);
