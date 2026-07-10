@@ -73,7 +73,7 @@ static const char *gwenesis_audio_mode_name(gwenesis_audio_mode_t mode)
 }
 
 #if GWENESIS_VDP_ASYNC_ENABLED
-#define GWENESIS_SURFACE_COUNT 4
+#define GWENESIS_SURFACE_COUNT 3
 #else
 #define GWENESIS_SURFACE_COUNT 2
 #endif
@@ -163,15 +163,15 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 48
+#define GWENESIS_FRAME_TARGET_FPS 50
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
 #define GWENESIS_FIXED_DRAW_SKIP 1
 #endif
-#define GWENESIS_RENDER_MIN_FPS 28
-#define GWENESIS_RENDER_TARGET_FPS 28
-#define GWENESIS_RENDER_MAX_FPS 28
+#define GWENESIS_RENDER_MIN_FPS 30
+#define GWENESIS_RENDER_TARGET_FPS 30
+#define GWENESIS_RENDER_MAX_FPS 30
 #define GWENESIS_RENDER_SKIP_DEBT_US 5000
 static const int render_target_us = 1000000 / GWENESIS_RENDER_TARGET_FPS;
 static const int frame_min_yield_ms = 1;
@@ -757,9 +757,9 @@ static bool gwenesis_frameskip_should_draw(bool audio_enabled, int64_t now)
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_FIXED_DRAW_SKIP
     const bool draw = frameskip_fixed_phase == 0 ||
                       frameskip_fixed_phase == 2 ||
-                      frameskip_fixed_phase == 4 ||
-                      frameskip_fixed_phase == 5;
-    frameskip_fixed_phase = (frameskip_fixed_phase + 1) % 7;
+                      frameskip_fixed_phase == 3;
+    if (++frameskip_fixed_phase == 5)
+        frameskip_fixed_phase = 0;
     (void)audio_enabled;
     return draw;
 #elif defined(RG_TARGET_HOLO_DYNMOD)
@@ -1788,6 +1788,16 @@ static bool gwenesis_vdp_async_can_submit_frame(void)
     return true;
 }
 
+static inline __attribute__((always_inline)) void gwenesis_vdp_async_release_held_jobs(void)
+{
+    for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
+    {
+        gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
+        if (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_HELD)
+            __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
+    }
+}
+
 static void gwenesis_vdp_async_release_displayed_jobs(void)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD)
@@ -1797,12 +1807,7 @@ static void gwenesis_vdp_async_release_displayed_jobs(void)
     if (!rg_display_sync(false))
         return;
 
-    for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
-    {
-        gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
-        if (__atomic_load_n(&job->state, __ATOMIC_ACQUIRE) == GWENESIS_VDP_JOB_HELD)
-            __atomic_store_n(&job->state, GWENESIS_VDP_JOB_FREE, __ATOMIC_RELEASE);
-    }
+    gwenesis_vdp_async_release_held_jobs();
 }
 
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_acquire_job(void)
@@ -1974,7 +1979,7 @@ static bool gwenesis_vdp_async_display_job_nonblocking(gwenesis_vdp_async_job_t 
 
     if (!rg_display_sync(false))
         return false;
-    gwenesis_vdp_async_release_displayed_jobs();
+    gwenesis_vdp_async_release_held_jobs();
 
     if (__atomic_load_n(&job->discard, __ATOMIC_ACQUIRE))
         return false;

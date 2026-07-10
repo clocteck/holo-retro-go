@@ -44,10 +44,25 @@ static unsigned char m68ki_cycles[0x10000];
 /* ======================================================================== */
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
+#define GWENESIS_M68K_DISPATCH_CACHE_ENTRIES 512U
+#define GWENESIS_M68K_DISPATCH_CACHE_MASK (GWENESIS_M68K_DISPATCH_CACHE_ENTRIES - 1U)
+
+typedef struct
+{
+  void (*handler)(void);
+  unsigned short opcode;
+  unsigned char cycles;
+  unsigned char reserved;
+} gwenesis_m68k_dispatch_cache_entry_t;
+
+typedef char gwenesis_m68k_dispatch_cache_entry_must_be_8_bytes[
+  (sizeof(gwenesis_m68k_dispatch_cache_entry_t) == 8) ? 1 : -1];
+
 typedef struct
 {
   int irq_latency;
   unsigned int emulation_initialized;
+  gwenesis_m68k_dispatch_cache_entry_t *dispatch_cache;
 } gwenesis_m68k_fast_state_t;
 
 static gwenesis_m68k_fast_state_t gwenesis_m68k_fast_state_fallback;
@@ -55,6 +70,7 @@ static gwenesis_m68k_fast_state_t *gwenesis_m68k_fast_state = &gwenesis_m68k_fas
 
 #define irq_latency (gwenesis_m68k_fast_state->irq_latency)
 #define emulation_initialized (gwenesis_m68k_fast_state->emulation_initialized)
+#define m68k_dispatch_cache (gwenesis_m68k_fast_state->dispatch_cache)
 
 m68ki_cpu_core *gwenesis_m68k_core;
 
@@ -80,6 +96,29 @@ bool gwenesis_m68k_core_init_fast_ram(void)
            gwenesis_m68k_fast_state,
            (unsigned)sizeof(*gwenesis_m68k_fast_state),
            PTR_IN_SPIRAM(gwenesis_m68k_fast_state) ? "SPIRAM" : "internal");
+  }
+
+  if (!m68k_dispatch_cache)
+  {
+    const size_t cache_size = sizeof(*m68k_dispatch_cache) * GWENESIS_M68K_DISPATCH_CACHE_ENTRIES;
+    gwenesis_m68k_dispatch_cache_entry_t *ptr = rg_alloc(cache_size, MEM_FAST | MEM_NOPANIC);
+    if (ptr && PTR_IN_SPIRAM(ptr))
+    {
+      free(ptr);
+      ptr = NULL;
+    }
+    if (!ptr)
+    {
+      printf("[error] Genesis M68K dispatch cache allocation failed entries=%u size=%u requested=MEM_FAST\n",
+             (unsigned)GWENESIS_M68K_DISPATCH_CACHE_ENTRIES, (unsigned)cache_size);
+      return false;
+    }
+
+    memset(ptr, 0, cache_size);
+    /* Opcode 0 hashes to slot 0. Give that empty slot a tag which hashes
+       elsewhere so every valid lookup can use a tag-only hit check. */
+    ptr[0].opcode = 1;
+    m68k_dispatch_cache = ptr;
   }
 
   if (gwenesis_m68k_core)
@@ -108,12 +147,35 @@ void gwenesis_m68k_core_deinit_fast_ram(void)
 {
   free(gwenesis_m68k_core);
   gwenesis_m68k_core = NULL;
+  free(m68k_dispatch_cache);
+  m68k_dispatch_cache = NULL;
   if (gwenesis_m68k_fast_state != &gwenesis_m68k_fast_state_fallback)
   {
     free(gwenesis_m68k_fast_state);
     gwenesis_m68k_fast_state = &gwenesis_m68k_fast_state_fallback;
   }
   memset(&gwenesis_m68k_fast_state_fallback, 0, sizeof(gwenesis_m68k_fast_state_fallback));
+}
+
+INLINE unsigned int gwenesis_m68k_dispatch_cache_slot(unsigned int opcode)
+{
+  return ((opcode * 2654435761u) >> 23) & GWENESIS_M68K_DISPATCH_CACHE_MASK;
+}
+
+INLINE gwenesis_m68k_dispatch_cache_entry_t *gwenesis_m68k_dispatch_cache_lookup(
+    gwenesis_m68k_dispatch_cache_entry_t *cache,
+    unsigned int opcode)
+{
+  gwenesis_m68k_dispatch_cache_entry_t *entry =
+      &cache[gwenesis_m68k_dispatch_cache_slot(opcode)];
+
+  if (__builtin_expect(entry->opcode == (unsigned short)opcode, 1))
+    return entry;
+
+  entry->handler = m68ki_instruction_jump_table[opcode];
+  entry->opcode = (unsigned short)opcode;
+  entry->cycles = m68ki_cycles[opcode];
+  return entry;
 }
 #else
 static int irq_latency;
@@ -326,7 +388,13 @@ void m68k_set_irq_delay(unsigned int int_level)
       m68ki_trace_t1() /* auto-disable (see m68kcpu.h) */
       m68ki_use_data_space() /* auto-disable (see m68kcpu.h) */
       REG_IR = m68ki_read_opcode_16();
+#if defined(RG_TARGET_HOLO_DYNMOD)
+      gwenesis_m68k_dispatch_cache_entry_t *dispatch =
+          gwenesis_m68k_dispatch_cache_lookup(m68k_dispatch_cache, REG_IR);
+      dispatch->handler();
+#else
       m68ki_instruction_jump_table[REG_IR]();
+#endif
       m68ki_exception_if_trace() /* auto-disable (see m68kcpu.h) */
       irq_latency = 0;
     }
@@ -369,6 +437,10 @@ void GWENESIS_HOT m68k_run(unsigned int cycles)
   /* Return point for when we have an address error (TODO: use goto) */
   m68ki_set_address_error_trap() /* auto-disable (see m68kcpu.h) */
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+  gwenesis_m68k_dispatch_cache_entry_t *const dispatch_cache = m68k_dispatch_cache;
+#endif
+
 #ifdef LOGERROR
   error("[%d][%d] m68k run to %d cycles (%x), irq mask = %x (%x)\n", v_counter, m68k.cycles, cycles, m68k.pc,FLAG_INT_MASK, CPU_INT_LEVEL);
 #endif
@@ -393,8 +465,17 @@ void GWENESIS_HOT m68k_run(unsigned int cycles)
 //    printf("PC=%x IR=%x CYCLES=%d \n",m68k.pc,REG_IR,CYC_INSTRUCTION[REG_IR]);
 
     /* Execute instruction */
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    gwenesis_m68k_dispatch_cache_entry_t *dispatch =
+        gwenesis_m68k_dispatch_cache_lookup(dispatch_cache, REG_IR);
+    void (*handler)(void) = dispatch->handler;
+    const unsigned int instruction_cycles = dispatch->cycles;
+    handler();
+    USE_CYCLES(instruction_cycles);
+#else
     m68ki_instruction_jump_table[REG_IR]();
     USE_CYCLES(CYC_INSTRUCTION[REG_IR]);
+#endif
 
     /* Trace m68k_exception, if necessary */
     m68ki_exception_if_trace(); /* auto-disable (see m68kcpu.h) */

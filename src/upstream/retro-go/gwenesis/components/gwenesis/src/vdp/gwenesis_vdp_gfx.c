@@ -1249,24 +1249,26 @@ void draw_line_b(int line)
   uint8_t patx = scrollx & 7;
 
   unsigned int numcell = 0;
+  uint16_t scrolly = *vsram + line;
+  uint8_t row = (scrolly >> 3) & nth_mask;
+  uint8_t paty = scrolly & 7;
+  unsigned int nt = ntaddr + row * ntwidth_x2;
   scr -= patx;
   while (scr < end) {
-    // Calculate vertical scrolling for the current line
-    uint16_t scrolly = *vsram + line;
-    uint8_t row = (scrolly >> 3) & nth_mask;
-    uint8_t paty = scrolly & 7;
-
-   // unsigned int nt = ntaddr + row * (2 * ntwidth);
-    unsigned int nt = ntaddr + row * ntwidth_x2;
-
     draw_pattern_planeB(scr, FETCH16VRAM(nt + col * 2), paty);
     col = (col + 1) & ntw_mask;
     scr += 8;
     numcell++;
 
     // If per-column scrolling is active, increment VSRAM pointer
-    if (column_scrolling && (numcell & 1) == 0)
+    if (column_scrolling && (numcell & 1) == 0 && scr < end)
+    {
       vsram += 2;
+      scrolly = *vsram + line;
+      row = (scrolly >> 3) & nth_mask;
+      paty = scrolly & 7;
+      nt = ntaddr + row * ntwidth_x2;
+    }
     }
 }
 /******************************************************************************
@@ -1324,25 +1326,27 @@ void draw_line_aw(int line) {
   uint8_t patx = scrollx & 7;
 
   unsigned int numcell = 0;
+  uint16_t scrolly = *vsram + line;
+  uint8_t plane_row = (scrolly >> 3) & nth_mask;
+  uint8_t plane_paty = scrolly & 7;
+  unsigned int plane_nt = ntaddr + plane_row * ntwidth_x2;
   pos -= patx;
   while (pos < end) {
-    // Calculate vertical scrolling for the current line
-    uint16_t scrolly = *vsram + line;
-    uint8_t row = (scrolly >> 3) & nth_mask;
-    uint8_t paty = scrolly & 7;
-
-   // unsigned int nt = ntaddr + row * (2 * ntwidth);
-    unsigned int nt = ntaddr + row * ntwidth_x2;
-
-    draw_pattern_planeA(pos, FETCH16VRAM(nt + col * 2), paty);
+    draw_pattern_planeA(pos, FETCH16VRAM(plane_nt + col * 2), plane_paty);
 
     col = (col + 1) & ntw_mask;
     pos += 8;
     numcell++;
 
     // If per-column scrolling is active, increment VSRAM pointer
-    if (column_scrolling && (numcell & 1) == 0)
+    if (column_scrolling && (numcell & 1) == 0 && pos < end)
+    {
       vsram += 2;
+      scrolly = *vsram + line;
+      plane_row = (scrolly >> 3) & nth_mask;
+      plane_paty = scrolly & 7;
+      plane_nt = ntaddr + plane_row * ntwidth_x2;
+    }
   }
 
   // Second Draw Window Plane
@@ -1433,7 +1437,9 @@ void draw_sprites_over_planes(int line)
     // This is both the size of the table as seen by the VDP
     // *and* the maximum number of sprites that are processed
     // (important in case of infinite loops in links).
+#if !defined(RG_TARGET_HOLO_DYNMOD)
     const int SPRITE_TABLE_SIZE     = (screen_width == 320) ?  80 :  64;
+#endif
     const int MAX_SPRITES_PER_LINE  = (screen_width == 320) ?  20 :  16;
     const int MAX_PIXELS_PER_LINE   = (screen_width == 320) ? 320 : 256;
 
@@ -1441,11 +1447,9 @@ void draw_sprites_over_planes(int line)
     int sidx = 0, num_sprites = 0, num_pixels = 0;
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-    if ((unsigned)line < VDP_SPRITE_VISIBLE_LINES)
+    const int line_count = sprite_line_count[line];
+    for (int i = 0; i < line_count; ++i)
     {
-      const int line_count = sprite_line_count[line];
-      for (int i = 0; i < line_count; ++i)
-      {
         sidx = sprite_line_table[line * VDP_SPRITE_LINE_MAX + i];
         uint8_t *table = start_table + sidx * 8;
         uint8_t *cache = SAT_CACHE + sidx * 8;
@@ -1507,11 +1511,9 @@ void draw_sprites_over_planes(int line)
         }
         if (++num_sprites >= MAX_SPRITES_PER_LINE)
           break;
-      }
-      return;
     }
-#endif
-
+    return;
+#else
     for (int i = 0; (i < SPRITE_TABLE_SIZE) && sidx < (SPRITE_TABLE_SIZE); ++i)
     {
         uint8_t *table = start_table + sidx*8;
@@ -1595,6 +1597,7 @@ void draw_sprites_over_planes(int line)
         if (link == 0) break;
         sidx = link;
     }
+#endif
 
   //  if (overdraw)
   //      sprite_collision = true;
@@ -1614,7 +1617,9 @@ void draw_sprites(int line)
   // This is both the size of the table as seen by the VDP
   // *and* the maximum number of sprites that are processed
   // (important in case of infinite loops in links).
+#if !defined(RG_TARGET_HOLO_DYNMOD)
   const int SPRITE_TABLE_SIZE = (screen_width == 320) ? 80 : 64;
+#endif
   const int MAX_SPRITES_PER_LINE = (screen_width == 320) ? 20 : 16;
   const int MAX_PIXELS_PER_LINE = (screen_width == 320) ? 320 : 256;
 
@@ -1622,8 +1627,6 @@ void draw_sprites(int line)
   int sidx = 0, num_sprites = 0, num_pixels = 0;
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
-  if ((unsigned)line < VDP_SPRITE_VISIBLE_LINES)
-  {
     const int line_count = sprite_line_count[line];
     for (int i = 0; i < line_count; ++i)
     {
@@ -1690,9 +1693,7 @@ void draw_sprites(int line)
         break;
     }
     return;
-  }
-#endif
-
+#else
   for (int i = 0; i < SPRITE_TABLE_SIZE && sidx < SPRITE_TABLE_SIZE; ++i) {
     uint8_t *table = start_table + sidx * 8;
     uint8_t *cache = start_table + sidx * 8;
@@ -1768,6 +1769,7 @@ void draw_sprites(int line)
       break;
     sidx = link;
     }
+#endif
 
   //  if (overdraw)
   //      sprite_collision = true;
