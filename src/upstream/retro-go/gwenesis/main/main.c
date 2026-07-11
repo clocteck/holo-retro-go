@@ -158,10 +158,16 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_VDP_ASYNC_SERIAL_TEST 0
 #define GWENESIS_VDP_ASYNC_VRAM_MEM MEM_SLOW
 #define GWENESIS_VDP_ASYNC_VRAM_MEM_NAME "MEM_SLOW"
+#define GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT 8U
+#define GWENESIS_VDP_SNAPSHOT_PAGE_SIZE (1U << GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT)
+#define GWENESIS_VDP_SNAPSHOT_PAGE_COUNT (VRAM_MAX_SIZE / GWENESIS_VDP_SNAPSHOT_PAGE_SIZE)
+#define GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS (GWENESIS_VDP_SNAPSHOT_PAGE_COUNT / 32U)
+#define GWENESIS_VDP_SNAPSHOT_FULL_THRESHOLD_PAGES 192U
+#define GWENESIS_VDP_SNAPSHOT_STATS_PERIOD 256U
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 50
+#define GWENESIS_FRAME_TARGET_FPS 55
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
@@ -1479,10 +1485,22 @@ typedef struct
     unsigned short *cram565;
     unsigned char *sat_cache;
     unsigned char *regs;
+    uint32_t pending_vram_dirty[GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS];
     int screen_width;
     int screen_height;
     rg_surface_t *surface;
 } gwenesis_vdp_async_job_t;
+
+typedef struct
+{
+    uint32_t snapshots;
+    uint32_t dirty_pages;
+    uint32_t empty_snapshots;
+    uint32_t full_copies;
+    uint64_t copied_bytes;
+} gwenesis_vdp_snapshot_stats_t;
+
+static gwenesis_vdp_snapshot_stats_t gwenesis_vdp_snapshot_stats;
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
 static gwenesis_vdp_async_job_t *gwenesis_vdp_async_jobs;
@@ -1747,12 +1765,105 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_take_latest_ready_job(void)
     return best;
 }
 
+static void gwenesis_vdp_snapshot_merge_frame_dirty(void)
+{
+    uint32_t frame_dirty[GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS];
+    gwenesis_vdp_snapshot_dirty_take(frame_dirty);
+
+    for (unsigned int word = 0; word < GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS; ++word)
+    {
+        const uint32_t dirty = frame_dirty[word];
+        if (!dirty)
+            continue;
+        for (int i = 0; i < GWENESIS_VDP_ASYNC_JOBS; ++i)
+            gwenesis_vdp_async_jobs[i].pending_vram_dirty[word] |= dirty;
+    }
+}
+
+static size_t gwenesis_vdp_snapshot_copy_vram(gwenesis_vdp_async_job_t *job,
+                                               unsigned int *dirty_page_count,
+                                               bool *used_full_copy)
+{
+    unsigned int pages = 0;
+    for (unsigned int word = 0; word < GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS; ++word)
+        pages += (unsigned int)__builtin_popcount(job->pending_vram_dirty[word]);
+
+    *dirty_page_count = pages;
+    *used_full_copy = false;
+    if (pages == 0)
+        return 0;
+
+    if (pages >= GWENESIS_VDP_SNAPSHOT_FULL_THRESHOLD_PAGES)
+    {
+        memcpy(job->vram, VRAM, VRAM_MAX_SIZE);
+        *used_full_copy = true;
+        memset(job->pending_vram_dirty, 0, sizeof(job->pending_vram_dirty));
+        return VRAM_MAX_SIZE;
+    }
+
+    unsigned int page = 0;
+    while (page < GWENESIS_VDP_SNAPSHOT_PAGE_COUNT)
+    {
+        const uint32_t mask = 1U << (page & 31U);
+        if (!(job->pending_vram_dirty[page >> 5] & mask))
+        {
+            ++page;
+            continue;
+        }
+
+        const unsigned int first = page;
+        do
+        {
+            job->pending_vram_dirty[page >> 5] &= ~(1U << (page & 31U));
+            ++page;
+        } while (page < GWENESIS_VDP_SNAPSHOT_PAGE_COUNT &&
+                 (job->pending_vram_dirty[page >> 5] & (1U << (page & 31U))));
+
+        const size_t offset = (size_t)first << GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT;
+        const size_t length = (size_t)(page - first) << GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT;
+        memcpy(job->vram + offset, VRAM + offset, length);
+    }
+
+    return (size_t)pages << GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT;
+}
+
+static void gwenesis_vdp_snapshot_note_stats(size_t copied_bytes,
+                                              unsigned int dirty_pages,
+                                              bool full_copy)
+{
+    gwenesis_vdp_snapshot_stats_t *stats = &gwenesis_vdp_snapshot_stats;
+    ++stats->snapshots;
+    stats->dirty_pages += dirty_pages;
+    stats->copied_bytes += copied_bytes;
+    stats->empty_snapshots += copied_bytes == 0;
+    stats->full_copies += full_copy;
+
+    if ((stats->snapshots % GWENESIS_VDP_SNAPSHOT_STATS_PERIOD) == 0)
+    {
+        const uint64_t baseline = (uint64_t)stats->snapshots * VRAM_MAX_SIZE;
+        const uint64_t saved = baseline - stats->copied_bytes;
+        const unsigned int saved_pct = baseline ? (unsigned int)((saved * 100U) / baseline) : 0;
+        RG_LOGI("Genesis VDP dirty snapshot: n=%u copied=%lluKB baseline=%lluKB saved=%lluKB (%u%%) avg_pages=%u empty=%u full=%u",
+                (unsigned)stats->snapshots,
+                (unsigned long long)(stats->copied_bytes / 1024U),
+                (unsigned long long)(baseline / 1024U),
+                (unsigned long long)(saved / 1024U), saved_pct,
+                stats->snapshots ? stats->dirty_pages / stats->snapshots : 0,
+                (unsigned)stats->empty_snapshots, (unsigned)stats->full_copies);
+    }
+}
+
 static bool gwenesis_vdp_async_fill_job(gwenesis_vdp_async_job_t *job)
 {
     if (!job || !job->vram || !job->vsram || !job->cram565 || !job->sat_cache || !job->surface)
         return false;
 
-    memcpy(job->vram, VRAM, VRAM_MAX_SIZE);
+    gwenesis_vdp_snapshot_merge_frame_dirty();
+    unsigned int dirty_pages;
+    bool full_copy;
+    const size_t copied_bytes =
+        gwenesis_vdp_snapshot_copy_vram(job, &dirty_pages, &full_copy);
+    gwenesis_vdp_snapshot_note_stats(copied_bytes, dirty_pages, full_copy);
     memcpy(job->vsram, VSRAM, sizeof(*VSRAM) * VSRAM_MAX_SIZE);
     memcpy(job->cram565, CRAM565, sizeof(*CRAM565) * CRAM_MAX_SIZE * 4);
     memcpy(job->sat_cache, SAT_CACHE, SAT_CACHE_MAX_SIZE);
@@ -2145,6 +2256,7 @@ static bool gwenesis_vdp_async_start(void)
     {
         gwenesis_vdp_async_job_t *job = &gwenesis_vdp_async_jobs[i];
         memset(job, 0, sizeof(*job));
+        memset(job->pending_vram_dirty, 0xFF, sizeof(job->pending_vram_dirty));
         job->surface = updates[i];
         if (!job->surface)
         {
@@ -2188,6 +2300,7 @@ static bool gwenesis_vdp_async_start(void)
     }
 
     __atomic_store_n(&gwenesis_vdp_async_current_frame_id, 0, __ATOMIC_RELEASE);
+    memset(&gwenesis_vdp_snapshot_stats, 0, sizeof(gwenesis_vdp_snapshot_stats));
     __atomic_store_n(&gwenesis_vdp_async_unsafe_frames, 0, __ATOMIC_RELEASE);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     __atomic_store_n(&gwenesis_vdp_async_paused, false, __ATOMIC_RELEASE);

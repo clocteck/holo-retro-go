@@ -1758,18 +1758,15 @@ local function selector_cleanup(ui, key_codes)
   end
 end
 
-local GAMEPAD_BOND_RECOVERY_FAILURES = 3
 local gamepad_service_started = false
 local gamepad_connect_failures = 0
-local gamepad_bond_recovery_used = false
-local gamepad_bond_recovery_pending = false
 
-local function start_gamepad_service(clear_bonds)
+local function start_gamepad_service()
   if not gamepad or not gamepad.start or not gamepad.off then
     log("gamepad module unavailable, skip BLE")
     return false
   end
-  if gamepad_service_started and not clear_bonds then
+  if gamepad_service_started then
     return true
   end
 
@@ -1779,7 +1776,7 @@ local function start_gamepad_service(clear_bonds)
 
   local ok, started, err = pcall(function()
     return gamepad.start({
-      clear_bonds = clear_bonds and true or false,
+      clear_bonds = false,
       debug = false,
     })
   end)
@@ -1790,49 +1787,38 @@ local function start_gamepad_service(clear_bonds)
   end
 
   gamepad_service_started = true
-  log("gamepad service started", clear_bonds and "bonds cleared" or "bonds kept")
+  log("gamepad service started", "bonds kept")
   return true
+end
+
+local function stop_gamepad_service()
+  if gamepad and gamepad.off then
+    pcall(function()
+      gamepad.off()
+    end)
+  end
+
+  local stopped = true
+  if gamepad_service_started and gamepad and gamepad.stop then
+    local ok, result, err = pcall(function()
+      return gamepad.stop()
+    end)
+    stopped = ok and result and true or false
+    if not stopped then
+      log("gamepad.stop failed", tostring(err or result))
+    end
+  end
+  gamepad_service_started = false
+  return stopped
 end
 
 local function reset_gamepad_connect_failures()
   gamepad_connect_failures = 0
 end
 
-local function note_gamepad_connect_failure(on_restarted, should_recover)
+local function note_gamepad_connect_failure()
   gamepad_connect_failures = gamepad_connect_failures + 1
-  log("BLE connect failed", gamepad_connect_failures, GAMEPAD_BOND_RECOVERY_FAILURES)
-  if gamepad_connect_failures < GAMEPAD_BOND_RECOVERY_FAILURES or
-      gamepad_bond_recovery_used or gamepad_bond_recovery_pending then
-    return
-  end
-
-  gamepad_bond_recovery_pending = true
-  local function recover()
-    gamepad_bond_recovery_pending = false
-    if type(should_recover) == "function" and not should_recover() then
-      return
-    end
-    gamepad_bond_recovery_used = true
-    gamepad_connect_failures = 0
-    log("BLE clearing stale bonds after repeated failures")
-    if start_gamepad_service(true) and type(on_restarted) == "function" then
-      local rebound, rebound_err = pcall(on_restarted)
-      if not rebound then
-        log("gamepad callback rebind failed", tostring(rebound_err))
-      end
-    end
-  end
-
-  if tmr and tmr.create then
-    local recovery_timer = tmr.create()
-    local scheduled = pcall(function()
-      recovery_timer:alarm(150, tmr.ALARM_SINGLE or 0, recover)
-    end)
-    if scheduled then
-      return
-    end
-  end
-  recover()
+  log("BLE connect failed", gamepad_connect_failures)
 end
 
 local function choose_module()
@@ -1865,7 +1851,7 @@ local function choose_module()
   selector_render(ui, index)
   selector_update_gamepad_status(ui, read_gamepad_state())
 
-  start_gamepad_service(false)
+  start_gamepad_service()
 
   if gamepad and gamepad.on then
     local bind_gamepad_events
@@ -1884,9 +1870,7 @@ local function choose_module()
         gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
           if not selector_events_active then return end
           set_bt_phase("waiting")
-          note_gamepad_connect_failure(bind_gamepad_events, function()
-            return selector_events_active
-          end)
+          note_gamepad_connect_failure()
         end)
       end
       if gamepad.EVT_CONNECTED then
@@ -1957,6 +1941,7 @@ local function choose_module()
   selector_cleanup(cleanup_ui, key_codes)
 
   if canceled then
+    stop_gamepad_service()
     if app and app.exit then
       pcall(function() app.exit() end)
     end
@@ -2003,6 +1988,9 @@ local function choose_module_async(on_selected)
     local cleanup_ui = ui
     ui = nil
     selector_cleanup(cleanup_ui, key_codes)
+    if not selected then
+      stop_gamepad_service()
+    end
     if type(on_selected) == "function" then
       on_selected(selected)
     end
@@ -2042,7 +2030,7 @@ local function choose_module_async(on_selected)
   selector_update_gamepad_status(ui, read_gamepad_state())
   log("selector ready", APP.MODULES[index].id, APP.MODULES[index].path)
 
-  start_gamepad_service(false)
+  start_gamepad_service()
 
   if gamepad and gamepad.on then
     local bind_gamepad_events
@@ -2061,9 +2049,7 @@ local function choose_module_async(on_selected)
         gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
           if not selector_events_active then return end
           set_bt_phase("waiting")
-          note_gamepad_connect_failure(bind_gamepad_events, function()
-            return selector_events_active
-          end)
+          note_gamepad_connect_failure()
         end)
       end
       if gamepad.EVT_CONNECTED then
@@ -2325,11 +2311,7 @@ local function finish_exit_to_home()
     stop_timer(timer)
   end
   stop_runtime_timer()
-  if gamepad and gamepad.off then
-    pcall(function()
-      gamepad.off()
-    end)
-  end
+  stop_gamepad_service()
   if app and app.exit then
     local ok, result, err = pcall(function()
       return app.exit()
@@ -2411,7 +2393,7 @@ local function register_cb(evt, cb)
 end
 
 local function start_gamepad()
-  if not start_gamepad_service(false) then
+  if not start_gamepad_service() then
     return false
   end
 
@@ -2426,7 +2408,7 @@ local function start_gamepad()
     register_cb(gamepad.EVT_CONNECT_FAILED, function()
       sync_input_mask(0)
       current_mask = 0
-      note_gamepad_connect_failure(bind_runtime_gamepad_events)
+      note_gamepad_connect_failure()
     end)
     register_cb(gamepad.EVT_CONNECTED, function()
       reset_gamepad_connect_failures()

@@ -186,5 +186,9 @@ void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ct
 void gwenesis_vdp_gfx_invalidate_vram(unsigned int address);
 void gwenesis_vdp_gfx_invalidate_tile_cache(void);
 void gwenesis_vdp_async_mark_midframe_write(void);
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8]);
+void gwenesis_vdp_snapshot_dirty_mark_all(void);
+#endif
 
 #endif
