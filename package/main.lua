@@ -45,8 +45,8 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-07-06-runtime-light-v18",
-  RELEASE_NOTES = "优化gb/gbc显示bug,支持中文rom名称",
+  VERSION = "1.2",
+  RELEASE_NOTES = "优化文件加载路径 优化性能表现 稳定55/32帧",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
