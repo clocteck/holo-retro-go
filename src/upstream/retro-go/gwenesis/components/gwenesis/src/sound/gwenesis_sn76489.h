@@ -62,6 +62,7 @@ extern int sn76489_clock;
 bool gwenesis_sn76489_init_fast_ram(void);
 void gwenesis_sn76489_deinit_fast_ram(void);
 void gwenesis_SN76489_Init( int PSGClockValue, int SamplingRate,int freq_divisor);
+void gwenesis_sn76489_set_divisor(int divisor);
 void gwenesis_SN76489_Reset();
 void gwenesis_SN76489_start();
 void gwenesis_SN76489_SetContext(uint8 *data);

@@ -11,7 +11,7 @@ rg_setup_compile_options(
     -Wno-incompatible-pointer-types
     -DBUILD_TABLES
     -DROM_DATA=gwenesis_ROM_DATA
-    -DGWENESIS_SN76489_RUN_ENABLED=0
+    -DGWENESIS_SN76489_RUN_ENABLED=1
 )
 
 set_source_files_properties("src/cpus/Z80/Z80.c"

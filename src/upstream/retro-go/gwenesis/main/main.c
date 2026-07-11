@@ -21,6 +21,10 @@
 #include "holo_port.h"
 #endif
 
+#ifndef GWENESIS_SN76489_RUN_ENABLED
+#define GWENESIS_SN76489_RUN_ENABLED 1
+#endif
+
 #define AUDIO_SYNTH_SAMPLE_RATE (GWENESIS_AUDIO_OUTPUT_RATE)
 #if defined(RG_TARGET_HOLO_DYNMOD) && defined(GWENESIS_AUDIO_HOST_RATE)
 #define AUDIO_OUTPUT_SAMPLE_RATE (GWENESIS_AUDIO_HOST_RATE)
@@ -144,9 +148,6 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_MONITOR_EXTRA_ENABLED 1
 #endif
 #endif
-#ifndef GWENESIS_SN76489_RUN_ENABLED
-#define GWENESIS_SN76489_RUN_ENABLED 0
-#endif
 #define GWENESIS_RAM_CACHE_SAMPLE_LOGS 2
 #define GWENESIS_RAM_CACHE_HOLD_LOGS 6
 #if GWENESIS_VDP_ASYNC_ENABLED
@@ -166,7 +167,7 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 53
+#define GWENESIS_FRAME_TARGET_FPS 52
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
@@ -1209,7 +1210,13 @@ static void gwenesis_audio_submit_frame(size_t count)
 
     for (size_t i = 0; i < count; ++i)
     {
-        const int32_t sample = gwenesis_audio_scale(gwenesis_ym2612_buffer[i]);
+        int32_t sample = gwenesis_ym2612_buffer[i];
+#if GWENESIS_SN76489_RUN_ENABLED
+        if (gwenesis_sn76489_buffer)
+            sample += gwenesis_sn76489_buffer[i];
+#else
+        sample = gwenesis_audio_scale(sample);
+#endif
         const int16_t clipped = gwenesis_audio_clip(sample);
         gwenesis_audio_mix_buffer[i].left = clipped;
         gwenesis_audio_mix_buffer[i].right = clipped;
@@ -2847,7 +2854,11 @@ void app_main(void)
 
 #if defined(RG_TARGET_HOLO_DYNMOD)
     bool audio_pal_mode = REG1_PAL != 0;
-    ym2612_set_divisor(gwenesis_audio_divisor(audio_pal_mode));
+    const int audio_divisor = gwenesis_audio_divisor(audio_pal_mode);
+    ym2612_set_divisor(audio_divisor);
+#if GWENESIS_SN76489_RUN_ENABLED
+    gwenesis_sn76489_set_divisor(audio_divisor);
+#endif
 #endif
 
 #if GWENESIS_VDP_ASYNC_ENABLED
@@ -2991,7 +3002,11 @@ void app_main(void)
         if (pal_mode != audio_pal_mode)
         {
             audio_pal_mode = pal_mode;
-            ym2612_set_divisor(gwenesis_audio_divisor(pal_mode));
+            const int audio_divisor = gwenesis_audio_divisor(pal_mode);
+            ym2612_set_divisor(audio_divisor);
+#if GWENESIS_SN76489_RUN_ENABLED
+            gwenesis_sn76489_set_divisor(audio_divisor);
+#endif
         }
 #endif
 
@@ -3115,10 +3130,6 @@ void app_main(void)
              */
             if (GWENESIS_AUDIO_ACCURATE == 0)
             {
-#if GWENESIS_SN76489_RUN_ENABLED
-                if (sn76489_run_enabled)
-                    gwenesis_SN76489_run(line_target);
-#endif
                 if (yfm_run_enabled)
                 {
                     if (ym_sync_line)
@@ -3186,12 +3197,12 @@ void app_main(void)
          * synchronize enabled audio chips to system_clock
          * it completes the missing audio sample for accurate audio mode
          */
+#if GWENESIS_SN76489_RUN_ENABLED
+        if (sn76489_run_enabled)
+            gwenesis_SN76489_run(system_clock);
+#endif
         if (GWENESIS_AUDIO_ACCURATE == 1)
         {
-#if GWENESIS_SN76489_RUN_ENABLED
-            if (sn76489_run_enabled)
-                gwenesis_SN76489_run(system_clock);
-#endif
             if (yfm_run_enabled)
                 ym2612_run(system_clock);
         }

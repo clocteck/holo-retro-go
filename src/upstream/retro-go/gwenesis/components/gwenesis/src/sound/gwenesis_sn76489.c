@@ -113,6 +113,17 @@ void gwenesis_SN76489_Init( int PSGClockValue, int SamplingRate,int freq_divisor
     gwenesis_SN76489_Reset();
 }
 
+void gwenesis_sn76489_set_divisor(int divisor)
+{
+#if defined(RETRO_GO)
+    if (gwenesis_SN76489_ptr && divisor > 0)
+        gwenesis_SN76489.divisor = divisor;
+#else
+    if (divisor > 0)
+        gwenesis_SN76489.divisor = divisor;
+#endif
+}
+
 void gwenesis_SN76489_Reset()
 {
     int i;
@@ -278,8 +289,10 @@ void GWENESIS_HOT gwenesis_SN76489_Write(int data, int target)
   sn76489_clock = target;
   return;
 #endif
-  if (GWENESIS_AUDIO_ACCURATE == 1)
-    gwenesis_SN76489_run(target);
+  /* Flush samples using the old register state before applying a timestamped
+   * write. This preserves PSG timing without running the synthesizer once per
+   * scanline when no PSG register changed. */
+  gwenesis_SN76489_run(target);
 
   if (data & 0x80) {
     /* Latch/data byte  %1 cc t dddd */
