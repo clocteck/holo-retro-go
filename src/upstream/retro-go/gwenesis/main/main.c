@@ -166,7 +166,7 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 55
+#define GWENESIS_FRAME_TARGET_FPS 53
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP

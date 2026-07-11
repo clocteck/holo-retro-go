@@ -2,5 +2,5 @@ name = Retro-Go
 entry = main.lua
 icon = main.png
 allow_webui = true
-description = 优化文件加载路径 优化性能表现 稳定55/32帧
+description = 优化文件加载路径 优化性能表现 稳定53/32帧
 version = 1.2

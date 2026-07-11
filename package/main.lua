@@ -46,7 +46,7 @@ local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
   VERSION = "1.2",
-  RELEASE_NOTES = "优化文件加载路径 优化性能表现 稳定55/32帧",
+  RELEASE_NOTES = "优化文件加载路径 优化性能表现 稳定53/32帧",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
