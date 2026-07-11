@@ -200,3 +200,15 @@ void browser_init(void)
     current_path = rg_unique_string(RG_STORAGE_ROOT);
     gui_add_tab("browser", "File Manager", NULL, event_handler);
 }
+
+void browser_deinit(void)
+{
+    for (size_t i = 0; i < files_count; ++i)
+        free(files[i].name);
+
+    free(files);
+    files = NULL;
+    files_count = 0;
+    files_capacity = 0;
+    current_path = NULL;
+}

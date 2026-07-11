@@ -7,6 +7,7 @@
 #include "gui.h"
 
 static book_t books[BOOK_TYPE_COUNT];
+static rg_bucket_t *bookmark_names;
 
 
 static void event_handler(gui_event_t event, tab_t *tab)
@@ -105,17 +106,26 @@ static void book_repack(book_t *book)
     }
 }
 
-static void book_append(book_t *book, const retro_file_t *new_item)
+static bool book_append(book_t *book, const retro_file_t *new_item)
 {
+    if (!book || !new_item || !new_item->name || !bookmark_names)
+        return false;
+
+    retro_file_t snapshot = *new_item;
+    snapshot.name = rg_bucket_insert(bookmark_names, new_item->name, strlen(new_item->name) + 1);
+    if (!snapshot.name)
+        return false;
+
     // Remove the oldest item if we need the space
     while (book->count >= book->capacity)
     {
         book->items[0].type = RETRO_TYPE_INVALID;
         book_repack(book);
     }
-    book->items[book->count] = *new_item;
+    book->items[book->count] = snapshot;
     book->items[book->count].type = RETRO_TYPE_FILE;
     book->count++;
+    return true;
 }
 
 static retro_file_t *book_find(book_t *book, const retro_file_t *file)
@@ -155,7 +165,11 @@ static void book_load(book_t *book)
             }
 
             if (application_path_to_file(line_buffer, &tmp_file))
-                book_append(book, &tmp_file);
+            {
+                if (!book_append(book, &tmp_file))
+                    RG_LOGE("Unable to retain bookmark name: '%s'\n", tmp_file.name);
+                free((void *)tmp_file.name);
+            }
             else
                 RG_LOGW("Unknown path form: '%s'\n", line_buffer);
         }
@@ -245,7 +259,8 @@ bool bookmark_add(book_type_t book_type, const retro_file_t *file)
     for (retro_file_t *item; (item = book_find(book, file));)
         item->type = RETRO_TYPE_INVALID;
 
-    book_append(book, file);
+    if (!book_append(book, file))
+        return false;
     book_save(book);
     tab_refresh(book);
 
@@ -277,6 +292,22 @@ bool bookmark_remove(book_type_t book_type, const retro_file_t *file)
 
 void bookmarks_init(void)
 {
+    bookmark_names = rg_bucket_create(4096);
     book_init(BOOK_TYPE_FAVORITE, "favorite", "Favorites", 2000);
     book_init(BOOK_TYPE_RECENT, "recent", "Recently played", 100);
+}
+
+void bookmarks_deinit(void)
+{
+    for (size_t i = 0; i < RG_COUNT(books); ++i)
+    {
+        book_t *book = &books[i];
+        free((void *)book->name);
+        free((void *)book->path);
+        free(book->items);
+        memset(book, 0, sizeof(*book));
+    }
+
+    rg_bucket_free(bookmark_names);
+    bookmark_names = NULL;
 }

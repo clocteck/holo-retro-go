@@ -115,7 +115,6 @@ endif()
 idf_component_register(
     SRCS
         "retrogo_module.c"
-        "holo_catalog.c"
         "holo_port.c"
         "holo_compat.c"
         "cxx_compat.c"

@@ -9,7 +9,6 @@
 #include <time.h>
 
 #include "../include/module_abi.h"
-#include "holo_catalog.h"
 #include "holo_port.h"
 
 #define MALLOC_CAP_EXEC (1u << 0)
@@ -627,24 +626,37 @@ int access(const char *path, int mode)
 int stat(const char *path, struct stat *st)
 {
     const module_host_api_v2 *host = holo_port_host();
-    rg_stat_t rgst;
+    void *file = NULL;
+    int32_t is_directory = 0;
+    uint64_t size = 0;
+
     if (!path || !st) {
         s_errno_value = 22;
         return -1;
     }
     memset(st, 0, sizeof(*st));
-    if (holo_catalog_stat(path, &rgst)) {
-        st->st_size = (off_t)rgst.size;
-        st->st_mtime = rgst.mtime;
-        st->st_mode = rgst.is_dir ? (S_IFDIR | 0777) : (S_IFREG | 0666);
-        return 0;
+    if (!host || !host->sd.open || !host->file.close ||
+        !host->file.is_directory || !host->file.size_bytes ||
+        host->sd.open(path, MODULE_FILE_READ, &file) != MODULE_OK || !file) {
+        s_errno_value = 2;
+        return -1;
     }
-    if (host && host->sd.exists && host->sd.exists(path)) {
-        st->st_mode = S_IFREG | 0666;
-        return 0;
+
+    if (host->file.is_directory(file, &is_directory) != MODULE_OK) {
+        host->file.close(file);
+        s_errno_value = 5;
+        return -1;
     }
-    s_errno_value = 2;
-    return -1;
+    if (!is_directory && host->file.size_bytes(file, &size) != MODULE_OK) {
+        host->file.close(file);
+        s_errno_value = 5;
+        return -1;
+    }
+
+    host->file.close(file);
+    st->st_size = (off_t)size;
+    st->st_mode = is_directory ? (S_IFDIR | 0777) : (S_IFREG | 0666);
+    return 0;
 }
 
 int mkdir(const char *path, mode_t mode)

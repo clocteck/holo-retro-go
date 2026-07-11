@@ -140,6 +140,15 @@ void rg_audio_deinit(void)
     RELEASE_DEVICE();
 }
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+void rg_audio_deinit_for_holo(void)
+{
+    rg_audio_deinit();
+    rg_mutex_free(audio.lock);
+    audio.lock = NULL;
+}
+#endif
+
 void rg_audio_submit(const rg_audio_frame_t *frames, size_t count)
 {
     const int64_t time_start = rg_system_timer();

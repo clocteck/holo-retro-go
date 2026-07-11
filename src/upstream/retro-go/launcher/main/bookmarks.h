@@ -21,6 +21,7 @@ typedef struct
 } book_t;
 
 void bookmarks_init(void);
+void bookmarks_deinit(void);
 bool bookmark_add(book_type_t book, const retro_file_t *file);
 bool bookmark_remove(book_type_t book, const retro_file_t *file);
 bool bookmark_clear(book_type_t book);

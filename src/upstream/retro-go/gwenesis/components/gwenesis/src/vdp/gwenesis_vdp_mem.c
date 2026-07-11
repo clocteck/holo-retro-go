@@ -1083,9 +1083,10 @@ void GWENESIS_HOT gwenesis_vdp_write_memory_16(unsigned int address, unsigned in
     return;
   }
   if (address < 0x18) { // PSG 8 bits write
-      vdpm_log(__FUNCTION__,"PSG sclk=%d,mclk=%d", system_clock,  m68k_cycles_master());
+#if GWENESIS_SN76489_RUN_ENABLED
+    vdpm_log(__FUNCTION__,"PSG sclk=%d,mclk=%d", system_clock,  m68k_cycles_master());
     gwenesis_SN76489_Write(value, m68k_cycles_master());
-
+#endif
     return;
   }
   // UNHANDLED

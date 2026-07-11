@@ -1006,7 +1006,7 @@ void rg_system_deinit_for_holo(void)
     RG_LOGW("Dynmod cleanup requested.");
     exitCalled = true;
 
-    rg_audio_deinit();
+    rg_audio_deinit_for_holo();
     rg_input_deinit();
     rg_display_deinit();
     rg_gui_deinit();
@@ -1036,6 +1036,9 @@ void rg_system_deinit_for_holo(void)
     rg_settings_deinit();
     rg_storage_deinit();
     rg_unique_string_deinit();
+    free(panicTrace);
+    panicTrace = NULL;
+    panicTraceCleared = false;
     app.initialized = false;
 }
 #endif

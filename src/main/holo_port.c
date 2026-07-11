@@ -103,37 +103,6 @@ void holo_port_log(const char *text)
     }
 }
 
-static void copy_text(char *dst, size_t dst_size, const char *src)
-{
-    size_t i = 0;
-
-    if (!dst || dst_size == 0) {
-        return;
-    }
-    if (!src) {
-        dst[0] = '\0';
-        return;
-    }
-
-    while (i + 1 < dst_size && src[i]) {
-        dst[i] = src[i];
-        ++i;
-    }
-    dst[i] = '\0';
-}
-
-static int holo_dir_api_ready(void)
-{
-    return s_host &&
-           s_host->dir.open &&
-           s_host->dir.open_next &&
-           s_host->dir.name &&
-           s_host->dir.path &&
-           s_host->dir.is_dir &&
-           s_host->dir.size_bytes &&
-           s_host->dir.close;
-}
-
 void holo_input_set_mask(uint32_t mask)
 {
     s_input_source_mask = mask;
@@ -482,77 +451,4 @@ int holo_audio_available(size_t *out_bytes)
     }
 
     return s_host->audio.available(s_audio_stream, out_bytes) == MODULE_OK;
-}
-
-int holo_dir_open(const char *path, void **out_dir)
-{
-    if (out_dir) {
-        *out_dir = NULL;
-    }
-    if (!path || !out_dir || !holo_dir_api_ready()) {
-        return 0;
-    }
-
-    return s_host->dir.open(path, out_dir) == MODULE_OK && *out_dir != NULL;
-}
-
-int holo_dir_read(void *dir, char *name, size_t name_size, char *path, size_t path_size,
-                  int *out_is_dir, size_t *out_size)
-{
-    void *entry = NULL;
-    const char *entry_name;
-    const char *entry_path;
-    int32_t is_dir = 0;
-    uint64_t size = 0;
-    int ok = 0;
-
-    if (name) {
-        name[0] = '\0';
-    }
-    if (path) {
-        path[0] = '\0';
-    }
-    if (out_is_dir) {
-        *out_is_dir = 0;
-    }
-    if (out_size) {
-        *out_size = 0;
-    }
-    if (!dir || !holo_dir_api_ready()) {
-        return 0;
-    }
-    if (s_host->dir.open_next(dir, &entry) != MODULE_OK || !entry) {
-        return 0;
-    }
-
-    entry_name = s_host->dir.name(entry);
-    entry_path = s_host->dir.path(entry);
-    if (s_host->dir.is_dir(entry, &is_dir) != MODULE_OK) {
-        is_dir = 0;
-    }
-    if (s_host->dir.size_bytes(entry, &size) != MODULE_OK) {
-        size = 0;
-    }
-
-    if (entry_name) {
-        copy_text(name, name_size, entry_name);
-        copy_text(path, path_size, entry_path ? entry_path : "");
-        if (out_is_dir) {
-            *out_is_dir = is_dir != 0;
-        }
-        if (out_size) {
-            *out_size = (size_t)size;
-        }
-        ok = 1;
-    }
-
-    s_host->dir.close(entry);
-    return ok;
-}
-
-void holo_dir_close(void *dir)
-{
-    if (dir && holo_dir_api_ready()) {
-        s_host->dir.close(dir);
-    }
 }

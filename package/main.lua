@@ -749,17 +749,14 @@ local function remove_path(path)
   return file and file.stat and not file.stat(path) or false
 end
 
-local function add_row(rows, kind, path, size, mtime)
-  rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
-  if kind == "F" and APP.rom_list_cache then
-    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
-      name = basename(path),
-      path = path,
-      relative_path = rom_relative_path(path),
-      system = rom_system_for_path(path),
-      size = tonumber(size) or 0,
-    }
-  end
+local function add_rom_cache_file(path, size)
+  APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+    name = basename(path),
+    path = path,
+    relative_path = rom_relative_path(path),
+    system = rom_system_for_path(path),
+    size = tonumber(size) or 0,
+  }
 end
 
 local function rom_item_path(parent, item)
@@ -798,37 +795,30 @@ local function rom_listdir(path)
   return {}
 end
 
-local function scan_rom_tree(path, rows, seen)
+local function scan_rom_tree(path, seen)
   if seen[path] then
     return
   end
   seen[path] = true
-  add_row(rows, "D", path, 0, 0)
   for _, item in ipairs(rom_listdir(path)) do
     local child = rom_item_path(path, item)
     if child ~= path and child ~= "" then
       if rom_item_is_dir(child, item) then
-        scan_rom_tree(child, rows, seen)
+        scan_rom_tree(child, seen)
       else
-        add_row(rows, "F", child, rom_item_size(child, item), 0)
+        add_rom_cache_file(child, rom_item_size(child, item))
       end
     end
   end
 end
 
-local function build_catalog_blob()
+local function refresh_rom_list_cache()
   ensure_rom_system_dirs()
   APP.rom_list_cache = {}
   APP.rom_list_cache_ready = false
-  local rows = {}
-  scan_rom_tree(APP.ROM_ROOT, rows, {})
+  scan_rom_tree(APP.ROM_ROOT, {})
   APP.rom_list_cache_ready = true
-  return table.concat(rows), #rows
-end
-
-local function refresh_rom_list_cache()
-  local _, rows = build_catalog_blob()
-  log("rom list cache", #APP.rom_list_cache, APP.ROM_ROOT, "rows", rows)
+  log("rom list cache", #APP.rom_list_cache, APP.ROM_ROOT)
   return true
 end
 
@@ -1179,12 +1169,11 @@ function APP.api_info()
     chunk_size = APP.CHUNK_SIZE,
     max_file_size = APP.MAX_ROM_FILE_SIZE,
     rom_list_ready = APP.rom_list_cache_ready and true or false,
-    catalog_dirty = APP.catalog_dirty and true or false,
   })
 end
 
 function APP.api_list()
-  build_catalog_blob()
+  refresh_rom_list_cache()
   local items = list_rom_files()
   return json_response("200 OK", {
     ok = true,
@@ -1222,7 +1211,6 @@ function APP.api_upload(req)
   end
   if next_offset >= total then
     upsert_rom_cache_item(path, stat_size(st) or total)
-    APP.catalog_dirty = true
     APP.rom_list_cache_ready = false
   end
   return json_response("200 OK", {
@@ -1256,7 +1244,7 @@ function APP.api_delete(req)
     return error_response("500 Internal Server Error", remove_err or "delete failed")
   end
   remove_rom_cache_item(path)
-  APP.catalog_dirty = true
+  APP.rom_list_cache_ready = false
   return json_response("200 OK", {
     ok = true,
     path = path,
@@ -1770,6 +1758,83 @@ local function selector_cleanup(ui, key_codes)
   end
 end
 
+local GAMEPAD_BOND_RECOVERY_FAILURES = 3
+local gamepad_service_started = false
+local gamepad_connect_failures = 0
+local gamepad_bond_recovery_used = false
+local gamepad_bond_recovery_pending = false
+
+local function start_gamepad_service(clear_bonds)
+  if not gamepad or not gamepad.start or not gamepad.off then
+    log("gamepad module unavailable, skip BLE")
+    return false
+  end
+  if gamepad_service_started and not clear_bonds then
+    return true
+  end
+
+  pcall(function()
+    gamepad.off()
+  end)
+
+  local ok, started, err = pcall(function()
+    return gamepad.start({
+      clear_bonds = clear_bonds and true or false,
+      debug = false,
+    })
+  end)
+  if not ok or not started then
+    gamepad_service_started = false
+    log("gamepad.start failed", tostring(err or started))
+    return false
+  end
+
+  gamepad_service_started = true
+  log("gamepad service started", clear_bonds and "bonds cleared" or "bonds kept")
+  return true
+end
+
+local function reset_gamepad_connect_failures()
+  gamepad_connect_failures = 0
+end
+
+local function note_gamepad_connect_failure(on_restarted, should_recover)
+  gamepad_connect_failures = gamepad_connect_failures + 1
+  log("BLE connect failed", gamepad_connect_failures, GAMEPAD_BOND_RECOVERY_FAILURES)
+  if gamepad_connect_failures < GAMEPAD_BOND_RECOVERY_FAILURES or
+      gamepad_bond_recovery_used or gamepad_bond_recovery_pending then
+    return
+  end
+
+  gamepad_bond_recovery_pending = true
+  local function recover()
+    gamepad_bond_recovery_pending = false
+    if type(should_recover) == "function" and not should_recover() then
+      return
+    end
+    gamepad_bond_recovery_used = true
+    gamepad_connect_failures = 0
+    log("BLE clearing stale bonds after repeated failures")
+    if start_gamepad_service(true) and type(on_restarted) == "function" then
+      local rebound, rebound_err = pcall(on_restarted)
+      if not rebound then
+        log("gamepad callback rebind failed", tostring(rebound_err))
+      end
+    end
+  end
+
+  if tmr and tmr.create then
+    local recovery_timer = tmr.create()
+    local scheduled = pcall(function()
+      recovery_timer:alarm(150, tmr.ALARM_SINGLE or 0, recover)
+    end)
+    if scheduled then
+      return
+    end
+  end
+  recover()
+end
+
 local function choose_module()
   local index = 1
   local chosen = false
@@ -1777,6 +1842,7 @@ local function choose_module()
   local ui = selector_make_ui()
   local bt_phase = nil
   local key_codes = {}
+  local selector_events_active = true
 
   local function move(delta)
     index = index + delta
@@ -1799,39 +1865,46 @@ local function choose_module()
   selector_render(ui, index)
   selector_update_gamepad_status(ui, read_gamepad_state())
 
-  if gamepad and gamepad.start then
-    pcall(function()
-      if gamepad.off then gamepad.off() end
-      gamepad.start({ clear_bonds = false, debug = false })
-    end)
-  end
+  start_gamepad_service(false)
 
   if gamepad and gamepad.on then
+    local bind_gamepad_events
     local function set_bt_phase(phase)
       bt_phase = phase
       selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
     end
-    pcall(function()
+    bind_gamepad_events = function()
       if gamepad.EVT_CONNECTING then
         gamepad.on(gamepad.EVT_CONNECTING, function()
+          if not selector_events_active then return end
           set_bt_phase("connecting")
         end)
       end
       if gamepad.EVT_CONNECT_FAILED then
         gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
+          if not selector_events_active then return end
           set_bt_phase("waiting")
+          note_gamepad_connect_failure(bind_gamepad_events, function()
+            return selector_events_active
+          end)
         end)
       end
       if gamepad.EVT_CONNECTED then
         gamepad.on(gamepad.EVT_CONNECTED, function()
+          if not selector_events_active then return end
+          reset_gamepad_connect_failures()
           set_bt_phase("connected")
         end)
       end
       if gamepad.EVT_DISCONNECTED then
         gamepad.on(gamepad.EVT_DISCONNECTED, function()
+          if not selector_events_active then return end
           set_bt_phase("waiting")
         end)
       end
+    end
+    pcall(function()
+      bind_gamepad_events()
     end)
   end
 
@@ -1878,6 +1951,7 @@ local function choose_module()
     end
   end
 
+  selector_events_active = false
   local cleanup_ui = ui
   ui = nil
   selector_cleanup(cleanup_ui, key_codes)
@@ -1904,6 +1978,7 @@ local function choose_module_async(on_selected)
   local key_codes = {}
   local selector_timer = nil
   local prev = selector_gamepad_nav(read_gamepad_state())
+  local selector_events_active = true
 
   local function stop_selector_timer()
     if not selector_timer then
@@ -1923,6 +1998,7 @@ local function choose_module_async(on_selected)
       return
     end
     finished = true
+    selector_events_active = false
     stop_selector_timer()
     local cleanup_ui = ui
     ui = nil
@@ -1966,39 +2042,46 @@ local function choose_module_async(on_selected)
   selector_update_gamepad_status(ui, read_gamepad_state())
   log("selector ready", APP.MODULES[index].id, APP.MODULES[index].path)
 
-  if gamepad and gamepad.start then
-    pcall(function()
-      if gamepad.off then gamepad.off() end
-      gamepad.start({ clear_bonds = false, debug = false })
-    end)
-  end
+  start_gamepad_service(false)
 
   if gamepad and gamepad.on then
+    local bind_gamepad_events
     local function set_bt_phase(phase)
       bt_phase = phase
       selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
     end
-    pcall(function()
+    bind_gamepad_events = function()
       if gamepad.EVT_CONNECTING then
         gamepad.on(gamepad.EVT_CONNECTING, function()
+          if not selector_events_active then return end
           set_bt_phase("connecting")
         end)
       end
       if gamepad.EVT_CONNECT_FAILED then
         gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
+          if not selector_events_active then return end
           set_bt_phase("waiting")
+          note_gamepad_connect_failure(bind_gamepad_events, function()
+            return selector_events_active
+          end)
         end)
       end
       if gamepad.EVT_CONNECTED then
         gamepad.on(gamepad.EVT_CONNECTED, function()
+          if not selector_events_active then return end
+          reset_gamepad_connect_failures()
           set_bt_phase("connected")
         end)
       end
       if gamepad.EVT_DISCONNECTED then
         gamepad.on(gamepad.EVT_DISCONNECTED, function()
+          if not selector_events_active then return end
           set_bt_phase("waiting")
         end)
       end
+    end
+    pcall(function()
+      bind_gamepad_events()
     end)
   end
 
@@ -2148,25 +2231,7 @@ local function log_pad_mask(mask)
   end
 end
 
-local function load_catalog()
-  local blob, row_count = build_catalog_blob()
-  log("catalog root", APP.ROM_ROOT)
-  log("catalog bytes", #blob, "rows", row_count)
-  log("set_catalog call")
-  local ok, set_err = retrogo.set_catalog(blob)
-  if not ok then
-    log("set_catalog failed", tostring(set_err))
-    return false
-  end
-  APP.catalog_dirty = false
-  log("set_catalog ok")
-  return true
-end
-
-if not load_catalog() then
-  APP.stop_web("catalog failed")
-  return
-end
+ensure_rom_system_dirs()
 APP.stop_web("runtime")
 
 local function retrogo_info()
@@ -2336,8 +2401,6 @@ local function update_gamepad_input(force)
   end
 end
 
-local gamepad_service_started = false
-
 local function register_cb(evt, cb)
   if not gamepad or not gamepad.on or not evt then
     return
@@ -2348,50 +2411,35 @@ local function register_cb(evt, cb)
 end
 
 local function start_gamepad()
-  if not gamepad or not gamepad.start or not gamepad.off then
-    log("gamepad module unavailable, skip BLE")
-    return false
-  end
-  if gamepad_service_started then
-    return true
-  end
-
-  pcall(function()
-    gamepad.off()
-  end)
-
-  local ok, started, err = pcall(function()
-    return gamepad.start({
-      clear_bonds = false,
-      debug = false,
-    })
-  end)
-  if not ok or not started then
-    log("gamepad.start failed", tostring(err or started))
+  if not start_gamepad_service(false) then
     return false
   end
 
-  register_cb(gamepad.EVT_UPDATE, function()
-    update_gamepad_input(false)
-  end)
-  register_cb(gamepad.EVT_CONNECTING, function()
-    log("BLE pairing")
-  end)
-  register_cb(gamepad.EVT_CONNECT_FAILED, function()
-    sync_input_mask(0)
-    current_mask = 0
-  end)
-  register_cb(gamepad.EVT_CONNECTED, function()
-    update_gamepad_input(true)
-  end)
-  register_cb(gamepad.EVT_DISCONNECTED, function()
-    sync_input_mask(0)
-    current_mask = 0
-  end)
+  local bind_runtime_gamepad_events
+  bind_runtime_gamepad_events = function()
+    register_cb(gamepad.EVT_UPDATE, function()
+      update_gamepad_input(false)
+    end)
+    register_cb(gamepad.EVT_CONNECTING, function()
+      log("BLE pairing")
+    end)
+    register_cb(gamepad.EVT_CONNECT_FAILED, function()
+      sync_input_mask(0)
+      current_mask = 0
+      note_gamepad_connect_failure(bind_runtime_gamepad_events)
+    end)
+    register_cb(gamepad.EVT_CONNECTED, function()
+      reset_gamepad_connect_failures()
+      update_gamepad_input(true)
+    end)
+    register_cb(gamepad.EVT_DISCONNECTED, function()
+      sync_input_mask(0)
+      current_mask = 0
+    end)
+  end
+  bind_runtime_gamepad_events()
 
   update_gamepad_input(true)
-  gamepad_service_started = true
-  log("gamepad service started")
   return true
 end
 
@@ -2433,10 +2481,6 @@ local function schedule_restart(info)
     return
   end
   log("restart request", app_name, rom_path, flags)
-  if APP.catalog_dirty and not load_catalog() then
-    request_exit_to_home("catalog reload failed")
-    return
-  end
   pending_restart = {
     app_name = app_name,
     rom_path = rom_path,

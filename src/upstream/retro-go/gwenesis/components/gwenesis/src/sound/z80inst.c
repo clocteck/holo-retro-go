@@ -470,9 +470,11 @@ void GWENESIS_HOT WrZ80(register word Addr, register byte Value) {
 
   // @7F11
   if (Addr ==  0x7F11) {
+#if GWENESIS_SN76489_RUN_ENABLED
     const int timestamp = zclk + current_timeslice - (cpu.ICount * Z80_FREQ_DIVISOR);
     z80_log("Z80","ZZSN zk=%d,tgt=%d", zclk, timestamp);
     gwenesis_SN76489_Write(Value, timestamp);
+#endif
     return;
   }
  

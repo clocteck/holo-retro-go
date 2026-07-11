@@ -1,10 +1,5 @@
 #include "rg_system.h"
 
-#if defined(RG_TARGET_HOLO_DYNMOD)
-#include "holo_catalog.h"
-#include "holo_port.h"
-#endif
-
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -310,10 +305,6 @@ rg_stat_t rg_storage_stat(const char *path)
 {
     rg_stat_t ret = {0};
     struct stat statbuf;
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    if (holo_catalog_stat(path, &ret))
-        return ret;
-#endif
     if (path && stat(path, &statbuf) == 0)
     {
         ret.basename = rg_basename(path);
@@ -330,86 +321,8 @@ rg_stat_t rg_storage_stat(const char *path)
 bool rg_storage_exists(const char *path)
 {
     CHECK_PATH(path);
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    if (holo_catalog_exists(path))
-        return true;
-#endif
     return access(path, F_OK) == 0;
 }
-
-#if defined(RG_TARGET_HOLO_DYNMOD)
-static bool host_scandir(const char *path, rg_scandir_cb_t *callback, void *arg, uint32_t flags)
-{
-    uint32_t types = flags & (RG_SCANDIR_FILES | RG_SCANDIR_DIRS);
-    void *dir = NULL;
-    rg_scandir_t *result;
-    char entry_name[RG_PATH_MAX + 1];
-    int entry_is_dir;
-    size_t entry_size;
-
-    if (!types)
-        types = RG_SCANDIR_FILES | RG_SCANDIR_DIRS;
-
-    if (!holo_dir_open(path, &dir))
-        return false;
-
-    result = calloc(1, sizeof(rg_scandir_t));
-    if (!result)
-    {
-        RG_LOGE("Memory allocation failed: '%s'", path);
-        holo_dir_close(dir);
-        return false;
-    }
-
-    while (holo_dir_read(dir, entry_name, sizeof(entry_name), result->path, sizeof(result->path),
-                         &entry_is_dir, &entry_size))
-    {
-        if (entry_name[0] == '.' && (!entry_name[1] || entry_name[1] == '.'))
-            continue;
-
-        if (!result->path[0])
-        {
-            size_t path_len = strlen(path);
-            size_t name_len = strlen(entry_name);
-            if (path_len + 1 + name_len >= sizeof(result->path))
-            {
-                RG_LOGE("File path too long '%s/%s'", path, entry_name);
-                continue;
-            }
-            memcpy(result->path, path, path_len);
-            result->path[path_len] = '/';
-            memcpy(result->path + path_len + 1, entry_name, name_len + 1);
-        }
-
-        result->basename = rg_basename(result->path);
-        result->dirname = path;
-        result->size = entry_size;
-        result->mtime = 0;
-        result->is_dir = entry_is_dir != 0;
-        result->is_file = entry_is_dir == 0;
-
-        if ((result->is_dir && types != RG_SCANDIR_FILES) || (result->is_file && types != RG_SCANDIR_DIRS))
-        {
-            int ret = (callback)(result, arg);
-
-            if (ret == RG_SCANDIR_STOP)
-                break;
-
-            if (ret == RG_SCANDIR_SKIP)
-                continue;
-        }
-
-        if ((flags & RG_SCANDIR_RECURSIVE) && result->is_dir)
-        {
-            rg_storage_scandir(result->path, callback, arg, flags);
-        }
-    }
-
-    holo_dir_close(dir);
-    free(result);
-    return true;
-}
-#endif
 
 static bool posix_scandir(const char *path, rg_scandir_cb_t *callback, void *arg, uint32_t flags)
 {
@@ -468,9 +381,22 @@ static bool posix_scandir(const char *path, rg_scandir_cb_t *callback, void *arg
         }
 
         strcpy((char *)result->basename, ent->d_name);
+        result->size = 0;
+        result->mtime = 0;
     #if defined(DT_REG) && defined(DT_DIR)
         result->is_file = ent->d_type == DT_REG;
         result->is_dir = ent->d_type == DT_DIR;
+        if (!result->is_file && !result->is_dir)
+        {
+            // Some VFS implementations return DT_UNKNOWN. Stat only that entry.
+            if (stat(result->path, &statbuf) == 0)
+            {
+                result->is_file = S_ISREG(statbuf.st_mode);
+                result->is_dir = S_ISDIR(statbuf.st_mode);
+                result->size = statbuf.st_size;
+                result->mtime = statbuf.st_mtime;
+            }
+        }
     #else
         result->is_file = 0;
         result->is_dir = 0;
@@ -512,17 +438,7 @@ static bool posix_scandir(const char *path, rg_scandir_cb_t *callback, void *arg
 bool rg_storage_scandir(const char *path, rg_scandir_cb_t *callback, void *arg, uint32_t flags)
 {
     CHECK_PATH(path);
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    if (host_scandir(path, callback, arg, flags))
-        return true;
-#endif
-    if (posix_scandir(path, callback, arg, flags))
-        return true;
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    if (holo_catalog_ready())
-        return holo_catalog_scandir(path, callback, arg, flags);
-#endif
-    return false;
+    return posix_scandir(path, callback, arg, flags);
 }
 
 int64_t rg_storage_get_free_space(const char *path)
