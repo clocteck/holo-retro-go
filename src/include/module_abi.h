@@ -141,6 +141,12 @@ typedef int (*module_lua_cfunction_t)(lua_State *L);
 #define MODULE_PROC_DIR_SIZE_BYTES_V2 0x000C0006u
 #define MODULE_PROC_DIR_CLOSE_V2 0x000C0007u
 
+#define MODULE_PROC_SYNC_CREATE_COUNTING_V1 0x000E0001u
+#define MODULE_PROC_SYNC_CREATE_MUTEX_V1 0x000E0002u
+#define MODULE_PROC_SYNC_TAKE_V1 0x000E0003u
+#define MODULE_PROC_SYNC_GIVE_V1 0x000E0004u
+#define MODULE_PROC_SYNC_DESTROY_V1 0x000E0005u
+
 #define DYNMOD_LAST_CONTEXT_MAGIC 0x4D4F4443u /* "MODC" */
 #define DYNMOD_LAST_CONTEXT_VERSION 1u
 #define DYNMOD_LAST_MODULE_PATH_MAX 128u
@@ -186,6 +192,8 @@ typedef enum module_error_t {
     MODULE_ERR_BAD_STATE = -8,
     MODULE_ERR_VERSION = -9,
 } module_error_t;
+
+#define MODULE_WAIT_FOREVER UINT32_MAX
 
 typedef enum module_heap_caps_t {
     MODULE_HEAP_DEFAULT = 0,
@@ -482,6 +490,18 @@ typedef struct module_dir_api_t {
     int32_t (*close)(void *handle);
 } module_dir_api_t;
 
+typedef void *module_sync_handle_t;
+
+typedef struct module_sync_api_t {
+    uint32_t size;
+    int32_t (*create_counting)(uint32_t max_count, uint32_t initial_count,
+                               module_sync_handle_t *out_handle);
+    int32_t (*create_mutex)(module_sync_handle_t *out_handle);
+    int32_t (*take)(module_sync_handle_t handle, uint32_t timeout_ms);
+    int32_t (*give)(module_sync_handle_t handle);
+    void (*destroy)(module_sync_handle_t handle);
+} module_sync_api_t;
+
 typedef struct module_host_api_v2 {
     uint32_t abi_version;
     uint32_t size;
@@ -497,6 +517,7 @@ typedef struct module_host_api_v2 {
     module_i2s_api_t i2s;
     module_diag_api_t diag;
     module_dir_api_t dir;
+    module_sync_api_t sync;
 } module_host_api_v2;
 
 typedef const module_manifest_t *(*module_query_v1_fn)(void);
@@ -761,6 +782,13 @@ static inline int32_t module_sdk_resolve_host_v2(module_host_resolve_v2_fn resol
     MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_IS_DIR_V2, out->dir.is_dir);
     MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_SIZE_BYTES_V2, out->dir.size_bytes);
     MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_DIR_CLOSE_V2, out->dir.close);
+
+    out->sync.size = sizeof(out->sync);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SYNC_CREATE_COUNTING_V1, out->sync.create_counting);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SYNC_CREATE_MUTEX_V1, out->sync.create_mutex);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SYNC_TAKE_V1, out->sync.take);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SYNC_GIVE_V1, out->sync.give);
+    MODULE_SDK_RESOLVE_OPTIONAL_PROC_V2(resolve, resolve_ctx, MODULE_PROC_SYNC_DESTROY_V1, out->sync.destroy);
 
     return MODULE_OK;
 }

@@ -236,6 +236,10 @@ typedef struct holo_queue_t {
     UBaseType_t tail;
     UBaseType_t count;
     uint8_t *storage;
+    module_sync_handle_t items_ready;
+    module_sync_handle_t slots_ready;
+    module_sync_handle_t state_lock;
+    uint8_t sync_enabled;
 } holo_queue_t;
 
 int *__errno(void)
@@ -1220,6 +1224,91 @@ static holo_queue_t *queue_from_handle(QueueHandle_t queue)
     return q;
 }
 
+static const module_sync_api_t *queue_sync_api(void)
+{
+    const module_host_api_v2 *host = holo_port_host();
+    if (!host || !host->sync.create_counting || !host->sync.create_mutex ||
+        !host->sync.take || !host->sync.give || !host->sync.destroy) {
+        return NULL;
+    }
+    return &host->sync;
+}
+
+static uint32_t queue_timeout_ms(TickType_t ticks)
+{
+    /* Both Holo dynmod profiles and the host use CONFIG_FREERTOS_HZ=1000. */
+    return ticks == HOLO_QUEUE_WAIT_FOREVER ? MODULE_WAIT_FOREVER : (uint32_t)ticks;
+}
+
+static void queue_destroy_sync(holo_queue_t *queue)
+{
+    const module_sync_api_t *sync = queue_sync_api();
+    if (!queue || !sync) {
+        return;
+    }
+    if (queue->items_ready) {
+        sync->destroy(queue->items_ready);
+        queue->items_ready = NULL;
+    }
+    if (queue->slots_ready) {
+        sync->destroy(queue->slots_ready);
+        queue->slots_ready = NULL;
+    }
+    if (queue->state_lock) {
+        sync->destroy(queue->state_lock);
+        queue->state_lock = NULL;
+    }
+    queue->sync_enabled = 0;
+}
+
+static int queue_enable_data_sync(holo_queue_t *queue)
+{
+    const module_sync_api_t *sync = queue_sync_api();
+    if (!queue || !sync || queue->length == 0) {
+        return 0;
+    }
+    if (sync->create_counting(queue->length, 0, &queue->items_ready) != MODULE_OK ||
+        sync->create_counting(queue->length, queue->length, &queue->slots_ready) != MODULE_OK ||
+        sync->create_mutex(&queue->state_lock) != MODULE_OK) {
+        queue_destroy_sync(queue);
+        return 0;
+    }
+    queue->sync_enabled = 1;
+    return 1;
+}
+
+static int queue_enable_mutex_sync(holo_queue_t *queue)
+{
+    const module_sync_api_t *sync = queue_sync_api();
+    if (!queue || !sync || sync->create_mutex(&queue->state_lock) != MODULE_OK) {
+        queue_destroy_sync(queue);
+        return 0;
+    }
+    queue->sync_enabled = 1;
+    return 1;
+}
+
+static BaseType_t queue_sync_take(const module_sync_api_t *sync,
+                                  module_sync_handle_t handle,
+                                  TickType_t ticks)
+{
+    return sync && handle && sync->take(handle, queue_timeout_ms(ticks)) == MODULE_OK
+               ? pdTRUE
+               : pdFALSE;
+}
+
+static BaseType_t queue_sync_lock(const module_sync_api_t *sync, holo_queue_t *queue)
+{
+    return queue_sync_take(sync, queue ? queue->state_lock : NULL, HOLO_QUEUE_WAIT_FOREVER);
+}
+
+static void queue_sync_give(const module_sync_api_t *sync, module_sync_handle_t handle)
+{
+    if (sync && handle) {
+        (void)sync->give(handle);
+    }
+}
+
 static BaseType_t queue_wait_for_count(holo_queue_t *queue, TickType_t ticks, int want_item)
 {
     TickType_t waited = 0;
@@ -1276,6 +1365,7 @@ QueueHandle_t xQueueGenericCreate(const UBaseType_t length,
     queue->magic = HOLO_QUEUE_MAGIC;
     queue->length = length;
     queue->item_size = item_size;
+    (void)queue_enable_data_sync(queue);
     return (QueueHandle_t)queue;
 }
 
@@ -1291,6 +1381,7 @@ QueueHandle_t xQueueCreateMutex(uint8_t queue_type)
     queue->magic = HOLO_QUEUE_MAGIC;
     queue->length = 1;
     queue->item_size = 0;
+    (void)queue_enable_mutex_sync(queue);
     return (QueueHandle_t)queue;
 }
 
@@ -1301,6 +1392,7 @@ void vQueueDelete(QueueHandle_t queue)
         return;
     }
     q->magic = 0;
+    queue_destroy_sync(q);
     free(q->storage);
     free(q);
 }
@@ -1311,14 +1403,53 @@ BaseType_t xQueueGenericSend(QueueHandle_t queue,
                              const BaseType_t copy_position)
 {
     holo_queue_t *q = queue_from_handle(queue);
+    const module_sync_api_t *sync = queue_sync_api();
     if (!q) {
         return pdFAIL;
     }
     if (q->item_size == 0) {
+        if (q->sync_enabled) {
+            return sync && sync->give(q->state_lock) == MODULE_OK ? pdPASS : pdFAIL;
+        }
         return pdPASS;
     }
     if (!item) {
         return pdFAIL;
+    }
+
+    if (q->sync_enabled) {
+        BaseType_t have_slot = queue_sync_take(sync, q->slots_ready,
+                                               copy_position == 2 ? 0 : ticks);
+        if (!have_slot && copy_position == 2) {
+            if (!queue_sync_lock(sync, q)) {
+                return pdFAIL;
+            }
+            if (q->count > 0) {
+                memcpy(queue_slot(q, q->head), item, q->item_size);
+                queue_sync_give(sync, q->state_lock);
+                return pdPASS;
+            }
+            queue_sync_give(sync, q->state_lock);
+            have_slot = queue_sync_take(sync, q->slots_ready, ticks);
+        }
+        if (!have_slot) {
+            return pdFAIL;
+        }
+        if (!queue_sync_lock(sync, q)) {
+            queue_sync_give(sync, q->slots_ready);
+            return pdFAIL;
+        }
+        if (copy_position == 1) {
+            q->head = (q->head == 0) ? (q->length - 1) : (q->head - 1);
+            memcpy(queue_slot(q, q->head), item, q->item_size);
+        } else {
+            memcpy(queue_slot(q, q->tail), item, q->item_size);
+            q->tail = (q->tail + 1) % q->length;
+        }
+        q->count++;
+        queue_sync_give(sync, q->state_lock);
+        queue_sync_give(sync, q->items_ready);
+        return pdPASS;
     }
 
     if (!queue_wait_for_count(q, ticks, 0)) {
@@ -1343,6 +1474,10 @@ BaseType_t xQueueGenericSend(QueueHandle_t queue,
 BaseType_t xQueueSemaphoreTake(QueueHandle_t queue, TickType_t ticks)
 {
     holo_queue_t *q = queue_from_handle(queue);
+    const module_sync_api_t *sync = queue_sync_api();
+    if (q && q->sync_enabled && q->item_size == 0) {
+        return queue_sync_take(sync, q->state_lock, ticks);
+    }
     (void)ticks;
     return q ? pdPASS : pdFAIL;
 }
@@ -1350,11 +1485,32 @@ BaseType_t xQueueSemaphoreTake(QueueHandle_t queue, TickType_t ticks)
 BaseType_t xQueueReceive(QueueHandle_t queue, void *buffer, TickType_t ticks)
 {
     holo_queue_t *q = queue_from_handle(queue);
+    const module_sync_api_t *sync = queue_sync_api();
     if (!q) {
         return pdFALSE;
     }
     if (q->item_size == 0) {
         return pdPASS;
+    }
+    if (q->sync_enabled) {
+        if (!buffer || !queue_sync_take(sync, q->items_ready, ticks)) {
+            return pdFALSE;
+        }
+        if (!queue_sync_lock(sync, q)) {
+            queue_sync_give(sync, q->items_ready);
+            return pdFALSE;
+        }
+        if (q->count == 0) {
+            queue_sync_give(sync, q->state_lock);
+            queue_sync_give(sync, q->items_ready);
+            return pdFALSE;
+        }
+        memcpy(buffer, queue_slot(q, q->head), q->item_size);
+        q->head = (q->head + 1) % q->length;
+        q->count--;
+        queue_sync_give(sync, q->state_lock);
+        queue_sync_give(sync, q->slots_ready);
+        return pdTRUE;
     }
     if (!buffer || !queue_wait_for_count(q, ticks, 1)) {
         return pdFALSE;
@@ -1369,11 +1525,30 @@ BaseType_t xQueueReceive(QueueHandle_t queue, void *buffer, TickType_t ticks)
 BaseType_t xQueuePeek(QueueHandle_t queue, void *buffer, TickType_t ticks)
 {
     holo_queue_t *q = queue_from_handle(queue);
+    const module_sync_api_t *sync = queue_sync_api();
     if (!q) {
         return pdFALSE;
     }
     if (q->item_size == 0) {
         return pdPASS;
+    }
+    if (q->sync_enabled) {
+        if (!buffer || !queue_sync_take(sync, q->items_ready, ticks)) {
+            return pdFALSE;
+        }
+        if (!queue_sync_lock(sync, q)) {
+            queue_sync_give(sync, q->items_ready);
+            return pdFALSE;
+        }
+        if (q->count == 0) {
+            queue_sync_give(sync, q->state_lock);
+            queue_sync_give(sync, q->items_ready);
+            return pdFALSE;
+        }
+        memcpy(buffer, queue_slot(q, q->head), q->item_size);
+        queue_sync_give(sync, q->state_lock);
+        queue_sync_give(sync, q->items_ready);
+        return pdTRUE;
     }
     if (!buffer || !queue_wait_for_count(q, ticks, 1)) {
         return pdFALSE;
@@ -1386,8 +1561,18 @@ BaseType_t xQueuePeek(QueueHandle_t queue, void *buffer, TickType_t ticks)
 UBaseType_t uxQueueMessagesWaiting(const QueueHandle_t queue)
 {
     holo_queue_t *q = queue_from_handle((QueueHandle_t)queue);
+    const module_sync_api_t *sync = queue_sync_api();
+    UBaseType_t count;
     if (!q || q->item_size == 0) {
         return 0;
+    }
+    if (q->sync_enabled) {
+        if (!queue_sync_lock(sync, q)) {
+            return 0;
+        }
+        count = q->count;
+        queue_sync_give(sync, q->state_lock);
+        return count;
     }
     return q->count;
 }
