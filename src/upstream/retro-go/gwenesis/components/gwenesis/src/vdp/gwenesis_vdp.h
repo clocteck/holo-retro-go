@@ -133,6 +133,16 @@ __license__ = "GPLv3"
 
 typedef struct
 {
+    uint16_t source_color[256];
+    uint8_t source_map[256];
+    uint8_t source_valid[256];
+    uint16_t *output_palette;
+    uint16_t color_count;
+    bool overflow;
+} gwenesis_vdp_palette_remap_t;
+
+typedef struct
+{
     const unsigned char *vram;
     const unsigned short *vsram;
     const unsigned short *cram565;
@@ -140,6 +150,7 @@ typedef struct
     const unsigned char *regs;
     int screen_width;
     int screen_height;
+    gwenesis_vdp_palette_remap_t *palette_remap;
 } gwenesis_vdp_render_context_t;
 
 void gwenesis_vdp_reset();
@@ -189,6 +200,11 @@ void gwenesis_vdp_async_mark_midframe_write(void);
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
 void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8]);
 void gwenesis_vdp_snapshot_dirty_mark_all(void);
+void gwenesis_vdp_async_record_reg(unsigned int reg, unsigned int value);
+void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value);
+void gwenesis_vdp_async_record_sat(unsigned int offset, unsigned int value);
+void gwenesis_vdp_async_record_cram565(unsigned int index, unsigned int value);
+void gwenesis_vdp_async_record_vsram(unsigned int index, unsigned int value);
 #endif
 
 #endif

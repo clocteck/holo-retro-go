@@ -371,6 +371,52 @@ void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ct
 }
 #endif
 
+static inline bool gwenesis_vdp_gfx_has_palette_remap(void)
+{
+#if GWENESIS_VDP_ASYNC_ENABLED
+  return gwenesis_vdp_gfx_render_ctx &&
+         gwenesis_vdp_gfx_render_ctx->palette_remap &&
+         gwenesis_vdp_gfx_render_ctx->palette_remap->output_palette;
+#else
+  return false;
+#endif
+}
+
+static inline uint8_t gwenesis_vdp_gfx_remap_palette_index(uint8_t source)
+{
+#if GWENESIS_VDP_ASYNC_ENABLED
+  gwenesis_vdp_palette_remap_t *remap = gwenesis_vdp_gfx_render_ctx->palette_remap;
+  const uint16_t color = CRAM565[source];
+  if (!remap->source_valid[source] || remap->source_color[source] != color)
+  {
+    unsigned int mapped = 0;
+    for (; mapped < remap->color_count; ++mapped)
+    {
+      if (remap->output_palette[mapped] == color)
+        break;
+    }
+    if (mapped == remap->color_count)
+    {
+      if (remap->color_count < 256)
+      {
+        remap->output_palette[remap->color_count++] = color;
+      }
+      else
+      {
+        remap->overflow = true;
+        mapped = remap->source_valid[source] ? remap->source_map[source] : 0;
+      }
+    }
+    remap->source_color[source] = color;
+    remap->source_map[source] = (uint8_t)mapped;
+    remap->source_valid[source] = 1;
+  }
+  return remap->source_map[source];
+#else
+  return source;
+#endif
+}
+
 // 16 bits access to VRAM
 // #define FETCH16VRAM(A)  ({size_t addr = (A); (VRAM[addr+1]) | (VRAM[addr] << 8);})
 #define FETCH16VRAM(A)  ( (VRAM[(A)+1]) | (VRAM[(A)] << 8) )
@@ -1991,18 +2037,23 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 
   #else
 
+  const bool remap_palette = gwenesis_vdp_gfx_has_palette_remap();
   /* Mode Highlight/shadow is enabled */
   if (MODE_SHI) {
     for (int x = 0; x < screen_width; x++) {
       uint8_t plane = pb[x];
       uint8_t sprite = ps[x];
 
+      uint8_t output;
       if ((plane & 0xC0) < (sprite & 0xC0)) {
         uint8_t s = sprite & 0x3F;
-        screen_buffer_line[x] = (s >= 0x3E) ? plane : sprite;
+        output = (s >= 0x3E) ? plane : sprite;
       } else {
-        screen_buffer_line[x] = plane;
+        output = plane;
       }
+      screen_buffer_line[x] = remap_palette
+                                  ? gwenesis_vdp_gfx_remap_palette_index(output)
+                                  : output;
     }
 
     /* Normal mode*/
@@ -2017,7 +2068,15 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
       *video_out++ = CRAM565[pb[x]] | CRAM565[pb[x+1]] << 16;
     }
 #else
-  memcpy(screen_buffer_line, pb, screen_width);
+  if (remap_palette)
+  {
+    for (int x = 0; x < screen_width; ++x)
+      screen_buffer_line[x] = gwenesis_vdp_gfx_remap_palette_index(pb[x]);
+  }
+  else
+  {
+    memcpy(screen_buffer_line, pb, screen_width);
+  }
 #endif
   }
 

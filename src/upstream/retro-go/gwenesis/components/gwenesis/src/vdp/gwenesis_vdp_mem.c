@@ -425,6 +425,10 @@ static inline __attribute__((always_inline)) void gwenesis_vdp_register_w(int re
         return;
 
     gwenesis_vdp_async_mark_midframe_write();
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+    if (gwenesis_vdp_regs[reg] != value)
+      gwenesis_vdp_async_record_reg((unsigned int)reg, value);
+#endif
     gwenesis_vdp_regs[reg] = value;
     vdpm_log(__FUNCTION__, "reg:%02d <- %02x", reg, value);
 
@@ -478,6 +482,8 @@ void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
   gwenesis_vdp_snapshot_dirty_mark(address);
+  if (VRAM[address] != (unsigned char)value)
+    gwenesis_vdp_async_record_vram(address, value);
 #else
   gwenesis_vdp_async_mark_midframe_write();
 #endif
@@ -487,7 +493,46 @@ void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
   // Update internal SAT Cache
   // used in Castlevania Bloodlines
   if (address >= REG5_SAT_ADDRESS && address < REG5_SAT_ADDRESS + REG5_SAT_SIZE)
-    SAT_CACHE[address - REG5_SAT_ADDRESS] = value;
+  {
+    const unsigned int sat_offset = address - REG5_SAT_ADDRESS;
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+    const bool sat_changed = SAT_CACHE[sat_offset] != (unsigned char)value;
+#endif
+    SAT_CACHE[sat_offset] = value;
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+    if (sat_changed)
+      gwenesis_vdp_async_record_sat(sat_offset, value);
+#endif
+  }
+}
+
+static inline __attribute__((always_inline))
+void gwenesis_vdp_cram565_write(unsigned int index, unsigned short pixel)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  const bool changed = CRAM565[index] != pixel;
+#endif
+  CRAM565[index] = pixel;
+  CRAM565[0x40 + index] = pixel;
+  CRAM565[0x80 + index] = pixel;
+  CRAM565[0xC0 + index] = pixel;
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  if (changed)
+    gwenesis_vdp_async_record_cram565(index, pixel);
+#endif
+}
+
+static inline __attribute__((always_inline))
+void gwenesis_vdp_vsram_write(unsigned int index, unsigned short value)
+{
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  const bool changed = VSRAM[index] != value;
+#endif
+  VSRAM[index] = value;
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  if (changed)
+    gwenesis_vdp_async_record_vsram(index, value);
+#endif
 }
 
 static inline __attribute__((always_inline)) 
@@ -595,10 +640,7 @@ void gwenesis_vdp_dma_fill(unsigned short value)
       // pixel_highlight = pixel_shadow | 0x8410;
 
       // Normal pixel values when SHI is not enabled
-      CRAM565[(address_reg & 0x7f) >> 1] = pixel;
-      CRAM565[0x40 + ((address_reg & 0x7f) >> 1)] = pixel;
-      CRAM565[0x80 + ((address_reg & 0x7f) >> 1)] = pixel;
-      CRAM565[0xC0 + ((address_reg & 0x7f) >> 1)] = pixel;
+      gwenesis_vdp_cram565_write((address_reg & 0x7f) >> 1, pixel);
 
       address_reg += REG15_DMA_INCREMENT;
       src_addr_low++;
@@ -606,7 +648,7 @@ void gwenesis_vdp_dma_fill(unsigned short value)
     break;
   case 0x5: // undocumented and buggy, see vdpfifotesting:
     do {
-      VSRAM[(address_reg & 0x7f) >> 1] = fifo[3] & 0x03FF;
+      gwenesis_vdp_vsram_write((address_reg & 0x7f) >> 1, fifo[3] & 0x03FF);
       address_reg += REG15_DMA_INCREMENT;
       src_addr_low++;
     } while (--dma_length);
@@ -696,10 +738,7 @@ void gwenesis_vdp_dma_m68k()
 
           // Normal pixel values when SHI is not enabled
           // add mirror 0x80 when high priority flag is set
-          CRAM565[(address_reg & 0x7f) >> 1] = pixel;
-          CRAM565[0x40 + ((address_reg & 0x7f) >> 1)] = pixel;
-          CRAM565[0x80 + ((address_reg & 0x7f) >> 1)] = pixel;
-          CRAM565[0xC0 + ((address_reg & 0x7f) >> 1)] = pixel;
+          gwenesis_vdp_cram565_write((address_reg & 0x7f) >> 1, pixel);
 
           address_reg += REG15_DMA_INCREMENT;
           src_addr += 2;
@@ -711,7 +750,7 @@ void gwenesis_vdp_dma_m68k()
         do {
           value = FETCH16RAM( src_addr );
           push_fifo(value);
-          VSRAM[(address_reg & 0x7f) >> 1] = value & 0x03FF;
+          gwenesis_vdp_vsram_write((address_reg & 0x7f) >> 1, value & 0x03FF);
           address_reg += REG15_DMA_INCREMENT;
           src_addr += 2;
         } while (--dma_length);
@@ -760,10 +799,7 @@ void gwenesis_vdp_dma_m68k()
 
           // Normal pixel values when SHI is not enabled
           // add mirror 0x80 when high priority flag is set
-          CRAM565[(address_reg & 0x7f) >> 1] = pixel;
-          CRAM565[0x40 + ((address_reg & 0x7f) >> 1)] = pixel;
-          CRAM565[0x80 + ((address_reg & 0x7f) >> 1)] = pixel;
-          CRAM565[0xC0 + ((address_reg & 0x7f) >> 1)] = pixel;
+          gwenesis_vdp_cram565_write((address_reg & 0x7f) >> 1, pixel);
 
           address_reg += REG15_DMA_INCREMENT;
           src_addr += 2;
@@ -775,7 +811,7 @@ void gwenesis_vdp_dma_m68k()
         do {
           value = FETCH16ROM(src_addr);
           push_fifo(value);
-          VSRAM[(address_reg & 0x7f) >> 1] = value & 0x03FF;
+          gwenesis_vdp_vsram_write((address_reg & 0x7f) >> 1, value & 0x03FF);
           address_reg += REG15_DMA_INCREMENT;
           src_addr += 2;
         } while (--dma_length);
@@ -1005,10 +1041,7 @@ void gwenesis_vdp_write_data_port_16(unsigned int value)
             pixel |= (value & 0x00e) << 12;
 
             // Normal pixel values when SHI is not enabled
-            CRAM565[(address_reg & 0x7f) >> 1] = pixel;
-            CRAM565[0x40 + ((address_reg & 0x7f) >> 1)] = pixel;
-            CRAM565[0x80 + ((address_reg & 0x7f) >> 1)] = pixel;
-            CRAM565[0xC0 + ((address_reg & 0x7f) >> 1)] = pixel;
+            gwenesis_vdp_cram565_write((address_reg & 0x7f) >> 1, pixel);
 
             address_reg += REG15_DMA_INCREMENT;
             address_reg &= 0xFFFF;
@@ -1019,7 +1052,7 @@ void gwenesis_vdp_write_data_port_16(unsigned int value)
             //vdpm_log(__FUNCTION__,"VSRAM write : addr:%x increment:%d value:%04x",
             //  address_reg, REG15_DMA_INCREMENT, value);
            // printf("write dataport 16: VSRAM@%04x:%04x\n",address_reg,value);
-            VSRAM[(address_reg & 0x7f) >> 1] = value & 0X03FF;
+            gwenesis_vdp_vsram_write((address_reg & 0x7f) >> 1, value & 0X03FF);
             address_reg += REG15_DMA_INCREMENT;
             address_reg &= 0xFFFF;
             break;
