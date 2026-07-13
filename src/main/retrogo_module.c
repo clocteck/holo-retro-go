@@ -324,9 +324,9 @@ static int l_set_audio_eq(lua_State *L)
 {
     retrogo_instance_t *inst = instance_from_lua(L);
     const module_host_api_v2 *host = inst ? inst->host : s_host;
-    float freq_hz[2];
-    float gain_db[2];
-    float q[2];
+    float freq_hz[3];
+    float gain_db[3];
+    float q[3];
 
     if (!inst || !host)
         return push_error(L, host, "retrogo.set_audio_eq: instance missing");
@@ -342,13 +342,14 @@ static int l_set_audio_eq(lua_State *L)
     }
 
     if (!host->lua.istable(L, 1))
-        return push_error(L, host, "retrogo.set_audio_eq: expected {low={freq,gain,q}, mid={freq,gain,q}}");
+        return push_error(L, host, "retrogo.set_audio_eq: expected low/mid/high EQ bands");
 
     if (!read_audio_eq_band_any(L, host, 1, "low", "band1", "eq1", &freq_hz[0], &gain_db[0], &q[0]) ||
-        !read_audio_eq_band_any(L, host, 1, "mid", "band2", "eq2", &freq_hz[1], &gain_db[1], &q[1]))
-        return push_error(L, host, "retrogo.set_audio_eq: missing low/mid band freq,gain,q");
+        !read_audio_eq_band_any(L, host, 1, "mid", "band2", "eq2", &freq_hz[1], &gain_db[1], &q[1]) ||
+        !read_audio_eq_band_any(L, host, 1, "high", "band3", "eq3", &freq_hz[2], &gain_db[2], &q[2]))
+        return push_error(L, host, "retrogo.set_audio_eq: missing low/mid/high band freq,gain,q");
 
-    if (!gwenesis_audio_eq_set_peaking_bands(freq_hz, gain_db, q, 2))
+    if (!gwenesis_audio_eq_set_peaking_bands(freq_hz, gain_db, q, 3))
         return push_error(L, host, "retrogo.set_audio_eq: invalid EQ or audio already running");
 
     host->lua.pushboolean(L, 1);

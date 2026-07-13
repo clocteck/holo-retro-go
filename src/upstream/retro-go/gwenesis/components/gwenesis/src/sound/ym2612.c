@@ -2780,13 +2780,9 @@ void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v, int target)
 #endif
   ym_log(__FUNCTION__, " %06x : %02x", a, v);
 
-  /* Keep FM register updates line-batched in the low-cost Holo mode, but
-   * preserve timestamped DAC/PCM writes. Generate samples with the previous
-   * DAC state before applying data (0x2a) or enable (0x2b) changes. */
-  const unsigned int port = a & 0x3;
-  const unsigned int addr = ym2612.OPN.ST.address;
-  const bool dac_write = (port == 1 || port == 3) && (addr == 0x2a || addr == 0x2b);
-  if (GWENESIS_AUDIO_ACCURATE == 1 || dac_write)
+  /* Holo uses the line-batched path. Cycle-accurate builds still synchronize
+   * every register write before applying the new value. */
+  if (GWENESIS_AUDIO_ACCURATE == 1)
     ym2612_run(target);
 
   YM2612WriteCore(a, v);

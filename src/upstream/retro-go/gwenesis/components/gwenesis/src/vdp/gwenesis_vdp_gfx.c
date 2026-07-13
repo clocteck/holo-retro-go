@@ -371,50 +371,15 @@ void gwenesis_vdp_gfx_set_render_context(const gwenesis_vdp_render_context_t *ct
 }
 #endif
 
-static inline bool gwenesis_vdp_gfx_has_palette_remap(void)
+static inline const uint8_t *gwenesis_vdp_gfx_palette_lut(void)
 {
 #if GWENESIS_VDP_ASYNC_ENABLED
-  return gwenesis_vdp_gfx_render_ctx &&
-         gwenesis_vdp_gfx_render_ctx->palette_remap &&
-         gwenesis_vdp_gfx_render_ctx->palette_remap->output_palette;
-#else
-  return false;
+  if (gwenesis_vdp_gfx_render_ctx &&
+      gwenesis_vdp_gfx_render_ctx->palette_remap &&
+      gwenesis_vdp_gfx_render_ctx->palette_remap->output_palette)
+    return gwenesis_vdp_gfx_render_ctx->palette_remap->source_map;
 #endif
-}
-
-static inline uint8_t gwenesis_vdp_gfx_remap_palette_index(uint8_t source)
-{
-#if GWENESIS_VDP_ASYNC_ENABLED
-  gwenesis_vdp_palette_remap_t *remap = gwenesis_vdp_gfx_render_ctx->palette_remap;
-  const uint16_t color = CRAM565[source];
-  if (!remap->source_valid[source] || remap->source_color[source] != color)
-  {
-    unsigned int mapped = 0;
-    for (; mapped < remap->color_count; ++mapped)
-    {
-      if (remap->output_palette[mapped] == color)
-        break;
-    }
-    if (mapped == remap->color_count)
-    {
-      if (remap->color_count < 256)
-      {
-        remap->output_palette[remap->color_count++] = color;
-      }
-      else
-      {
-        remap->overflow = true;
-        mapped = remap->source_valid[source] ? remap->source_map[source] : 0;
-      }
-    }
-    remap->source_color[source] = color;
-    remap->source_map[source] = (uint8_t)mapped;
-    remap->source_valid[source] = 1;
-  }
-  return remap->source_map[source];
-#else
-  return source;
-#endif
+  return NULL;
 }
 
 // 16 bits access to VRAM
@@ -2037,7 +2002,7 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
 
   #else
 
-  const bool remap_palette = gwenesis_vdp_gfx_has_palette_remap();
+  const uint8_t *palette_lut = gwenesis_vdp_gfx_palette_lut();
   /* Mode Highlight/shadow is enabled */
   if (MODE_SHI) {
     for (int x = 0; x < screen_width; x++) {
@@ -2051,9 +2016,7 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
       } else {
         output = plane;
       }
-      screen_buffer_line[x] = remap_palette
-                                  ? gwenesis_vdp_gfx_remap_palette_index(output)
-                                  : output;
+      screen_buffer_line[x] = palette_lut ? palette_lut[output] : output;
     }
 
     /* Normal mode*/
@@ -2068,10 +2031,10 @@ void GWENESIS_HOT gwenesis_vdp_render_line(int line)
       *video_out++ = CRAM565[pb[x]] | CRAM565[pb[x+1]] << 16;
     }
 #else
-  if (remap_palette)
+  if (palette_lut)
   {
     for (int x = 0; x < screen_width; ++x)
-      screen_buffer_line[x] = gwenesis_vdp_gfx_remap_palette_index(pb[x]);
+      screen_buffer_line[x] = palette_lut[pb[x]];
   }
   else
   {

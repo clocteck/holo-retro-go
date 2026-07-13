@@ -139,6 +139,7 @@ local APP = {
     md = {
       low = { type = "peak", freq = 240, gain = 6.5, q = 0.65 },
       mid = { type = "peak", freq = 1200, gain = -4.0, q = 0.65 },
+      high = { type = "peak", freq = 3150, gain = -2.5, q = 0.85 },
     },
   },
   MODULES = {

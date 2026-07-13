@@ -481,9 +481,17 @@ static inline __attribute__((always_inline))
 void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 {
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  const unsigned char byte_value = (unsigned char)value;
+  const bool vram_changed = VRAM[address] != byte_value;
+  const unsigned int sat_address = REG5_SAT_ADDRESS;
+  const unsigned int sat_size = REG5_SAT_SIZE;
+  const bool update_sat = address >= sat_address && address < sat_address + sat_size;
+  const unsigned int sat_offset = update_sat ? address - sat_address : 0;
+  const bool sat_changed = update_sat && SAT_CACHE[sat_offset] != byte_value;
+
   gwenesis_vdp_snapshot_dirty_mark(address);
-  if (VRAM[address] != (unsigned char)value)
-    gwenesis_vdp_async_record_vram(address, value);
+  if (vram_changed || sat_changed)
+    gwenesis_vdp_async_record_vram(address, value, update_sat);
 #else
   gwenesis_vdp_async_mark_midframe_write();
 #endif
@@ -492,18 +500,15 @@ void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 
   // Update internal SAT Cache
   // used in Castlevania Bloodlines
-  if (address >= REG5_SAT_ADDRESS && address < REG5_SAT_ADDRESS + REG5_SAT_SIZE)
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  if (update_sat)
   {
-    const unsigned int sat_offset = address - REG5_SAT_ADDRESS;
-#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-    const bool sat_changed = SAT_CACHE[sat_offset] != (unsigned char)value;
-#endif
     SAT_CACHE[sat_offset] = value;
-#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-    if (sat_changed)
-      gwenesis_vdp_async_record_sat(sat_offset, value);
-#endif
   }
+#else
+  if (address >= REG5_SAT_ADDRESS && address < REG5_SAT_ADDRESS + REG5_SAT_SIZE)
+    SAT_CACHE[address - REG5_SAT_ADDRESS] = value;
+#endif
 }
 
 static inline __attribute__((always_inline))

@@ -87,6 +87,12 @@ static rg_app_t *app;
 static void *update_data_base[GWENESIS_SURFACE_COUNT];
 static int update_height_base[GWENESIS_SURFACE_COUNT];
 static rg_audio_frame_t *gwenesis_audio_mix_buffer;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static rg_audio_frame_t *gwenesis_audio_ring_buffer;
+static rg_audio_frame_t *gwenesis_audio_ring_drain_buffer;
+static uint32_t gwenesis_audio_ring_read;
+static uint32_t gwenesis_audio_ring_write;
+#endif
 
 static const char *SETTING_AUDIO_MODE = "audio_mode";
 static const char *SETTING_Z80_ENABLE = "z80_enable";
@@ -105,20 +111,25 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_SURFACE_HEIGHT 241
 #define GWENESIS_SURFACE_FORMAT RG_PIXEL_PAL565_BE
 #endif
-#define GWENESIS_AUDIO_QUEUE_PACKETS 5
-#define GWENESIS_AUDIO_PREBUFFER_PACKETS 4
 #define GWENESIS_AUDIO_UNDERFLOW_CHUNK_FRAMES 64
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_AUDIO_TASK_STACK (3 * 1024)
-#define GWENESIS_AUDIO_TASK_CORE 0
+#define GWENESIS_AUDIO_RING_FRAMES 1024
+#define GWENESIS_AUDIO_RING_SUBMIT_FRAMES 85
+#define GWENESIS_AUDIO_RING_CRITICAL_FRAMES 171
+#define GWENESIS_AUDIO_RING_LOW_FRAMES 512
+#define GWENESIS_AUDIO_RING_TARGET_FRAMES 683
+#define GWENESIS_AUDIO_RING_HIGH_FRAMES 733
+#define GWENESIS_AUDIO_RING_BLOCK_FRAMES 933
+#define GWENESIS_AUDIO_HIGH_WATER_PAUSE_MS 7
+#define GWENESIS_AUDIO_OUTPUT_TASK_STACK (3 * 1024)
+#define GWENESIS_AUDIO_OUTPUT_TASK_CORE 0
+#define GWENESIS_AUDIO_RING_MEM MEM_FAST
 #define GWENESIS_VDP_ASYNC_TASK_CORE 0
 #define GWENESIS_VRAM_MEM MEM_SLOW
 #define GWENESIS_VRAM_MEM_NAME "MEM_SLOW"
 #define GWENESIS_VRAM_FALLBACK_MEM MEM_SLOW
 #define GWENESIS_VRAM_FALLBACK_MEM_NAME "MEM_SLOW"
 #else
-#define GWENESIS_AUDIO_TASK_STACK (4 * 1024 - 256)
-#define GWENESIS_AUDIO_TASK_CORE 0
 #define GWENESIS_VDP_ASYNC_TASK_CORE 0
 #define GWENESIS_VRAM_MEM MEM_FAST
 #define GWENESIS_VRAM_MEM_NAME "MEM_FAST"
@@ -126,7 +137,6 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_VRAM_FALLBACK_MEM_NAME "MEM_FAST"
 #endif
 #if defined(RG_TARGET_HOLO_DYNMOD)
-#define GWENESIS_AUDIO_QUEUE_MEM MEM_FAST
 #ifndef GWENESIS_PROFILER_DETAILED
 #define GWENESIS_PROFILER_DETAILED 1
 #endif
@@ -137,7 +147,6 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_MONITOR_EXTRA_ENABLED 0
 #endif
 #else
-#define GWENESIS_AUDIO_QUEUE_MEM MEM_FAST
 #ifndef GWENESIS_PROFILER_DETAILED
 #define GWENESIS_PROFILER_DETAILED 0
 #endif
@@ -168,10 +177,11 @@ static bool gwenesis_perf_overlay_enabled;
 #define GWENESIS_VDP_EVENT_FAST_CAPACITY 128U
 #define GWENESIS_VDP_EVENT_DATA_CAPACITY (256U * 1024U)
 #define GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY 512U
+#define GWENESIS_VDP_EVENT_MEMCPY_MIN 16U
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 52
+#define GWENESIS_FRAME_TARGET_FPS 50
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
@@ -225,17 +235,10 @@ static int frame_yield_count;
 #define GWENESIS_YM_BATCH_LINES_FAST 1
 #define GWENESIS_YM_BATCH_LINES_BALANCE 1
 #endif
-typedef struct
-{
-    size_t count;
-    rg_audio_frame_t frames[AUDIO_BUFFER_LENGTH];
-} gwenesis_audio_packet_t;
-
-static gwenesis_audio_packet_t *gwenesis_audio_queue;
-static rg_task_t *gwenesis_audio_task_handle;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static rg_task_t *gwenesis_audio_output_task_handle;
+#endif
 static volatile bool gwenesis_audio_task_running;
-static uint32_t gwenesis_audio_queue_read;
-static uint32_t gwenesis_audio_queue_write;
 static bool gwenesis_cleaned_up;
 #if GWENESIS_VDP_ASYNC_ENABLED
 static rg_task_t *gwenesis_vdp_async_task_handle;
@@ -831,7 +834,7 @@ static inline int32_t gwenesis_audio_scale(int32_t value)
 }
 
 #if GWENESIS_AUDIO_EQ_ENABLED
-#define GWENESIS_AUDIO_EQ_BANDS 2
+#define GWENESIS_AUDIO_EQ_BANDS 3
 #define GWENESIS_AUDIO_EQ_PI 3.14159265358979323846f
 
 typedef struct
@@ -857,6 +860,8 @@ static const gwenesis_audio_eq_band_t gwenesis_audio_eq_default[GWENESIS_AUDIO_E
     {300.0f, 5.5f, 0.667f},
     /* 1.8kHz -3dB, Q=0.6 (1k-4kHz), fs=11050 */
     {1800.0f, -3.0f, 0.6f},
+    /* 3.15kHz -2.5dB, Q=0.85 (1.8k-5.5kHz), fs=11050 */
+    {3150.0f, -2.5f, 0.85f},
 };
 static gwenesis_audio_biquad_t gwenesis_audio_eq[GWENESIS_AUDIO_EQ_BANDS];
 static bool gwenesis_audio_eq_configured;
@@ -999,33 +1004,26 @@ static void gwenesis_audio_eq_process_frames(rg_audio_frame_t *frames, size_t co
 }
 #endif
 
-static bool gwenesis_audio_queue_push(const rg_audio_frame_t *frames, size_t count)
+#if defined(RG_TARGET_HOLO_DYNMOD)
+static uint32_t gwenesis_audio_ring_fill(void)
 {
-    if (!gwenesis_audio_queue || !frames || count == 0)
-        return false;
+    const uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+    const uint32_t write = __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE);
+    uint32_t fill = write - read;
+    if (fill > GWENESIS_AUDIO_RING_FRAMES)
+        fill = GWENESIS_AUDIO_RING_FRAMES;
+    return fill;
+}
 
-    if (count > AUDIO_BUFFER_LENGTH)
-        count = AUDIO_BUFFER_LENGTH;
+static bool gwenesis_audio_block_water_now(void)
+{
+    return gwenesis_audio_ring_fill() >= GWENESIS_AUDIO_RING_BLOCK_FRAMES;
+}
 
-    while (gwenesis_audio_task_running)
-    {
-        const uint32_t read = __atomic_load_n(&gwenesis_audio_queue_read, __ATOMIC_ACQUIRE);
-        const uint32_t write = __atomic_load_n(&gwenesis_audio_queue_write, __ATOMIC_ACQUIRE);
-        const uint32_t used = write - read;
-
-        if (used < GWENESIS_AUDIO_QUEUE_PACKETS)
-        {
-            gwenesis_audio_packet_t *packet = &gwenesis_audio_queue[write % GWENESIS_AUDIO_QUEUE_PACKETS];
-            packet->count = count;
-            memcpy(packet->frames, frames, count * sizeof(packet->frames[0]));
-            __atomic_store_n(&gwenesis_audio_queue_write, write + 1, __ATOMIC_RELEASE);
-            return true;
-        }
-
-        rg_task_delay(1);
-    }
-
-    return false;
+static void gwenesis_audio_wait_below_block_water(void)
+{
+    while (gwenesis_audio_task_running && gwenesis_audio_block_water_now())
+        rg_task_delay(4);
 }
 
 static void gwenesis_audio_make_fade_out(rg_audio_frame_t *frames, size_t count, rg_audio_frame_t start)
@@ -1063,7 +1061,101 @@ static void gwenesis_audio_apply_fade_in(rg_audio_frame_t *frames, size_t count)
         frames[i].right = (int16_t)(((int32_t)frames[i].right * scale) / denom);
     }
 }
-static void gwenesis_audio_task(void *arg)
+
+static size_t gwenesis_audio_ring_drain(bool force, bool fade_in)
+{
+    if (!gwenesis_audio_ring_buffer || !gwenesis_audio_ring_drain_buffer)
+        return 0;
+
+    const uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+    const uint32_t write = __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE);
+    uint32_t fill = write - read;
+    if (fill == 0)
+        return 0;
+    if (fill > GWENESIS_AUDIO_RING_FRAMES)
+        fill = GWENESIS_AUDIO_RING_FRAMES;
+
+    const size_t count = fill >= GWENESIS_AUDIO_RING_SUBMIT_FRAMES
+                             ? GWENESIS_AUDIO_RING_SUBMIT_FRAMES
+                             : (force ? fill : 0);
+    if (count == 0)
+        return 0;
+
+    const size_t index = read % GWENESIS_AUDIO_RING_FRAMES;
+    size_t first = GWENESIS_AUDIO_RING_FRAMES - index;
+    if (first > count)
+        first = count;
+    memcpy(gwenesis_audio_ring_drain_buffer,
+           &gwenesis_audio_ring_buffer[index],
+           first * sizeof(gwenesis_audio_ring_drain_buffer[0]));
+    if (first < count)
+    {
+        memcpy(&gwenesis_audio_ring_drain_buffer[first],
+               gwenesis_audio_ring_buffer,
+               (count - first) * sizeof(gwenesis_audio_ring_drain_buffer[0]));
+    }
+
+    gwenesis_audio_eq_process_frames(gwenesis_audio_ring_drain_buffer, count);
+    if (fade_in)
+        gwenesis_audio_apply_fade_in(gwenesis_audio_ring_drain_buffer, count);
+    rg_audio_submit(gwenesis_audio_ring_drain_buffer, count);
+    __atomic_store_n(&gwenesis_audio_ring_read, read + (uint32_t)count, __ATOMIC_RELEASE);
+    return count;
+}
+
+static size_t gwenesis_audio_ring_write_frames(const rg_audio_frame_t *frames, size_t count)
+{
+    if (!gwenesis_audio_ring_buffer || !frames || count == 0)
+        return 0;
+
+    size_t offset = 0;
+    while (offset < count && gwenesis_audio_task_running)
+    {
+        uint32_t read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+        const uint32_t write = __atomic_load_n(&gwenesis_audio_ring_write, __ATOMIC_ACQUIRE);
+        uint32_t used = write - read;
+        if (used > GWENESIS_AUDIO_RING_FRAMES)
+            used = GWENESIS_AUDIO_RING_FRAMES;
+
+        while (gwenesis_audio_task_running && used >= GWENESIS_AUDIO_RING_BLOCK_FRAMES)
+        {
+            rg_task_delay(4);
+            read = __atomic_load_n(&gwenesis_audio_ring_read, __ATOMIC_ACQUIRE);
+            used = write - read;
+            if (used > GWENESIS_AUDIO_RING_FRAMES)
+                used = GWENESIS_AUDIO_RING_FRAMES;
+        }
+        if (!gwenesis_audio_task_running)
+            break;
+
+        size_t space = GWENESIS_AUDIO_RING_FRAMES - used;
+        size_t copy_count = count - offset;
+        if (copy_count > space)
+            copy_count = space;
+        if (copy_count == 0)
+            continue;
+
+        const size_t index = write % GWENESIS_AUDIO_RING_FRAMES;
+        size_t first = GWENESIS_AUDIO_RING_FRAMES - index;
+        if (first > copy_count)
+            first = copy_count;
+        memcpy(&gwenesis_audio_ring_buffer[index],
+               &frames[offset],
+               first * sizeof(gwenesis_audio_ring_buffer[0]));
+        if (first < copy_count)
+        {
+            memcpy(gwenesis_audio_ring_buffer,
+                   &frames[offset + first],
+                   (copy_count - first) * sizeof(gwenesis_audio_ring_buffer[0]));
+        }
+
+        __atomic_store_n(&gwenesis_audio_ring_write, write + (uint32_t)copy_count, __ATOMIC_RELEASE);
+        offset += copy_count;
+    }
+    return offset;
+}
+
+static void gwenesis_audio_output_task(void *arg)
 {
     rg_audio_frame_t generated[GWENESIS_AUDIO_UNDERFLOW_CHUNK_FRAMES];
     rg_audio_frame_t last_frame = {0, 0};
@@ -1072,29 +1164,20 @@ static void gwenesis_audio_task(void *arg)
     bool was_underflowing = false;
     (void)arg;
 
-    while (gwenesis_audio_task_running ||
-           __atomic_load_n(&gwenesis_audio_queue_read, __ATOMIC_ACQUIRE) !=
-               __atomic_load_n(&gwenesis_audio_queue_write, __ATOMIC_ACQUIRE))
+    while (gwenesis_audio_task_running || gwenesis_audio_ring_fill() > 0)
     {
-        uint32_t read = __atomic_load_n(&gwenesis_audio_queue_read, __ATOMIC_RELAXED);
-        const uint32_t write = __atomic_load_n(&gwenesis_audio_queue_write, __ATOMIC_ACQUIRE);
-        const uint32_t used = write - read;
+        const uint32_t fill = gwenesis_audio_ring_fill();
 
-        if (gwenesis_audio_task_running && prebuffering && used < GWENESIS_AUDIO_PREBUFFER_PACKETS)
+        if (fill == 0)
         {
-            rg_task_delay(1);
-            continue;
-        }
-        prebuffering = false;
-
-        if (read == write)
-        {
+            if (!gwenesis_audio_task_running)
+                break;
             if (have_last_frame)
             {
-                printf("[warn] Genesis audio underflow queue empty\n");
+                printf("[warn] Genesis audio underflow ring empty\n");
                 gwenesis_audio_make_fade_out(generated, RG_COUNT(generated), last_frame);
-                have_last_frame = false;
                 rg_audio_submit(generated, RG_COUNT(generated));
+                have_last_frame = false;
                 was_underflowing = true;
             }
             prebuffering = true;
@@ -1102,90 +1185,115 @@ static void gwenesis_audio_task(void *arg)
             continue;
         }
 
-        gwenesis_audio_packet_t *packet = &gwenesis_audio_queue[read % GWENESIS_AUDIO_QUEUE_PACKETS];
-        const size_t count = RG_MIN(packet->count, (size_t)AUDIO_BUFFER_LENGTH);
+        if (gwenesis_audio_task_running && prebuffering && fill < GWENESIS_AUDIO_RING_TARGET_FRAMES)
+        {
+            rg_task_delay(1);
+            continue;
+        }
+        prebuffering = false;
 
+        const size_t count = gwenesis_audio_ring_drain(!gwenesis_audio_task_running,
+                                                       was_underflowing);
         if (count > 0)
         {
-            gwenesis_audio_eq_process_frames(packet->frames, count);
-            if (was_underflowing)
-            {
-                gwenesis_audio_apply_fade_in(packet->frames, count);
-                was_underflowing = false;
-            }
-            rg_audio_submit(packet->frames, count);
-            last_frame = packet->frames[count - 1];
+            last_frame = gwenesis_audio_ring_drain_buffer[count - 1];
             have_last_frame = true;
+            was_underflowing = false;
+            continue;
         }
-
-        read++;
-        __atomic_store_n(&gwenesis_audio_queue_read, read, __ATOMIC_RELEASE);
+        rg_task_delay(1);
     }
 
-    gwenesis_audio_task_handle = NULL;
+    gwenesis_audio_output_task_handle = NULL;
 }
+#endif
 
 static bool gwenesis_audio_start(void)
 {
     gwenesis_audio_mix_buffer = rg_alloc(sizeof(*gwenesis_audio_mix_buffer) * AUDIO_BUFFER_LENGTH,
                                          MEM_FAST | MEM_NOPANIC);
-    gwenesis_audio_queue = rg_alloc(sizeof(*gwenesis_audio_queue) * GWENESIS_AUDIO_QUEUE_PACKETS,
-                                    GWENESIS_AUDIO_QUEUE_MEM | MEM_NOPANIC);
-    if (!gwenesis_audio_mix_buffer || !gwenesis_audio_queue)
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    gwenesis_audio_ring_buffer =
+        rg_alloc(sizeof(*gwenesis_audio_ring_buffer) * GWENESIS_AUDIO_RING_FRAMES,
+                 GWENESIS_AUDIO_RING_MEM | MEM_NOPANIC);
+    gwenesis_audio_ring_drain_buffer =
+        rg_alloc(sizeof(*gwenesis_audio_ring_drain_buffer) * GWENESIS_AUDIO_RING_SUBMIT_FRAMES,
+                 GWENESIS_AUDIO_RING_MEM | MEM_NOPANIC);
+#endif
+    if (!gwenesis_audio_mix_buffer
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        || !gwenesis_audio_ring_buffer || !gwenesis_audio_ring_drain_buffer
+#endif
+    )
         goto fail;
 
-    __atomic_store_n(&gwenesis_audio_queue_read, 0, __ATOMIC_RELEASE);
-    __atomic_store_n(&gwenesis_audio_queue_write, 0, __ATOMIC_RELEASE);
     gwenesis_audio_eq_reset();
 
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    __atomic_store_n(&gwenesis_audio_ring_read, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&gwenesis_audio_ring_write, 0, __ATOMIC_RELEASE);
     gwenesis_audio_task_running = true;
-    gwenesis_audio_task_handle = rg_task_create("gwen_audio", gwenesis_audio_task, NULL,
-                                                GWENESIS_AUDIO_TASK_STACK, RG_TASK_PRIORITY_3,
-                                                GWENESIS_AUDIO_TASK_CORE);
-    if (!gwenesis_audio_task_handle)
+    gwenesis_audio_output_task_handle =
+        rg_task_create("gwen_aout", gwenesis_audio_output_task, NULL,
+                       GWENESIS_AUDIO_OUTPUT_TASK_STACK, RG_TASK_PRIORITY_3,
+                       GWENESIS_AUDIO_OUTPUT_TASK_CORE);
+    if (!gwenesis_audio_output_task_handle)
     {
         gwenesis_audio_task_running = false;
-        free(gwenesis_audio_queue);
-        gwenesis_audio_queue = NULL;
-        RG_LOGW("Genesis audio task unavailable, using direct audio\n");
+        free(gwenesis_audio_ring_buffer);
+        gwenesis_audio_ring_buffer = NULL;
+        free(gwenesis_audio_ring_drain_buffer);
+        gwenesis_audio_ring_drain_buffer = NULL;
+        RG_LOGW("Genesis audio output task unavailable, using direct audio\n");
     }
     else
     {
-        RG_LOGI("Genesis audio task started on core %d, queue=%d packets\n",
-                GWENESIS_AUDIO_TASK_CORE, GWENESIS_AUDIO_QUEUE_PACKETS);
+        RG_LOGI("Genesis audio output task started on core %d, ring=%d target=%d\n",
+                GWENESIS_AUDIO_OUTPUT_TASK_CORE,
+                GWENESIS_AUDIO_RING_FRAMES,
+                GWENESIS_AUDIO_RING_TARGET_FRAMES);
     }
+#endif
 
     return true;
 
 fail:
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    free(gwenesis_audio_ring_buffer);
+    gwenesis_audio_ring_buffer = NULL;
+    free(gwenesis_audio_ring_drain_buffer);
+    gwenesis_audio_ring_drain_buffer = NULL;
+#endif
     free(gwenesis_audio_mix_buffer);
     gwenesis_audio_mix_buffer = NULL;
-    free(gwenesis_audio_queue);
-    gwenesis_audio_queue = NULL;
     return false;
 }
 
 static void gwenesis_audio_stop(void)
 {
-    if (gwenesis_audio_task_handle)
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (gwenesis_audio_output_task_handle)
     {
-        const uint32_t write = __atomic_load_n(&gwenesis_audio_queue_write, __ATOMIC_ACQUIRE);
-        __atomic_store_n(&gwenesis_audio_queue_read, write, __ATOMIC_RELEASE);
         gwenesis_audio_task_running = false;
 
         int waited = 0;
-        while (rg_task_find("gwen_audio"))
+        while (rg_task_find("gwen_aout"))
         {
             if (waited++ == 500)
-                RG_LOGW("Waiting for Genesis audio task to stop\n");
+                RG_LOGW("Waiting for Genesis audio output task to stop\n");
             rg_task_delay(1);
         }
     }
 
-    gwenesis_audio_task_handle = NULL;
+    gwenesis_audio_output_task_handle = NULL;
     gwenesis_audio_task_running = false;
-    free(gwenesis_audio_queue);
-    gwenesis_audio_queue = NULL;
+    free(gwenesis_audio_ring_buffer);
+    gwenesis_audio_ring_buffer = NULL;
+    free(gwenesis_audio_ring_drain_buffer);
+    gwenesis_audio_ring_drain_buffer = NULL;
+    __atomic_store_n(&gwenesis_audio_ring_read, 0, __ATOMIC_RELEASE);
+    __atomic_store_n(&gwenesis_audio_ring_write, 0, __ATOMIC_RELEASE);
+#endif
     free(gwenesis_audio_mix_buffer);
     gwenesis_audio_mix_buffer = NULL;
 }
@@ -1195,8 +1303,18 @@ static void gwenesis_audio_submit_frames(rg_audio_frame_t *frames, size_t count)
     if (!frames || count == 0)
         return;
 
-    if (gwenesis_audio_task_handle && gwenesis_audio_queue_push(frames, count))
-        return;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (gwenesis_audio_output_task_handle)
+    {
+        const size_t written = gwenesis_audio_ring_write_frames(frames, count);
+        if (written == count)
+            return;
+        frames += written;
+        count -= written;
+        if (count == 0)
+            return;
+    }
+#endif
 
     gwenesis_audio_eq_process_frames(frames, count);
     rg_audio_submit(frames, count);
@@ -1490,7 +1608,9 @@ typedef enum
 {
     GWENESIS_VDP_EVENT_REG8 = 0,
     GWENESIS_VDP_EVENT_VRAM_RUN,
-    GWENESIS_VDP_EVENT_SAT8,
+    GWENESIS_VDP_EVENT_VRAM_SAT_RUN,
+    GWENESIS_VDP_EVENT_VRAM_FILL,
+    GWENESIS_VDP_EVENT_VRAM_SAT_FILL,
     GWENESIS_VDP_EVENT_CRAM565,
     GWENESIS_VDP_EVENT_VSRAM16,
 } gwenesis_vdp_event_type_t;
@@ -1536,7 +1656,9 @@ static gwenesis_vdp_async_job_t *gwenesis_vdp_async_jobs;
 #else
 static gwenesis_vdp_async_job_t gwenesis_vdp_async_jobs[GWENESIS_VDP_ASYNC_JOBS];
 #endif
-static gwenesis_vdp_async_job_t *volatile gwenesis_vdp_async_recording_job;
+/* Only the emulation task accesses this pointer. Publishing a completed job
+ * to the render task is synchronized through the job state release/acquire. */
+static gwenesis_vdp_async_job_t *gwenesis_vdp_async_recording_job;
 static gwenesis_vdp_palette_remap_t *gwenesis_vdp_palette_remap;
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_VRAM_MEM == MEM_FAST
 static unsigned char *gwenesis_vdp_async_reserved_vram[GWENESIS_VDP_ASYNC_JOBS];
@@ -1691,8 +1813,7 @@ static void gwenesis_vdp_async_begin_frame(uint32_t frame_id)
 
 static inline gwenesis_vdp_async_job_t *gwenesis_vdp_async_event_job(void)
 {
-    gwenesis_vdp_async_job_t *job =
-        __atomic_load_n(&gwenesis_vdp_async_recording_job, __ATOMIC_ACQUIRE);
+    gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_recording_job;
     if (!job || scan_line < 0 || scan_line >= job->screen_height)
         return NULL;
     return job;
@@ -1722,6 +1843,36 @@ static inline unsigned char gwenesis_vdp_async_event_data_load(
     if (offset < GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY)
         return job->event_data_fast[offset];
     return job->event_data_slow[offset - GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY];
+}
+
+static void gwenesis_vdp_async_event_data_copy(const gwenesis_vdp_async_job_t *job,
+                                                uint32_t offset,
+                                                unsigned char *destination,
+                                                size_t length)
+{
+    while (length > 0)
+    {
+        const unsigned char *source;
+        size_t chunk;
+        if (offset < GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY)
+        {
+            source = job->event_data_fast + offset;
+            chunk = GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY - offset;
+        }
+        else
+        {
+            const uint32_t slow_offset = offset - GWENESIS_VDP_EVENT_DATA_FAST_CAPACITY;
+            source = job->event_data_slow + slow_offset;
+            chunk = GWENESIS_VDP_EVENT_DATA_CAPACITY - offset;
+        }
+        if (chunk > length)
+            chunk = length;
+
+        memcpy(destination, source, chunk);
+        destination += chunk;
+        offset += (uint32_t)chunk;
+        length -= chunk;
+    }
 }
 
 static void gwenesis_vdp_async_record_scalar(gwenesis_vdp_event_type_t type,
@@ -1764,11 +1915,6 @@ void gwenesis_vdp_async_record_reg(unsigned int reg, unsigned int value)
     gwenesis_vdp_async_record_scalar(GWENESIS_VDP_EVENT_REG8, reg, value & 0xFFU);
 }
 
-void gwenesis_vdp_async_record_sat(unsigned int offset, unsigned int value)
-{
-    gwenesis_vdp_async_record_scalar(GWENESIS_VDP_EVENT_SAT8, offset, value & 0xFFU);
-}
-
 void gwenesis_vdp_async_record_cram565(unsigned int index, unsigned int value)
 {
     gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_event_job();
@@ -1782,25 +1928,40 @@ void gwenesis_vdp_async_record_vsram(unsigned int index, unsigned int value)
     gwenesis_vdp_async_record_scalar(GWENESIS_VDP_EVENT_VSRAM16, index, value & 0xFFFFU);
 }
 
-void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value)
+void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value,
+                                    bool update_sat)
 {
     gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_event_job();
     if (!job || job->event_overflow)
         return;
-    if (job->event_data_size >= GWENESIS_VDP_EVENT_DATA_CAPACITY)
-    {
-        job->event_overflow = true;
-        return;
-    }
 
+    const uint8_t run_type = update_sat ? GWENESIS_VDP_EVENT_VRAM_SAT_RUN
+                                        : GWENESIS_VDP_EVENT_VRAM_RUN;
+    const uint8_t fill_type = update_sat ? GWENESIS_VDP_EVENT_VRAM_SAT_FILL
+                                         : GWENESIS_VDP_EVENT_VRAM_FILL;
+    const unsigned char byte_value = (unsigned char)value;
     gwenesis_vdp_event_t *last = NULL;
     if (job->event_count > 0)
     {
         last = gwenesis_vdp_async_event_at(job, job->event_count - 1);
-        if (last->type != GWENESIS_VDP_EVENT_VRAM_RUN ||
-            last->line != (uint8_t)scan_line ||
-            last->data + last->count != job->event_data_size ||
-            last->count == UINT16_MAX)
+        if (last->line != (uint8_t)scan_line || last->count == UINT16_MAX)
+        {
+            last = NULL;
+        }
+        else if (last->type == fill_type)
+        {
+            const uint16_t expected =
+                (uint16_t)(last->address + (int32_t)last->stride * last->count);
+            if ((unsigned char)last->data == byte_value &&
+                expected == (uint16_t)address)
+            {
+                last->count++;
+                return;
+            }
+            last = NULL;
+        }
+        else if (last->type != run_type ||
+                 last->data + last->count != job->event_data_size)
         {
             last = NULL;
         }
@@ -1811,7 +1972,21 @@ void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value)
         const int16_t stride = (int16_t)((uint16_t)address - last->address);
         if (stride == 0)
         {
-            gwenesis_vdp_async_event_data_store(job, last->data, (unsigned char)value);
+            gwenesis_vdp_async_event_data_store(job, last->data, byte_value);
+            return;
+        }
+
+        const unsigned char first_value =
+            gwenesis_vdp_async_event_data_load(job, last->data);
+        if (first_value == byte_value)
+        {
+            /* The only byte owned by this event is the newest event-data byte,
+             * so it can be reclaimed when the run becomes an inline fill. */
+            job->event_data_size--;
+            last->data = byte_value;
+            last->stride = stride;
+            last->count = 2;
+            last->type = fill_type;
             return;
         }
         last->stride = stride;
@@ -1826,7 +2001,8 @@ void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value)
 
     if (!last)
     {
-        if (job->event_count >= GWENESIS_VDP_EVENT_CAPACITY)
+        if (job->event_count >= GWENESIS_VDP_EVENT_CAPACITY ||
+            job->event_data_size >= GWENESIS_VDP_EVENT_DATA_CAPACITY)
         {
             job->event_overflow = true;
             return;
@@ -1837,10 +2013,15 @@ void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value)
         last->address = (uint16_t)address;
         last->count = 0;
         last->stride = 0;
-        last->type = GWENESIS_VDP_EVENT_VRAM_RUN;
+        last->type = run_type;
+    }
+    else if (job->event_data_size >= GWENESIS_VDP_EVENT_DATA_CAPACITY)
+    {
+        job->event_overflow = true;
+        return;
     }
 
-    gwenesis_vdp_async_event_data_store(job, job->event_data_size++, (unsigned char)value);
+    gwenesis_vdp_async_event_data_store(job, job->event_data_size++, byte_value);
     last->count++;
 }
 
@@ -2054,15 +2235,14 @@ static bool gwenesis_vdp_async_begin_snapshot(uint32_t frame_id, int frame_width
     }
 
     __atomic_store_n(&job->state, GWENESIS_VDP_JOB_RECORDING, __ATOMIC_RELEASE);
-    __atomic_store_n(&gwenesis_vdp_async_recording_job, job, __ATOMIC_RELEASE);
+    gwenesis_vdp_async_recording_job = job;
     return true;
 }
 
 static void gwenesis_vdp_async_seal_snapshot(uint32_t frame_id)
 {
-    gwenesis_vdp_async_job_t *job =
-        __atomic_load_n(&gwenesis_vdp_async_recording_job, __ATOMIC_ACQUIRE);
-    __atomic_store_n(&gwenesis_vdp_async_recording_job, NULL, __ATOMIC_RELEASE);
+    gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_recording_job;
+    gwenesis_vdp_async_recording_job = NULL;
     if (!job || job->frame_id != frame_id)
         return;
 
@@ -2085,6 +2265,177 @@ static void gwenesis_vdp_async_seal_snapshot(uint32_t frame_id)
     gwenesis_vdp_async_wake_worker();
 }
 
+static uint8_t gwenesis_vdp_async_palette_intern(gwenesis_vdp_palette_remap_t *remap,
+                                                  unsigned short color,
+                                                  uint8_t fallback)
+{
+    unsigned int mapped = 0;
+    for (; mapped < remap->color_count; ++mapped)
+    {
+        if (remap->output_palette[mapped] == color)
+            return (uint8_t)mapped;
+    }
+
+    if (remap->color_count < 256)
+    {
+        mapped = remap->color_count++;
+        remap->output_palette[mapped] = color;
+        return (uint8_t)mapped;
+    }
+
+    remap->overflow = true;
+    return fallback;
+}
+
+static void gwenesis_vdp_async_palette_remap_begin(gwenesis_vdp_async_job_t *job)
+{
+    if (!job->remap_palette || !gwenesis_vdp_palette_remap)
+        return;
+
+    gwenesis_vdp_palette_remap_t *remap = gwenesis_vdp_palette_remap;
+    memset(remap, 0, sizeof(*remap));
+    memset(job->surface->palette, 0, sizeof(*job->surface->palette) * 256);
+    remap->output_palette = job->surface->palette;
+
+    /* Build the complete source-index LUT once from the frame-start CRAM.
+     * CRAM565 contains four 64-entry mirrors, so this normally interns at
+     * most 64 colors instead of doing validation and lookup for every pixel. */
+    for (unsigned int source = 0; source < 256; ++source)
+    {
+        remap->source_map[source] =
+            gwenesis_vdp_async_palette_intern(remap, job->cram565[source], 0);
+    }
+}
+
+static inline unsigned int gwenesis_vdp_async_job_sat_address(
+    const gwenesis_vdp_async_job_t *job)
+{
+    const unsigned int mask = (job->regs[12] & 0x01U) ? 0x7EU : 0x7FU;
+    return (job->regs[5] & mask) << 9;
+}
+
+static inline unsigned int gwenesis_vdp_async_job_sat_size(
+    const gwenesis_vdp_async_job_t *job)
+{
+    return (job->regs[12] & 0x01U) ? 0x400U : 0x200U;
+}
+
+static void gwenesis_vdp_async_apply_vram_event(gwenesis_vdp_async_job_t *job,
+                                                 const gwenesis_vdp_event_t *event,
+                                                 bool update_sat)
+{
+    if (event->stride == 1 && event->count >= GWENESIS_VDP_EVENT_MEMCPY_MIN)
+    {
+        if (update_sat)
+        {
+            const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+            const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
+            const unsigned int first = event->address;
+            const unsigned int end = first + event->count;
+            if (first >= sat_address && end <= sat_address + sat_size &&
+                end <= VRAM_MAX_SIZE)
+            {
+                const unsigned int sat_offset = first - sat_address;
+                gwenesis_vdp_async_event_data_copy(
+                    job, event->data, job->sat_cache + sat_offset, event->count);
+                memcpy(job->vram + first, job->sat_cache + sat_offset, event->count);
+                return;
+            }
+        }
+        else
+        {
+            uint32_t data_offset = event->data;
+            uint32_t remaining = event->count;
+            uint32_t address = event->address;
+            while (remaining > 0)
+            {
+                size_t chunk = VRAM_MAX_SIZE - address;
+                if (chunk > remaining)
+                    chunk = remaining;
+                gwenesis_vdp_async_event_data_copy(
+                    job, data_offset, job->vram + address, chunk);
+                data_offset += (uint32_t)chunk;
+                remaining -= (uint32_t)chunk;
+                address = (address + (uint32_t)chunk) & 0xFFFFU;
+            }
+            return;
+        }
+    }
+
+    const unsigned int sat_address = update_sat
+                                         ? gwenesis_vdp_async_job_sat_address(job)
+                                         : 0;
+    const unsigned int sat_size = update_sat
+                                      ? gwenesis_vdp_async_job_sat_size(job)
+                                      : 0;
+    for (uint32_t i = 0; i < event->count; ++i)
+    {
+        const uint16_t address =
+            (uint16_t)(event->address + (int32_t)event->stride * i);
+        const unsigned char value =
+            gwenesis_vdp_async_event_data_load(job, event->data + i);
+        job->vram[address] = value;
+        if (update_sat && address >= sat_address && address < sat_address + sat_size)
+            job->sat_cache[address - sat_address] = value;
+    }
+}
+
+static void gwenesis_vdp_async_apply_vram_fill_event(
+    gwenesis_vdp_async_job_t *job,
+    const gwenesis_vdp_event_t *event,
+    bool update_sat)
+{
+    const unsigned char value = (unsigned char)event->data;
+    if (event->stride == 1 && event->count >= GWENESIS_VDP_EVENT_MEMCPY_MIN)
+    {
+        if (update_sat)
+        {
+            const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+            const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
+            const unsigned int first = event->address;
+            const unsigned int end = first + event->count;
+            if (first >= sat_address && end <= sat_address + sat_size &&
+                end <= VRAM_MAX_SIZE)
+            {
+                const unsigned int sat_offset = first - sat_address;
+                memset(job->sat_cache + sat_offset, value, event->count);
+                memset(job->vram + first, value, event->count);
+                return;
+            }
+        }
+        else
+        {
+            uint32_t remaining = event->count;
+            uint32_t address = event->address;
+            while (remaining > 0)
+            {
+                size_t chunk = VRAM_MAX_SIZE - address;
+                if (chunk > remaining)
+                    chunk = remaining;
+                memset(job->vram + address, value, chunk);
+                remaining -= (uint32_t)chunk;
+                address = (address + (uint32_t)chunk) & 0xFFFFU;
+            }
+            return;
+        }
+    }
+
+    const unsigned int sat_address = update_sat
+                                         ? gwenesis_vdp_async_job_sat_address(job)
+                                         : 0;
+    const unsigned int sat_size = update_sat
+                                      ? gwenesis_vdp_async_job_sat_size(job)
+                                      : 0;
+    for (uint32_t i = 0; i < event->count; ++i)
+    {
+        const uint16_t address =
+            (uint16_t)(event->address + (int32_t)event->stride * i);
+        job->vram[address] = value;
+        if (update_sat && address >= sat_address && address < sat_address + sat_size)
+            job->sat_cache[address - sat_address] = value;
+    }
+}
+
 static void gwenesis_vdp_async_apply_events(gwenesis_vdp_async_job_t *job,
                                              int line,
                                              uint32_t *event_index)
@@ -2103,17 +2454,14 @@ static void gwenesis_vdp_async_apply_events(gwenesis_vdp_async_job_t *job,
                 job->regs[event->address] = (unsigned char)event->data;
             break;
         case GWENESIS_VDP_EVENT_VRAM_RUN:
-            for (uint32_t i = 0; i < event->count; ++i)
-            {
-                const uint16_t address =
-                    (uint16_t)(event->address + (int32_t)event->stride * i);
-                job->vram[address] =
-                    gwenesis_vdp_async_event_data_load(job, event->data + i);
-            }
+        case GWENESIS_VDP_EVENT_VRAM_SAT_RUN:
+            gwenesis_vdp_async_apply_vram_event(
+                job, event, event->type == GWENESIS_VDP_EVENT_VRAM_SAT_RUN);
             break;
-        case GWENESIS_VDP_EVENT_SAT8:
-            if (event->address < SAT_CACHE_MAX_SIZE)
-                job->sat_cache[event->address] = (unsigned char)event->data;
+        case GWENESIS_VDP_EVENT_VRAM_FILL:
+        case GWENESIS_VDP_EVENT_VRAM_SAT_FILL:
+            gwenesis_vdp_async_apply_vram_fill_event(
+                job, event, event->type == GWENESIS_VDP_EVENT_VRAM_SAT_FILL);
             break;
         case GWENESIS_VDP_EVENT_CRAM565:
             if (event->address < CRAM_MAX_SIZE)
@@ -2123,6 +2471,18 @@ static void gwenesis_vdp_async_apply_events(gwenesis_vdp_async_job_t *job,
                 job->cram565[0x40 + event->address] = pixel;
                 job->cram565[0x80 + event->address] = pixel;
                 job->cram565[0xC0 + event->address] = pixel;
+
+                if (job->remap_palette && gwenesis_vdp_palette_remap &&
+                    gwenesis_vdp_palette_remap->output_palette)
+                {
+                    gwenesis_vdp_palette_remap_t *remap = gwenesis_vdp_palette_remap;
+                    const uint8_t mapped = gwenesis_vdp_async_palette_intern(
+                        remap, pixel, remap->source_map[event->address]);
+                    remap->source_map[event->address] = mapped;
+                    remap->source_map[0x40 + event->address] = mapped;
+                    remap->source_map[0x80 + event->address] = mapped;
+                    remap->source_map[0xC0 + event->address] = mapped;
+                }
             }
             break;
         case GWENESIS_VDP_EVENT_VSRAM16:
@@ -2133,15 +2493,6 @@ static void gwenesis_vdp_async_apply_events(gwenesis_vdp_async_job_t *job,
 
         ++*event_index;
     }
-}
-
-static void gwenesis_vdp_async_palette_remap_begin(gwenesis_vdp_async_job_t *job)
-{
-    if (!job->remap_palette || !gwenesis_vdp_palette_remap)
-        return;
-    memset(gwenesis_vdp_palette_remap, 0, sizeof(*gwenesis_vdp_palette_remap));
-    memset(job->surface->palette, 0, sizeof(*job->surface->palette) * 256);
-    gwenesis_vdp_palette_remap->output_palette = job->surface->palette;
 }
 
 static bool gwenesis_vdp_async_prepare_surface(gwenesis_vdp_async_job_t *job)
@@ -2590,7 +2941,7 @@ static bool gwenesis_vdp_async_start(void)
     }
 
     __atomic_store_n(&gwenesis_vdp_async_current_frame_id, 0, __ATOMIC_RELEASE);
-    __atomic_store_n(&gwenesis_vdp_async_recording_job, NULL, __ATOMIC_RELEASE);
+    gwenesis_vdp_async_recording_job = NULL;
     __atomic_store_n(&gwenesis_vdp_async_unsafe_frames, 0, __ATOMIC_RELEASE);
 #if defined(RG_TARGET_HOLO_DYNMOD)
     __atomic_store_n(&gwenesis_vdp_async_paused, false, __ATOMIC_RELEASE);
@@ -2664,7 +3015,7 @@ static void gwenesis_vdp_async_stop(void)
 
     gwenesis_vdp_async_task_handle = NULL;
     __atomic_store_n(&gwenesis_vdp_async_task_running, false, __ATOMIC_RELEASE);
-    __atomic_store_n(&gwenesis_vdp_async_recording_job, NULL, __ATOMIC_RELEASE);
+    gwenesis_vdp_async_recording_job = NULL;
 #if defined(RG_TARGET_HOLO_DYNMOD)
     if (gwenesis_vdp_async_jobs)
     {
@@ -3235,12 +3586,17 @@ void app_main(void)
             frameskip_audio_on_force_debt_us,
             frameskip_max_consecutive_skips,
             updates[1] != NULL);
-    RG_LOGI("mod audio: synth=%dHz output=%dHz buffer=%d queue=%d prebuffer=%d\n",
+    RG_LOGI("mod audio: synth=%dHz output=%dHz buffer=%d ring=%d critical=%d low=%d target=%d high=%d block=%d submit=%d\n",
             AUDIO_SYNTH_SAMPLE_RATE,
             AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_BUFFER_LENGTH,
-            GWENESIS_AUDIO_QUEUE_PACKETS,
-            GWENESIS_AUDIO_PREBUFFER_PACKETS);
+            GWENESIS_AUDIO_RING_FRAMES,
+            GWENESIS_AUDIO_RING_CRITICAL_FRAMES,
+            GWENESIS_AUDIO_RING_LOW_FRAMES,
+            GWENESIS_AUDIO_RING_TARGET_FRAMES,
+            GWENESIS_AUDIO_RING_HIGH_FRAMES,
+            GWENESIS_AUDIO_RING_BLOCK_FRAMES,
+            GWENESIS_AUDIO_RING_SUBMIT_FRAMES);
     RG_LOGI("mod audio sync: Fast ym=%d z80=%d Balance ym=%d z80=%d Mute z80=%d\n",
             GWENESIS_YM_BATCH_LINES_FAST,
             GWENESIS_Z80_BATCH_LINES_FAST,
@@ -3323,6 +3679,18 @@ void app_main(void)
         const bool sn76489_run_enabled = yfm_run_enabled && gwenesis_sn76489_buffer != NULL;
 #endif
         const bool z80_run_enabled = gwenesis_z80_enabled;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+        if (yfm_run_enabled && gwenesis_audio_block_water_now())
+        {
+            gwenesis_audio_wait_below_block_water();
+            startTime = rg_system_timer();
+        }
+        else if (yfm_run_enabled && gwenesis_audio_ring_fill() > GWENESIS_AUDIO_RING_HIGH_FRAMES)
+        {
+            rg_task_delay(GWENESIS_AUDIO_HIGH_WATER_PAUSE_MS);
+            startTime = rg_system_timer();
+        }
+#endif
         bool scheduled_draw = gwenesis_frameskip_should_draw(yfm_run_enabled, startTime);
 
         bool display_ready = true;
