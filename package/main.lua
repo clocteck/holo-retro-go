@@ -45,8 +45,8 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-07-06-runtime-light-v18",
-  RELEASE_NOTES = "优化gb/gbc显示bug,支持中文rom名称",
+  VERSION = "2026-07-13-controller-bus-v19",
+  RELEASE_NOTES = "优先使用常驻 BLE 手柄服务，保留旧 gamepad 回退",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
@@ -185,19 +185,35 @@ local function to_bool(v)
   return false
 end
 
+local STANDARD_GAMEPAD = {
+  BTN_UP = 1,
+  BTN_DOWN = 2,
+  BTN_LEFT = 4,
+  BTN_RIGHT = 8,
+  BTN_A = 16,
+  BTN_B = 32,
+  BTN_X = 64,
+  BTN_Y = 128,
+  BTN_L = 256,
+  BTN_R = 512,
+  BTN_LS = 1024,
+  BTN_RS = 2048,
+  BTN_SELECT = 4096,
+  BTN_START = 8192,
+  BTN_HOME = 32768,
+}
+local gamepad = STANDARD_GAMEPAD
+
 local function read_gamepad_state()
-  if not gamepad or not gamepad.state then
-    return nil
+  if controller and controller.state then
+    local ok, state = pcall(function()
+      return controller.state("ble-main")
+    end)
+    if ok and type(state) == "table" then
+      return state
+    end
   end
-
-  local ok, state = pcall(function()
-    return gamepad.state()
-  end)
-  if not ok or type(state) ~= "table" then
-    return nil
-  end
-
-  return state
+  return nil
 end
 
 local function to_number(v)
@@ -236,11 +252,17 @@ local function connected_state(state)
 end
 
 local function axis_greater_than(value, threshold)
-  return type(value) == "number" and value >= math.abs(threshold or APP.AXIS_THRESHOLD)
+  if type(value) ~= "number" then return false end
+  local limit = math.abs(threshold or APP.AXIS_THRESHOLD)
+  if math.abs(value) > 1.5 and limit <= 1 then limit = limit * 32767 end
+  return value >= limit
 end
 
 local function axis_less_than(value, threshold)
-  return type(value) == "number" and value <= -math.abs(threshold or APP.AXIS_THRESHOLD)
+  if type(value) ~= "number" then return false end
+  local limit = math.abs(threshold or APP.AXIS_THRESHOLD)
+  if math.abs(value) > 1.5 and limit <= 1 then limit = limit * 32767 end
+  return value <= -limit
 end
 
 local function read_raw_gamepad_mask(state)
@@ -1626,7 +1648,7 @@ local function selector_gamepad_status(state, phase)
   if phase == "waiting" then
     return "BT NOT CONNECTED", status_waiting
   end
-  if not gamepad or not gamepad.state then
+  if not controller or not controller.state then
     return "BT NOT CONNECTED", status_waiting
   end
   if not state then
@@ -1799,42 +1821,6 @@ local function choose_module()
   selector_render(ui, index)
   selector_update_gamepad_status(ui, read_gamepad_state())
 
-  if gamepad and gamepad.start then
-    pcall(function()
-      if gamepad.off then gamepad.off() end
-      gamepad.start({ clear_bonds = false, debug = false })
-    end)
-  end
-
-  if gamepad and gamepad.on then
-    local function set_bt_phase(phase)
-      bt_phase = phase
-      selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
-    end
-    pcall(function()
-      if gamepad.EVT_CONNECTING then
-        gamepad.on(gamepad.EVT_CONNECTING, function()
-          set_bt_phase("connecting")
-        end)
-      end
-      if gamepad.EVT_CONNECT_FAILED then
-        gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
-          set_bt_phase("waiting")
-        end)
-      end
-      if gamepad.EVT_CONNECTED then
-        gamepad.on(gamepad.EVT_CONNECTED, function()
-          set_bt_phase("connected")
-        end)
-      end
-      if gamepad.EVT_DISCONNECTED then
-        gamepad.on(gamepad.EVT_DISCONNECTED, function()
-          set_bt_phase("waiting")
-        end)
-      end
-    end)
-  end
-
   if key and key.on then
     local function bind(code, fn)
       if not code then return end
@@ -1965,42 +1951,6 @@ local function choose_module_async(on_selected)
   selector_render(ui, index)
   selector_update_gamepad_status(ui, read_gamepad_state())
   log("selector ready", APP.MODULES[index].id, APP.MODULES[index].path)
-
-  if gamepad and gamepad.start then
-    pcall(function()
-      if gamepad.off then gamepad.off() end
-      gamepad.start({ clear_bonds = false, debug = false })
-    end)
-  end
-
-  if gamepad and gamepad.on then
-    local function set_bt_phase(phase)
-      bt_phase = phase
-      selector_update_gamepad_status(ui, read_gamepad_state(), bt_phase)
-    end
-    pcall(function()
-      if gamepad.EVT_CONNECTING then
-        gamepad.on(gamepad.EVT_CONNECTING, function()
-          set_bt_phase("connecting")
-        end)
-      end
-      if gamepad.EVT_CONNECT_FAILED then
-        gamepad.on(gamepad.EVT_CONNECT_FAILED, function()
-          set_bt_phase("waiting")
-        end)
-      end
-      if gamepad.EVT_CONNECTED then
-        gamepad.on(gamepad.EVT_CONNECTED, function()
-          set_bt_phase("connected")
-        end)
-      end
-      if gamepad.EVT_DISCONNECTED then
-        gamepad.on(gamepad.EVT_DISCONNECTED, function()
-          set_bt_phase("waiting")
-        end)
-      end
-    end)
-  end
 
   if key and key.on then
     local function bind(code, fn)
@@ -2260,11 +2210,6 @@ local function finish_exit_to_home()
     stop_timer(timer)
   end
   stop_runtime_timer()
-  if gamepad and gamepad.off then
-    pcall(function()
-      gamepad.off()
-    end)
-  end
   if app and app.exit then
     local ok, result, err = pcall(function()
       return app.exit()
@@ -2338,61 +2283,22 @@ end
 
 local gamepad_service_started = false
 
-local function register_cb(evt, cb)
-  if not gamepad or not gamepad.on or not evt then
-    return
-  end
-  pcall(function()
-    gamepad.on(evt, cb)
-  end)
-end
-
 local function start_gamepad()
-  if not gamepad or not gamepad.start or not gamepad.off then
-    log("gamepad module unavailable, skip BLE")
-    return false
-  end
-  if gamepad_service_started then
+  if controller and controller.state then
+    if controller.on then
+      pcall(function()
+        controller.on("ble-main", function()
+          update_gamepad_input(false)
+        end)
+      end)
+    end
+    update_gamepad_input(true)
+    gamepad_service_started = true
+    log("controller bus input enabled: ble-main")
     return true
   end
-
-  pcall(function()
-    gamepad.off()
-  end)
-
-  local ok, started, err = pcall(function()
-    return gamepad.start({
-      clear_bonds = false,
-      debug = false,
-    })
-  end)
-  if not ok or not started then
-    log("gamepad.start failed", tostring(err or started))
-    return false
-  end
-
-  register_cb(gamepad.EVT_UPDATE, function()
-    update_gamepad_input(false)
-  end)
-  register_cb(gamepad.EVT_CONNECTING, function()
-    log("BLE pairing")
-  end)
-  register_cb(gamepad.EVT_CONNECT_FAILED, function()
-    sync_input_mask(0)
-    current_mask = 0
-  end)
-  register_cb(gamepad.EVT_CONNECTED, function()
-    update_gamepad_input(true)
-  end)
-  register_cb(gamepad.EVT_DISCONNECTED, function()
-    sync_input_mask(0)
-    current_mask = 0
-  end)
-
-  update_gamepad_input(true)
-  gamepad_service_started = true
-  log("gamepad service started")
-  return true
+  log("firmware unsupported: controller bus unavailable")
+  return false
 end
 
 start_gamepad()
