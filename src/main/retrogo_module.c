@@ -4,7 +4,6 @@
 #include <string.h>
 
 #include "../include/module_abi.h"
-#include "holo_catalog.h"
 #include "holo_gamepad_bits.h"
 #include "holo_port.h"
 
@@ -36,6 +35,7 @@ void rg_system_deinit_for_holo(void);
 #if HOLO_RETRO_GWENESIS_ONLY
 bool gwenesis_vdp_async_reserve_vram_early(void);
 bool gwenesis_alloc_vram_fast(void);
+void gwenesis_release_early_resources_for_holo(void);
 void gwenesis_audio_eq_restore_default(void);
 bool gwenesis_audio_eq_set_peaking_bands(const float *freq_hz,
                                          const float *gain_db,
@@ -356,93 +356,6 @@ static int l_set_audio_eq(lua_State *L)
 }
 #endif
 
-static int l_catalog_info(lua_State *L)
-{
-    retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v2 *host = inst ? inst->host : s_host;
-    size_t entries = 0;
-    size_t dirs = 0;
-    size_t files = 0;
-
-    if (!host)
-    {
-        return 0;
-    }
-    holo_catalog_info(&entries, &dirs, &files);
-    host->lua.createtable(L, 0, 5);
-    set_integer_field(L, host, "entries", (int64_t)entries);
-    set_integer_field(L, host, "dirs", (int64_t)dirs);
-    set_integer_field(L, host, "files", (int64_t)files);
-    set_boolean_field(L, host, "ready", holo_catalog_ready());
-    return 1;
-}
-
-static int l_set_catalog(lua_State *L)
-{
-    retrogo_instance_t *inst = instance_from_lua(L);
-    const module_host_api_v2 *host = inst ? inst->host : s_host;
-    const char *blob = NULL;
-    size_t len = 0;
-    int top;
-
-    if (!host)
-    {
-        return 0;
-    }
-    create_log(host, RETROGO_LOG_PREFIX "set_catalog enter");
-
-    if (host->lua.isstring(L, 1))
-    {
-        if (host->lua.tolstring)
-        {
-            blob = host->lua.tolstring(L, 1, &len);
-        }
-        else
-        {
-            blob = host->lua.tostring(L, 1);
-            len = blob ? strlen(blob) : 0;
-        }
-    }
-    else if (host->lua.istable(L, 1))
-    {
-        top = host->lua.gettop(L);
-        host->lua.getfield(L, 1, "blob");
-        if (host->lua.isstring(L, -1))
-        {
-            if (host->lua.tolstring)
-            {
-                blob = host->lua.tolstring(L, -1, &len);
-            }
-            else
-            {
-                blob = host->lua.tostring(L, -1);
-                len = blob ? strlen(blob) : 0;
-            }
-        }
-        host->lua.settop(L, top);
-    }
-    else if (host->lua.isnil(L, 1))
-    {
-        holo_catalog_clear();
-        host->lua.pushboolean(L, 1);
-        return 1;
-    }
-
-    if (!blob)
-    {
-        create_log(host, RETROGO_LOG_PREFIX "set_catalog bad arg");
-        return push_error(L, host, "retrogo.set_catalog: expected catalog blob or {blob=...}");
-    }
-    if (!holo_catalog_load_blob(blob, len))
-    {
-        create_log(host, RETROGO_LOG_PREFIX "set_catalog oom");
-        return push_error(L, host, "retrogo.set_catalog: out of memory");
-    }
-    create_log(host, RETROGO_LOG_PREFIX "set_catalog done");
-    host->lua.pushboolean(L, 1);
-    return 1;
-}
-
 static void retrogo_task_entry(void *arg)
 {
     retrogo_instance_t *inst = (retrogo_instance_t *)arg;
@@ -469,6 +382,9 @@ static void retrogo_task_entry(void *arg)
     }
 #endif
     retrogo_core_app_main();
+#if HOLO_RETRO_GWENESIS_ONLY
+    gwenesis_release_early_resources_for_holo();
+#endif
     rg_system_deinit_for_holo();
     if (holo_display_release_retry(RETROGO_DISPLAY_RELEASE_RETRIES, RETROGO_DISPLAY_RELEASE_RETRY_DELAY_MS))
     {
@@ -626,7 +542,6 @@ static int l_info(lua_State *L)
     set_boolean_field(L, host, "running", inst->running);
     set_boolean_field(L, host, "stop_requested", holo_runtime_stop_requested());
     set_boolean_field(L, host, "switch_requested", holo_runtime_switch_requested());
-    set_boolean_field(L, host, "catalog_ready", holo_catalog_ready());
     return 1;
 }
 
@@ -704,7 +619,6 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
     set_string_field(L, host, "VENDOR", RETROGO_PORT_VENDOR);
     set_string_field(L, host, "PLATFORM", RETROGO_PORT_PLATFORM);
     set_string_field(L, host, "OPTIMIZATION", RETROGO_PORT_OPTIMIZATION);
-    set_boolean_field(L, host, "CATALOG_BLOB", 1);
     set_boolean_field(L, host, "RETRO_GO_CORE", 1);
 #if HOLO_RETRO_GWENESIS_ONLY
     set_boolean_field(L, host, "AUDIO_EQ", 1);
@@ -712,8 +626,6 @@ RETROGO_MODULE_EXPORT int32_t module_luaopen_v1(void *instance, lua_State *L)
     set_boolean_field(L, host, "AUDIO_EQ", 0);
 #endif
     set_gamepad_constants(L, host);
-    set_closure_field(L, host, "set_catalog", l_set_catalog, inst);
-    set_closure_field(L, host, "catalog_info", l_catalog_info, inst);
     set_closure_field(L, host, "start", l_start, inst);
     set_closure_field(L, host, "start_launcher", l_start, inst);
     set_closure_field(L, host, "stop", l_stop, inst);
@@ -746,7 +658,6 @@ RETROGO_MODULE_EXPORT void module_destroy_v1(void *instance)
             host->time.delay(10);
         }
     }
-    holo_catalog_clear();
     holo_port_log(RETROGO_LOG_PREFIX "destroy");
     if (inst->running)
     {

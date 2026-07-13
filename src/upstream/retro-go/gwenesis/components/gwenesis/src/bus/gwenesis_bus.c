@@ -746,7 +746,7 @@ void power_on() {
   YM2612Init();
   YM2612Config(9);
 #endif
-  // Initialize PSG SN76489 chip
+  // Initialize PSG SN76489 chip when it is part of the audio path.
   //CLOCK_NTSC      = 3579545,
   //CLOCK_PAL       = 3546895,
  // CLOCK_NTSC_SMS1 = 3579527
@@ -757,9 +757,9 @@ void power_on() {
 //     gwenesis_SN76489_Init(3579545, GWENESIS_AUDIO_BUFFER_LENGTH_NTSC*60,AUDIO_FREQ_DIVISOR);
 //   }
   
-  #if GWENESIS_AUDIO_EMULATION
+#if GWENESIS_AUDIO_EMULATION && GWENESIS_SN76489_RUN_ENABLED
   gwenesis_SN76489_Init(3579545, GWENESIS_AUDIO_BUFFER_LENGTH_NTSC * 60, AUDIO_FREQ_DIVISOR);
-  #endif
+#endif
 
 }
 
@@ -780,7 +780,7 @@ void reset_emulation() {
 #endif
   // Send a reset pulse to SEGA 315-5313 chip
   gwenesis_vdp_reset();
-#if GWENESIS_AUDIO_EMULATION
+#if GWENESIS_AUDIO_EMULATION && GWENESIS_SN76489_RUN_ENABLED
   gwenesis_SN76489_Reset();
 #endif
 }
@@ -1157,8 +1157,10 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_8(unsigned int address
 
   case Z80_SN76489_ADDR:
     GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
+#if GWENESIS_SN76489_RUN_ENABLED
     bus_log(__FUNCTION__,"CPUZ80FM8  ,m68kclk= %d", m68k_cycles_master());
     gwenesis_SN76489_Write( value & 0Xff, m68k_cycles_master());
+#endif
     return;
 
   case Z80_BANK_ADDR:
@@ -1235,8 +1237,10 @@ static inline void GWENESIS_HOT gwenesis_bus_write_memory_16(unsigned int addres
 
   case Z80_SN76489_ADDR:
     GWENESIS_M68K_MEM_KIND_INC(GWENESIS_M68K_MEM_PSG);
+#if GWENESIS_SN76489_RUN_ENABLED
     bus_log(__FUNCTION__,"CZSN16 ,mclk=%d", m68k_cycles_master());
     gwenesis_SN76489_Write(value >> 8,m68k_cycles_master() );
+#endif
     return;
 
   default:

@@ -256,6 +256,9 @@ static void gbc_cleanup(void)
     free(romData);
     romData = NULL;
 
+    free((void *)sramFile);
+    sramFile = NULL;
+
     for (size_t i = 0; i < RG_COUNT(updates); ++i)
     {
         rg_surface_free(updates[i]);

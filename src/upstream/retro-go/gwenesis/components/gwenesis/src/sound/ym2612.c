@@ -1682,6 +1682,9 @@ INLINE void ym2612_lfo_cache_refresh_line(unsigned int line, INT32 pms, UINT32 b
 INLINE void ym2612_lfo_cache_refresh_channel(unsigned int channel)
 {
   FM_CH *CH = &ym2612.CH[channel];
+  if (!CH->pms)
+    return;
+
   ym2612_lfo_cache_refresh_line(channel, CH->pms, CH->block_fnum);
 
   if (channel == 2)
@@ -2258,9 +2261,12 @@ INLINE void OPNWriteReg(int r, int v)
         ym2612.OPN.SL3.fc[c] = (fn << 6) >> (7 - blk);
         ym2612.OPN.SL3.block_fnum[c] = (blk << 11) | fn;
 #if GW_TARGET
-        static const UINT8 cache_line_for_sl3[3] = {8, 6, 7};
-        ym2612_lfo_cache_refresh_line(cache_line_for_sl3[c], ym2612.CH[2].pms,
-                                     ym2612.OPN.SL3.block_fnum[c]);
+        if (ym2612.CH[2].pms)
+        {
+          static const UINT8 cache_line_for_sl3[3] = {8, 6, 7};
+          ym2612_lfo_cache_refresh_line(cache_line_for_sl3[c], ym2612.CH[2].pms,
+                                       ym2612.OPN.SL3.block_fnum[c]);
+        }
 #endif
         ym2612.CH[2].SLOT[SLOT1].Incr = -1;
       }

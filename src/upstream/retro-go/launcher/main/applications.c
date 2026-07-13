@@ -711,3 +711,23 @@ void applications_init(void)
     if (!rg_system_get_app()->lowMemoryMode)
         crc_cache_init();
 }
+
+void applications_deinit(void)
+{
+    free(crc_cache);
+    crc_cache = NULL;
+    crc_cache_dirty = true;
+
+    for (int i = 0; i < apps_count; ++i)
+    {
+        retro_app_t *app = apps[i];
+        if (!app)
+            continue;
+
+        rg_bucket_free(app->filenames);
+        free(app->files);
+        free(app);
+        apps[i] = NULL;
+    }
+    apps_count = 0;
+}

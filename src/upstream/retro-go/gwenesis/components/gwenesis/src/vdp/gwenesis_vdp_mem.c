@@ -103,6 +103,12 @@ typedef struct
     unsigned short address_reg;
     int hvcounter_latch;
     int hvcounter_latched;
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+    /* 256 x 256-byte VRAM pages. Kept with the other hot VDP state so the
+       byte-write path never has to touch PSRAM just to record dirtiness. */
+    uint32_t snapshot_dirty[8];
+    uint32_t snapshot_last_dirty_page;
+#endif
 } gwenesis_vdp_mem_fast_state_t;
 
 static gwenesis_vdp_mem_fast_state_t gwenesis_vdp_mem_fast_state_fallback;
@@ -148,6 +154,41 @@ extern bool sprite_collision;
 
 // 16 bits access to VRAM
 #define FETCH16(A) ( ( (*(unsigned short *)&VRAM[(A)]) >> 8 ) | ( (*(unsigned short *)&VRAM[(A)]) << 8 ) )
+
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+#define GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT 8U
+#define GWENESIS_VDP_SNAPSHOT_NO_PAGE UINT32_MAX
+
+static inline __attribute__((always_inline))
+void gwenesis_vdp_snapshot_dirty_mark(unsigned int address)
+{
+    const uint32_t page = (address & (VRAM_MAX_SIZE - 1U)) >> GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT;
+
+    /* Sequential DMA and data-port writes normally stay in one page for a
+       long run. This comparison makes their common cost one load/compare. */
+    if (page != gwenesis_vdp_mem_fast_state->snapshot_last_dirty_page)
+    {
+        gwenesis_vdp_mem_fast_state->snapshot_last_dirty_page = page;
+        gwenesis_vdp_mem_fast_state->snapshot_dirty[page >> 5] |= 1U << (page & 31U);
+    }
+}
+
+void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8])
+{
+    memcpy(dirty_words, gwenesis_vdp_mem_fast_state->snapshot_dirty,
+           sizeof(gwenesis_vdp_mem_fast_state->snapshot_dirty));
+    memset(gwenesis_vdp_mem_fast_state->snapshot_dirty, 0,
+           sizeof(gwenesis_vdp_mem_fast_state->snapshot_dirty));
+    gwenesis_vdp_mem_fast_state->snapshot_last_dirty_page = GWENESIS_VDP_SNAPSHOT_NO_PAGE;
+}
+
+void gwenesis_vdp_snapshot_dirty_mark_all(void)
+{
+    memset(gwenesis_vdp_mem_fast_state->snapshot_dirty, 0xFF,
+           sizeof(gwenesis_vdp_mem_fast_state->snapshot_dirty));
+    gwenesis_vdp_mem_fast_state->snapshot_last_dirty_page = GWENESIS_VDP_SNAPSHOT_NO_PAGE;
+}
+#endif
 
 bool gwenesis_vdp_mem_init_fast_ram(void)
 {
@@ -244,6 +285,9 @@ int GWENESIS_HOT m68k_irq_acked(int irq) {
 
 void gwenesis_vdp_reset() {
   memset(VRAM, 0, VRAM_MAX_SIZE);
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  gwenesis_vdp_snapshot_dirty_mark_all();
+#endif
   gwenesis_vdp_gfx_invalidate_tile_cache();
   memset(SAT_CACHE, 0, SAT_CACHE_MAX_SIZE);
   memset(CRAM, 0, sizeof(*CRAM) * CRAM_MAX_SIZE);
@@ -432,7 +476,11 @@ void push_fifo(unsigned int value)
 static inline __attribute__((always_inline))
 void gwenesis_vdp_vram_write(unsigned int address, unsigned int value)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  gwenesis_vdp_snapshot_dirty_mark(address);
+#else
   gwenesis_vdp_async_mark_midframe_write();
+#endif
   VRAM[address] = value;
   gwenesis_vdp_gfx_invalidate_vram(address);
 
@@ -1083,9 +1131,10 @@ void GWENESIS_HOT gwenesis_vdp_write_memory_16(unsigned int address, unsigned in
     return;
   }
   if (address < 0x18) { // PSG 8 bits write
-      vdpm_log(__FUNCTION__,"PSG sclk=%d,mclk=%d", system_clock,  m68k_cycles_master());
+#if GWENESIS_SN76489_RUN_ENABLED
+    vdpm_log(__FUNCTION__,"PSG sclk=%d,mclk=%d", system_clock,  m68k_cycles_master());
     gwenesis_SN76489_Write(value, m68k_cycles_master());
-
+#endif
     return;
   }
   // UNHANDLED
@@ -1118,6 +1167,9 @@ void gwenesis_vdp_mem_load_state() {
   SaveState* state = saveGwenesisStateOpenForRead("vdp_mem");
 
   saveGwenesisStateGetBuffer(state, "VRAM", VRAM, VRAM_MAX_SIZE);
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+  gwenesis_vdp_snapshot_dirty_mark_all();
+#endif
   gwenesis_vdp_gfx_invalidate_tile_cache();
   saveGwenesisStateGetBuffer(state, "CRAM", CRAM, sizeof(*CRAM) * CRAM_MAX_SIZE);
   saveGwenesisStateGetBuffer(state, "SAT_CACHE", SAT_CACHE, SAT_CACHE_MAX_SIZE);

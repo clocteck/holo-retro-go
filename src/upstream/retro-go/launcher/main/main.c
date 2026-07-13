@@ -372,6 +372,16 @@ static void retro_loop(void)
             rg_task_delay(10);
         }
     }
+
+#ifdef RG_ENABLE_NETWORKING
+    webui_stop();
+#endif
+    gui_deinit();
+    browser_deinit();
+    bookmarks_deinit();
+    applications_deinit();
+    rg_unique_string_deinit();
+    RG_LOGI("Launcher memory released.\n");
 }
 
 static void try_migrate(void)

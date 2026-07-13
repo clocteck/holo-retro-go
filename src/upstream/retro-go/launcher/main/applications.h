@@ -49,6 +49,7 @@ typedef struct retro_app_s
 typedef struct tab_s tab_t;
 
 void applications_init(void);
+void applications_deinit(void);
 void application_show_file_menu(retro_file_t *file, bool simplified);
 bool application_get_file_crc32(retro_file_t *file);
 bool application_path_to_file(const char *path, retro_file_t *out_file);

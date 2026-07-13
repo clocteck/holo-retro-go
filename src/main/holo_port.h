@@ -55,10 +55,6 @@ void holo_audio_end(void);
 int holo_audio_write(const void *samples, size_t bytes, size_t *out_written);
 int holo_audio_available(size_t *out_bytes);
 
-int holo_dir_open(const char *path, void **out_dir);
-int holo_dir_read(void *dir, char *name, size_t name_size, char *path, size_t path_size,
-                  int *out_is_dir, size_t *out_size);
-void holo_dir_close(void *dir);
 
 #ifdef __cplusplus
 }

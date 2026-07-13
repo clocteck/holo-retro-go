@@ -771,17 +771,14 @@ local function remove_path(path)
   return file and file.stat and not file.stat(path) or false
 end
 
-local function add_row(rows, kind, path, size, mtime)
-  rows[#rows + 1] = string.format("%s\t%s\t%d\t%d\n", kind, path, tonumber(size) or 0, tonumber(mtime) or 0)
-  if kind == "F" and APP.rom_list_cache then
-    APP.rom_list_cache[#APP.rom_list_cache + 1] = {
-      name = basename(path),
-      path = path,
-      relative_path = rom_relative_path(path),
-      system = rom_system_for_path(path),
-      size = tonumber(size) or 0,
-    }
-  end
+local function add_rom_cache_file(path, size)
+  APP.rom_list_cache[#APP.rom_list_cache + 1] = {
+    name = basename(path),
+    path = path,
+    relative_path = rom_relative_path(path),
+    system = rom_system_for_path(path),
+    size = tonumber(size) or 0,
+  }
 end
 
 local function rom_item_path(parent, item)
@@ -820,37 +817,30 @@ local function rom_listdir(path)
   return {}
 end
 
-local function scan_rom_tree(path, rows, seen)
+local function scan_rom_tree(path, seen)
   if seen[path] then
     return
   end
   seen[path] = true
-  add_row(rows, "D", path, 0, 0)
   for _, item in ipairs(rom_listdir(path)) do
     local child = rom_item_path(path, item)
     if child ~= path and child ~= "" then
       if rom_item_is_dir(child, item) then
-        scan_rom_tree(child, rows, seen)
+        scan_rom_tree(child, seen)
       else
-        add_row(rows, "F", child, rom_item_size(child, item), 0)
+        add_rom_cache_file(child, rom_item_size(child, item))
       end
     end
   end
 end
 
-local function build_catalog_blob()
+local function refresh_rom_list_cache()
   ensure_rom_system_dirs()
   APP.rom_list_cache = {}
   APP.rom_list_cache_ready = false
-  local rows = {}
-  scan_rom_tree(APP.ROM_ROOT, rows, {})
+  scan_rom_tree(APP.ROM_ROOT, {})
   APP.rom_list_cache_ready = true
-  return table.concat(rows), #rows
-end
-
-local function refresh_rom_list_cache()
-  local _, rows = build_catalog_blob()
-  log("rom list cache", #APP.rom_list_cache, APP.ROM_ROOT, "rows", rows)
+  log("rom list cache", #APP.rom_list_cache, APP.ROM_ROOT)
   return true
 end
 
@@ -1201,12 +1191,11 @@ function APP.api_info()
     chunk_size = APP.CHUNK_SIZE,
     max_file_size = APP.MAX_ROM_FILE_SIZE,
     rom_list_ready = APP.rom_list_cache_ready and true or false,
-    catalog_dirty = APP.catalog_dirty and true or false,
   })
 end
 
 function APP.api_list()
-  build_catalog_blob()
+  refresh_rom_list_cache()
   local items = list_rom_files()
   return json_response("200 OK", {
     ok = true,
@@ -1244,7 +1233,6 @@ function APP.api_upload(req)
   end
   if next_offset >= total then
     upsert_rom_cache_item(path, stat_size(st) or total)
-    APP.catalog_dirty = true
     APP.rom_list_cache_ready = false
   end
   return json_response("200 OK", {
@@ -1278,7 +1266,7 @@ function APP.api_delete(req)
     return error_response("500 Internal Server Error", remove_err or "delete failed")
   end
   remove_rom_cache_item(path)
-  APP.catalog_dirty = true
+  APP.rom_list_cache_ready = false
   return json_response("200 OK", {
     ok = true,
     path = path,
@@ -1799,6 +1787,7 @@ local function choose_module()
   local ui = selector_make_ui()
   local bt_phase = nil
   local key_codes = {}
+  local selector_events_active = true
 
   local function move(delta)
     index = index + delta
@@ -1864,6 +1853,7 @@ local function choose_module()
     end
   end
 
+  selector_events_active = false
   local cleanup_ui = ui
   ui = nil
   selector_cleanup(cleanup_ui, key_codes)
@@ -1890,6 +1880,7 @@ local function choose_module_async(on_selected)
   local key_codes = {}
   local selector_timer = nil
   local prev = selector_gamepad_nav(read_gamepad_state())
+  local selector_events_active = true
 
   local function stop_selector_timer()
     if not selector_timer then
@@ -1909,6 +1900,7 @@ local function choose_module_async(on_selected)
       return
     end
     finished = true
+    selector_events_active = false
     stop_selector_timer()
     local cleanup_ui = ui
     ui = nil
@@ -2098,25 +2090,7 @@ local function log_pad_mask(mask)
   end
 end
 
-local function load_catalog()
-  local blob, row_count = build_catalog_blob()
-  log("catalog root", APP.ROM_ROOT)
-  log("catalog bytes", #blob, "rows", row_count)
-  log("set_catalog call")
-  local ok, set_err = retrogo.set_catalog(blob)
-  if not ok then
-    log("set_catalog failed", tostring(set_err))
-    return false
-  end
-  APP.catalog_dirty = false
-  log("set_catalog ok")
-  return true
-end
-
-if not load_catalog() then
-  APP.stop_web("catalog failed")
-  return
-end
+ensure_rom_system_dirs()
 APP.stop_web("runtime")
 
 local function retrogo_info()
@@ -2339,10 +2313,6 @@ local function schedule_restart(info)
     return
   end
   log("restart request", app_name, rom_path, flags)
-  if APP.catalog_dirty and not load_catalog() then
-    request_exit_to_home("catalog reload failed")
-    return
-  end
   pending_restart = {
     app_name = app_name,
     rom_path = rom_path,

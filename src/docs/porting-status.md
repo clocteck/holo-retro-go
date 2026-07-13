@@ -18,6 +18,6 @@ Official Retro-Go launcher sources are included in the module build:
 
 For the Holo dynmod build, `retro-core/main/main_launcher.c` enters the official launcher main loop. The `retrogo.so` module registers the classic Retro-Go core package, while `gwenesis.so` registers only MD.
 
-The first ABI workaround is a Lua-provided catalog. The host scans the Lua app's local ROM directory, for example `/sd/apps/holo-retro-go/roms`, serializes a flat list, and passes it to `retrogo.set_catalog(...)`. Retro-Go launcher/core code still calls `rg_storage_scandir()`, but for `RG_TARGET_HOLO_DYNMOD` that function reads the injected catalog.
+The Holo dynmod build scans ROM and save directories directly through the host firmware's exported POSIX `opendir`, `readdir`, and `closedir` symbols. Lua no longer pre-scans the ROM tree or injects an in-memory catalog. The Lua WebUI keeps a separate ROM list cache and refreshes it only when its list endpoint is requested.
 
-The current build is compile-safe and does not retain unresolved `opendir`, `readdir`, `closedir`, ROM I2C clock-control, WiFi, HTTP, or Retro-Go internal symbols at the module boundary. For the Holo target, networking/netplay sources and `esp_wifi`/`esp_http_client` build dependencies are disabled. Display and audio are still target stubs; host RGB565 DMA and int16 stereo audio drivers remain to be wired.
+The current build intentionally retains unresolved `opendir`, `readdir`, and `closedir` references at the module boundary; the dynmod firmware exports those ESP-IDF VFS functions. For the Holo target, networking/netplay sources and `esp_wifi`/`esp_http_client` build dependencies are disabled.

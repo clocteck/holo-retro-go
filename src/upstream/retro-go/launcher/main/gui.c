@@ -50,6 +50,31 @@ void gui_init(bool cold_boot)
     gui_update_theme();
 }
 
+void gui_deinit(void)
+{
+    rg_display_sync(true);
+    rg_gui_set_surface(NULL);
+
+    for (size_t i = 0; i < gui.tabs_count; ++i)
+    {
+        tab_t *tab = gui.tabs[i];
+        if (!tab)
+            continue;
+
+        gui_deinit_tab(tab);
+        rg_surface_free(tab->background);
+        rg_surface_free(tab->banner);
+        rg_surface_free(tab->logo);
+        rg_surface_free(tab->preview);
+        free(tab->listbox.items);
+        free(tab);
+        gui.tabs[i] = NULL;
+    }
+
+    rg_surface_free(gui.surface);
+    memset(&gui, 0, sizeof(gui));
+}
+
 void gui_event(gui_event_t event, tab_t *tab)
 {
     if (tab && tab->event_handler)

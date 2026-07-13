@@ -38,6 +38,9 @@ typedef struct
 
 void rg_audio_init(int sample_rate);
 void rg_audio_deinit(void);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+void rg_audio_deinit_for_holo(void);
+#endif
 void rg_audio_submit(const rg_audio_frame_t *frames, size_t count);
 rg_audio_counters_t rg_audio_get_counters(void);
 

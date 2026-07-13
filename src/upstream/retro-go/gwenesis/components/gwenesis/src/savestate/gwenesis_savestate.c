@@ -34,6 +34,20 @@ __license__ = "GPLv3"
 
 #include <assert.h>
 
+#if !GWENESIS_SN76489_RUN_ENABLED
+static void gwenesis_sn76489_save_compat_state(void) {
+  SN76489_Context compat_state = {0};
+  SaveState *state = saveGwenesisStateOpenForWrite("sn76489");
+  saveGwenesisStateSetBuffer(state, "gwenesis_SN76489", &compat_state, sizeof(compat_state));
+}
+
+static void gwenesis_sn76489_load_compat_state(void) {
+  SN76489_Context compat_state;
+  SaveState *state = saveGwenesisStateOpenForRead("sn76489");
+  saveGwenesisStateGetBuffer(state, "gwenesis_SN76489", &compat_state, sizeof(compat_state));
+}
+#endif
+
 void gwenesis_save_state() {
   gwenesis_m68k_save_state();
   gwenesis_io_save_state();
@@ -42,7 +56,11 @@ void gwenesis_save_state() {
   gwenesis_vdp_mem_save_state();
   gwenesis_z80inst_save_state();
   gwenesis_ym2612_save_state();
+#if GWENESIS_SN76489_RUN_ENABLED
   gwenesis_sn76489_save_state();
+#else
+  gwenesis_sn76489_save_compat_state();
+#endif
 
 }
 
@@ -54,6 +72,10 @@ void gwenesis_load_state() {
   gwenesis_vdp_mem_load_state();
   gwenesis_z80inst_load_state();
   gwenesis_ym2612_load_state();
+#if GWENESIS_SN76489_RUN_ENABLED
   gwenesis_sn76489_load_state();
+#else
+  gwenesis_sn76489_load_compat_state();
+#endif
 
 }
