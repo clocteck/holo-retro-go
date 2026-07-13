@@ -344,7 +344,7 @@ local function build_gamepad_mask(state, retrogo_mask)
       any_true(state, { "a", "btn_a", "button_a" })
   local b_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_B or 0) or
       any_true(state, { "b", "btn_b", "button_b" })
-  local select_pressed = (raw_select_pressed and not xbox_view_pressed) or
+  local select_pressed = raw_select_pressed or
       any_true(state, { "select", "btn_select", "back" })
   local start_pressed = raw_start_pressed or start_alias_pressed
   local x_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_X or 0) or
@@ -359,16 +359,17 @@ local function build_gamepad_mask(state, retrogo_mask)
       any_true(state, { "rt", "r2", "right_trigger", "trigger_right", "right_trigger_pressed", "btn_rt", "btn_r2", "button_rt", "button_r2" })
   local home_pressed = has_bit(raw_mask, gamepad and gamepad.BTN_HOME or 0) or
       any_true(state, { "xbox", "home", "btn_home", "guide", "system" })
-  local menu_pressed = menu_alias_pressed or (raw_menu_pressed and not start_pressed)
+  -- Most hidpad devices expose SELECT/Back but no independent MENU button.
+  -- Map SELECT to Retro-Go's menu so those controllers can open the emulator menu;
+  -- HOME remains the separate exit-to-system button handled below.
+  local menu_pressed = select_pressed or menu_alias_pressed or
+      (raw_menu_pressed and not start_pressed)
 
   if a_pressed then
     mask = mask + retrogo_mask.BTN_A
   end
   if b_pressed then
     mask = mask + retrogo_mask.BTN_B
-  end
-  if select_pressed then
-    mask = mask + retrogo_mask.BTN_SELECT
   end
   if start_pressed then
     mask = mask + retrogo_mask.BTN_START
