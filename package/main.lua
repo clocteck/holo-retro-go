@@ -45,8 +45,8 @@ local ROUTE_BASE = normalize_route_base(
 local MODULE_DIR = APP_DIR .. "/modules"
 
 local APP = {
-  VERSION = "2026-07-13-controller-bus-v19",
-  RELEASE_NOTES = "优先使用常驻 BLE 手柄服务，保留旧 gamepad 回退",
+  VERSION = "2026-07-13-controller-bus-v20",
+  RELEASE_NOTES = "使用常驻 BLE 手柄服务的 controller 位图输入",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
   ROM_ROOT = "/sd/roms",
