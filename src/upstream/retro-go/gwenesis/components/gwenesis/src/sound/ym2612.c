@@ -2537,12 +2537,12 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
     advance_lfo();
 
     /* advance envelope generator */
-    ym2612.OPN.eg_timer += GWENESIS_YM2612_SAMPLE_STEP;
+    ym2612.OPN.eg_timer++;
 
     /* EG is updated every 3 samples */
-    while (ym2612.OPN.eg_timer >= 3)
+    if (ym2612.OPN.eg_timer >= 3)
     {
-      ym2612.OPN.eg_timer -= 3;
+      ym2612.OPN.eg_timer = 0;
       ym2612.OPN.eg_cnt++;
       advance_eg_channels(&ym2612.CH[0], ym2612.OPN.eg_cnt);
     }
