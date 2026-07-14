@@ -2,5 +2,5 @@ name = Retro-Go
 entry = main.lua
 icon = main.png
 allow_webui = true
-description = 支持hidpad服务
-version = 1.25
+description = 修复音频节奏不正确的问题，优化性能表现
+version = 1.26
