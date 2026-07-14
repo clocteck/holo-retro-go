@@ -104,9 +104,9 @@ typedef struct
     int hvcounter_latch;
     int hvcounter_latched;
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-    /* 256 x 256-byte VRAM pages. Kept with the other hot VDP state so the
+    /* 512 x 128-byte VRAM pages. Kept with the other hot VDP state so the
        byte-write path never has to touch PSRAM just to record dirtiness. */
-    uint32_t snapshot_dirty[8];
+    uint32_t snapshot_dirty[GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS];
     uint32_t snapshot_last_dirty_page;
 #endif
 } gwenesis_vdp_mem_fast_state_t;
@@ -156,7 +156,6 @@ extern bool sprite_collision;
 #define FETCH16(A) ( ( (*(unsigned short *)&VRAM[(A)]) >> 8 ) | ( (*(unsigned short *)&VRAM[(A)]) << 8 ) )
 
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-#define GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT 8U
 #define GWENESIS_VDP_SNAPSHOT_NO_PAGE UINT32_MAX
 
 static inline __attribute__((always_inline))
@@ -173,7 +172,8 @@ void gwenesis_vdp_snapshot_dirty_mark(unsigned int address)
     }
 }
 
-void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8])
+void gwenesis_vdp_snapshot_dirty_take(
+    uint32_t dirty_words[GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS])
 {
     memcpy(dirty_words, gwenesis_vdp_mem_fast_state->snapshot_dirty,
            sizeof(gwenesis_vdp_mem_fast_state->snapshot_dirty));

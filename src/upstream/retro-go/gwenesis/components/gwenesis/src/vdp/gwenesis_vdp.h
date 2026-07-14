@@ -99,6 +99,13 @@ __license__ = "GPLv3"
 #define REG_SIZE 0x20            // REGISTERS total
 #define FIFO_SIZE 0x4            // FIFO maximum size
 
+#if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
+#define GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT 7U
+#define GWENESIS_VDP_SNAPSHOT_PAGE_SIZE (1U << GWENESIS_VDP_SNAPSHOT_PAGE_SHIFT)
+#define GWENESIS_VDP_SNAPSHOT_PAGE_COUNT (VRAM_MAX_SIZE / GWENESIS_VDP_SNAPSHOT_PAGE_SIZE)
+#define GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS (GWENESIS_VDP_SNAPSHOT_PAGE_COUNT / 32U)
+#endif
+
 #define COLOR_3B_TO_8B(c)  (((c) << 5) | ((c) << 2) | ((c) >> 1))
 #define CRAM_R(c)          COLOR_3B_TO_8B(BITS((c), 1, 3))
 #define CRAM_G(c)          COLOR_3B_TO_8B(BITS((c), 5, 3))
@@ -196,7 +203,8 @@ void gwenesis_vdp_gfx_invalidate_vram(unsigned int address);
 void gwenesis_vdp_gfx_invalidate_tile_cache(void);
 void gwenesis_vdp_async_mark_midframe_write(void);
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
-void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8]);
+void gwenesis_vdp_snapshot_dirty_take(
+    uint32_t dirty_words[GWENESIS_VDP_SNAPSHOT_DIRTY_WORDS]);
 void gwenesis_vdp_snapshot_dirty_mark_all(void);
 void gwenesis_vdp_async_record_reg(unsigned int reg, unsigned int value);
 void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value,

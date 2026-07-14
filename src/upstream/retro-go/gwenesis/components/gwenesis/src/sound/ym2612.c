@@ -820,7 +820,6 @@ typedef struct
   INT32 mem;        /* one sample delay memory */
   INT32 out_fm[8];  /* outputs of working channels */
   UINT32 bitmask;   /* working channels output bitmasking (DAC quantization) */
-  bool lite_mode;
   bool ssg_eg_active;
   unsigned tables_initialized;
   ym2612_hot_tables_t *hot_tables;
@@ -840,14 +839,11 @@ static ym2612_fast_state_t *ym2612_fast_state = &ym2612_fast_state_fallback;
 #define mem (ym2612_fast_state->mem)
 #define out_fm (ym2612_fast_state->out_fm)
 #define bitmask (ym2612_fast_state->bitmask)
-#define ym2612_lite_mode (ym2612_fast_state->lite_mode)
 #define ym2612_ssg_eg_active (ym2612_fast_state->ssg_eg_active)
 #define ym2612_tables_initialized (ym2612_fast_state->tables_initialized)
 #define ym2612_hot_tables (ym2612_fast_state->hot_tables)
 #define ym2612_lfo_cache (ym2612_fast_state->lfo_cache)
 #define eg_inc (ym2612_fast_state->eg_inc_ptr)
-
-#define GWENESIS_YM2612_LITE_SAMPLE_STRIDE 2
 
 /* mirror of all OPN registers */
 #define OPNREGS_SIZE 512
@@ -990,11 +986,6 @@ void gwenesis_ym2612_deinit_fast_ram(void)
   ym2612_fast_state_fallback.lfo_cache = ym2612_lfo_cache_fallback;
   ym2612_tables_initialized = 0;
 #endif
-}
-
-void ym2612_set_lite_mode(bool enabled)
-{
-  ym2612_lite_mode = enabled;
 }
 
 void ym2612_set_divisor(int divisor)
@@ -1980,35 +1971,6 @@ INLINE void chan_advance_phase(FM_CH *CH, int num)
   } while (--num);
 }
 
-static inline void GWENESIS_HOT YM2612AdvanceLiteSkippedSample(int num_channels)
-{
-  if (ym2612_ssg_eg_active)
-    update_ssg_eg_channels(&ym2612.CH[0]);
-  chan_advance_phase(&ym2612.CH[0], num_channels);
-
-  advance_lfo();
-
-  ym2612.OPN.eg_timer++;
-  if (ym2612.OPN.eg_timer >= 3)
-  {
-    ym2612.OPN.eg_timer = 0;
-    ym2612.OPN.eg_cnt++;
-    advance_eg_channels(&ym2612.CH[0], ym2612.OPN.eg_cnt);
-  }
-
-  ym2612.OPN.SL3.key_csm <<= 1;
-  INTERNAL_TIMER_A();
-
-  if (ym2612.OPN.SL3.key_csm & 2)
-  {
-    FM_KEYOFF_CSM(&ym2612.CH[2], SLOT1);
-    FM_KEYOFF_CSM(&ym2612.CH[2], SLOT2);
-    FM_KEYOFF_CSM(&ym2612.CH[2], SLOT3);
-    FM_KEYOFF_CSM(&ym2612.CH[2], SLOT4);
-    ym2612.OPN.SL3.key_csm = 0;
-  }
-}
-
 /* write a OPN mode register 0x20-0x2f */
 INLINE void OPNWriteMode(int r, int v)
 {
@@ -2660,18 +2622,6 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
       ym2612.OPN.SL3.key_csm = 0;
     }
 
-    if (ym2612_lite_mode)
-    {
-      const int num_channels = ym2612.dacen ? 5 : 6;
-      for (int lite_skip = 1;
-           lite_skip < GWENESIS_YM2612_LITE_SAMPLE_STRIDE && (i + 1) < length;
-           ++lite_skip)
-      {
-        *buffer++ = lt;
-        i++;
-        YM2612AdvanceLiteSkippedSample(num_channels);
-      }
-    }
   }
 
   /* timer B control */
@@ -2780,9 +2730,13 @@ void GWENESIS_HOT YM2612Write(unsigned int a, unsigned int v, int target)
 #endif
   ym_log(__FUNCTION__, " %06x : %02x", a, v);
 
-  /* Holo uses the line-batched path. Cycle-accurate builds still synchronize
-   * every register write before applying the new value. */
-  if (GWENESIS_AUDIO_ACCURATE == 1)
+  /* Keep FM register updates line-batched in the low-cost Holo mode, but
+   * preserve timestamped DAC/PCM writes. Generate samples with the previous
+   * DAC state before applying data (0x2a) or enable (0x2b) changes. */
+  const unsigned int port = a & 0x3;
+  const unsigned int addr = ym2612.OPN.ST.address;
+  const bool dac_write = (port == 1 || port == 3) && (addr == 0x2a || addr == 0x2b);
+  if (GWENESIS_AUDIO_ACCURATE == 1 || dac_write)
     ym2612_run(target);
 
   YM2612WriteCore(a, v);

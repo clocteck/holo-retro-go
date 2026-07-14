@@ -3,4 +3,4 @@ entry = main.lua
 icon = main.png
 allow_webui = true
 description = 支持hidpad服务
-version = 1.23
+version = 1.25

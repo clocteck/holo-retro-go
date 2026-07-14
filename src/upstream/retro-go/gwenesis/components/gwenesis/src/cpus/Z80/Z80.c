@@ -174,6 +174,29 @@ INLINE byte OpZ80(word A) { return(RAM[A>>13][A&0x1FFF]); }
 #define FAST_RDOP
 extern byte *Z80_RAM;
 INLINE byte OpZ80(word A) { return(Z80_RAM ? Z80_RAM[A&0x1FFF] : 0xFF); }
+
+/* Most Genesis Z80 data traffic targets the 8KB ZRAM and its mirror. Keep
+ * that path in the interpreter so ordinary loads/stores do not cross a
+ * translation-unit call boundary. Peripheral and banked accesses retain the
+ * full handlers and their timestamping semantics. */
+INLINE byte __attribute__((always_inline)) gwenesis_z80_read_fast(word A)
+{
+  if (__builtin_expect(A < 0x4000, 1))
+    return Z80_RAM ? Z80_RAM[A & 0x1FFF] : 0xFF;
+  return RdZ80(A);
+}
+
+INLINE void __attribute__((always_inline)) gwenesis_z80_write_fast(word A, byte V)
+{
+  if (__builtin_expect(A < 0x4000, 1))
+  {
+    if (Z80_RAM)
+      Z80_RAM[A & 0x1FFF] = V;
+    return;
+  }
+  WrZ80(A, V);
+}
+
 #endif
 
 /** FAST_RDOP ************************************************/
@@ -652,7 +675,15 @@ int GWENESIS_HOT ExecZ80(register Z80 *R,register int RunCycles)
       /* Interpret opcode */
       switch(I)
       {
+#ifdef GENESIS
+#define RdZ80(A) gwenesis_z80_read_fast((word)(A))
+#define WrZ80(A, V) gwenesis_z80_write_fast((word)(A), (byte)(V))
+#endif
 #include "Codes.h"
+#ifdef GENESIS
+#undef RdZ80
+#undef WrZ80
+#endif
         case PFX_CB: CodesCB(R);break;
         case PFX_ED: CodesED(R);break;
         case PFX_FD: CodesFD(R);break;
@@ -769,7 +800,15 @@ word RunZ80(Z80 *R)
 
     switch(I)
     {
+#ifdef GENESIS
+#define RdZ80(A) gwenesis_z80_read_fast((word)(A))
+#define WrZ80(A, V) gwenesis_z80_write_fast((word)(A), (byte)(V))
+#endif
 #include "Codes.h"
+#ifdef GENESIS
+#undef RdZ80
+#undef WrZ80
+#endif
       case PFX_CB: CodesCB(R);break;
       case PFX_ED: CodesED(R);break;
       case PFX_FD: CodesFD(R);break;

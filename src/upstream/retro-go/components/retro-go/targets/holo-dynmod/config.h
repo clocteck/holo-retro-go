@@ -35,6 +35,8 @@
 
 // Input is supplied by Lua/host through holo_input_set_mask().
 #define RG_RECOVERY_BTN            0
+#define RG_GAMEPAD_DEBOUNCE_PRESS  1
+#define RG_GAMEPAD_DEBOUNCE_RELEASE 1
 
 // Runtime
 #define RG_UPDATER_ENABLE          0
