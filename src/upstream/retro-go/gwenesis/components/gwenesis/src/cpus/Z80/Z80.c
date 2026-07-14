@@ -173,25 +173,28 @@ INLINE byte OpZ80(word A) { return(RAM[A>>13][A&0x1FFF]); }
 #ifdef GENESIS
 #define FAST_RDOP
 extern byte *Z80_RAM;
-INLINE byte OpZ80(word A) { return(Z80_RAM ? Z80_RAM[A&0x1FFF] : 0xFF); }
+INLINE byte __attribute__((always_inline)) gwenesis_z80_read_opcode(const byte *ram, word A)
+{
+  return ram[A & 0x1FFF];
+}
+#define OpZ80(A) gwenesis_z80_read_opcode(z80_ram, (word)(A))
 
 /* Most Genesis Z80 data traffic targets the 8KB ZRAM and its mirror. Keep
  * that path in the interpreter so ordinary loads/stores do not cross a
  * translation-unit call boundary. Peripheral and banked accesses retain the
  * full handlers and their timestamping semantics. */
-INLINE byte __attribute__((always_inline)) gwenesis_z80_read_fast(word A)
+INLINE byte __attribute__((always_inline)) gwenesis_z80_read_fast(byte *ram, word A)
 {
   if (__builtin_expect(A < 0x4000, 1))
-    return Z80_RAM ? Z80_RAM[A & 0x1FFF] : 0xFF;
+    return ram[A & 0x1FFF];
   return RdZ80(A);
 }
 
-INLINE void __attribute__((always_inline)) gwenesis_z80_write_fast(word A, byte V)
+INLINE void __attribute__((always_inline)) gwenesis_z80_write_fast(byte *ram, word A, byte V)
 {
   if (__builtin_expect(A < 0x4000, 1))
   {
-    if (Z80_RAM)
-      Z80_RAM[A & 0x1FFF] = V;
+    ram[A & 0x1FFF] = V;
     return;
   }
   WrZ80(A, V);
@@ -472,9 +475,13 @@ enum CodesED
 static void CodesCB(register Z80 *R)
 {
   register byte I;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_cb = CyclesCB;
 
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesCB[I];
+  R->ICount-=cycles_cb[I];
   switch(I)
   {
 #include "CodesCB.h"
@@ -492,11 +499,15 @@ static void CodesDDCB(register Z80 *R)
 {
   register pair J;
   register byte I;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_xxcb = CyclesXXCB;
 
 #define XX IX    
   J.W=R->XX.W+(offset)OpZ80(R->PC.W++);
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesXXCB[I];
+  R->ICount-=cycles_xxcb[I];
   switch(I)
   {
 #include "CodesXCB.h"
@@ -515,11 +526,15 @@ static void CodesFDCB(register Z80 *R)
 {
   register pair J;
   register byte I;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_xxcb = CyclesXXCB;
 
 #define XX IY
   J.W=R->XX.W+(offset)OpZ80(R->PC.W++);
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesXXCB[I];
+  R->ICount-=cycles_xxcb[I];
   switch(I)
   {
 #include "CodesXCB.h"
@@ -538,9 +553,13 @@ static void CodesED(register Z80 *R)
 {
   register byte I;
   register pair J;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_ed = CyclesED;
 
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesED[I];
+  R->ICount-=cycles_ed[I];
   switch(I)
   {
 #include "CodesED.h"
@@ -560,10 +579,14 @@ static void CodesDD(register Z80 *R)
 {
   register byte I;
   register pair J;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_xx = CyclesXX;
 
 #define XX IX
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesXX[I];
+  R->ICount-=cycles_xx[I];
   switch(I)
   {
 #include "CodesXX.h"
@@ -587,10 +610,14 @@ static void CodesFD(register Z80 *R)
 {
   register byte I;
   register pair J;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles_xx = CyclesXX;
 
 #define XX IY
   I=OpZ80(R->PC.W++);
-  R->ICount-=CyclesXX[I];
+  R->ICount-=cycles_xx[I];
   switch(I)
   {
 #include "CodesXX.h"
@@ -653,6 +680,10 @@ int GWENESIS_HOT ExecZ80(register Z80 *R,register int RunCycles)
 {
   register byte I;
   register pair J;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles = Cycles;
   R->RunCycles = R->ICount;
 
   for(R->ICount=RunCycles;;)
@@ -670,14 +701,14 @@ int GWENESIS_HOT ExecZ80(register Z80 *R,register int RunCycles)
       /* Read opcode and count cycles */
       I=OpZ80(R->PC.W++);
       /* Count cycles */
-      R->ICount-=Cycles[I];
+      R->ICount-=cycles[I];
 
       /* Interpret opcode */
       switch(I)
       {
 #ifdef GENESIS
-#define RdZ80(A) gwenesis_z80_read_fast((word)(A))
-#define WrZ80(A, V) gwenesis_z80_write_fast((word)(A), (byte)(V))
+#define RdZ80(A) gwenesis_z80_read_fast(z80_ram, (word)(A))
+#define WrZ80(A, V) gwenesis_z80_write_fast(z80_ram, (word)(A), (byte)(V))
 #endif
 #include "Codes.h"
 #ifdef GENESIS
@@ -784,6 +815,10 @@ word RunZ80(Z80 *R)
 {
   register byte I;
   register pair J;
+#ifdef GENESIS
+  register byte *z80_ram = Z80_RAM;
+#endif
+  register const byte *cycles = Cycles;
 
   for(;;)
   {
@@ -796,13 +831,13 @@ word RunZ80(Z80 *R)
 #endif
 
     I=OpZ80(R->PC.W++);
-    R->ICount-=Cycles[I];
+    R->ICount-=cycles[I];
 
     switch(I)
     {
 #ifdef GENESIS
-#define RdZ80(A) gwenesis_z80_read_fast((word)(A))
-#define WrZ80(A, V) gwenesis_z80_write_fast((word)(A), (byte)(V))
+#define RdZ80(A) gwenesis_z80_read_fast(z80_ram, (word)(A))
+#define WrZ80(A, V) gwenesis_z80_write_fast(z80_ram, (word)(A), (byte)(V))
 #endif
 #include "Codes.h"
 #ifdef GENESIS

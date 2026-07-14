@@ -218,7 +218,9 @@ void ym_log(const char *subs, const char *fmt, ...)
  *   TL_RES_LEN - sinus resolution (X axis)
  */
 #define TL_TAB_LEN (13 * 2 * TL_RES_LEN)
-static signed int tl_tab[TL_TAB_LEN];
+/* YM2612 power-table output is 14-bit signed. Keep the table compact while
+ * leaving it in the module .bss (PSRAM under the Holo dynmod loader). */
+static int16_t tl_tab[TL_TAB_LEN];
 
 #define ENV_QUIET (TL_TAB_LEN >> 3)
 
@@ -1158,15 +1160,15 @@ INLINE void INTERNAL_TIMER_A()
 {
   if (ym2612.OPN.ST.mode & 0x01)
   {
-    ym2612.OPN.ST.TAC--;
-    if (ym2612.OPN.ST.TAC <= 0)
+    ym2612.OPN.ST.TAC -= GWENESIS_YM2612_SAMPLE_STEP;
+    while (ym2612.OPN.ST.TAC <= 0)
     {
       /* set status (if enabled) */
       if (ym2612.OPN.ST.mode & 0x04)
         ym2612.OPN.ST.status |= 0x01;
 
       /* reload the counter */
-      ym2612.OPN.ST.TAC = ym2612.OPN.ST.TAL;
+      ym2612.OPN.ST.TAC += ym2612.OPN.ST.TAL;
 
       /* CSM mode auto key on */
       if ((ym2612.OPN.ST.mode & 0xC0) == 0x80)
@@ -1180,7 +1182,7 @@ INLINE void INTERNAL_TIMER_B(int step)
   if (ym2612.OPN.ST.mode & 0x02)
   {
     ym2612.OPN.ST.TBC -= step;
-    if (ym2612.OPN.ST.TBC <= 0)
+    while (ym2612.OPN.ST.TBC <= 0)
     {
       /* set status (if enabled) */
       if (ym2612.OPN.ST.mode & 0x08)
@@ -1190,7 +1192,7 @@ INLINE void INTERNAL_TIMER_B(int step)
       if (ym2612.OPN.ST.TBL)
         ym2612.OPN.ST.TBC += ym2612.OPN.ST.TBL;
       else
-        ym2612.OPN.ST.TBC = ym2612.OPN.ST.TBL;
+        break;
     }
   }
 }
@@ -1413,12 +1415,12 @@ INLINE void advance_lfo()
   if (ym2612.OPN.lfo_timer_overflow) /* LFO enabled ? */
   {
     /* increment LFO timer (every samples) */
-    ym2612.OPN.lfo_timer++;
+    ym2612.OPN.lfo_timer += GWENESIS_YM2612_SAMPLE_STEP;
 
     /* when LFO is enabled, one level will last for 108, 77, 71, 67, 62, 44, 8 or 5 samples */
-    if (ym2612.OPN.lfo_timer >= ym2612.OPN.lfo_timer_overflow)
+    while (ym2612.OPN.lfo_timer >= ym2612.OPN.lfo_timer_overflow)
     {
-      ym2612.OPN.lfo_timer = 0;
+      ym2612.OPN.lfo_timer -= ym2612.OPN.lfo_timer_overflow;
 
       /* There are 128 LFO steps */
       ym2612.OPN.lfo_cnt = (ym2612.OPN.lfo_cnt + 1) & 127;
@@ -1722,7 +1724,7 @@ INLINE void update_phase_lfo_slot(FM_SLOT *SLOT, INT32 pms, UINT32 block_fnum, u
     fc = (((block_fnum << 5) >> (7 - blk)) + SLOT->DT[kc]) & DT_MASK;
 
     /* update phase */
-    SLOT->phase += (fc * SLOT->mul) >> 1;
+    SLOT->phase += ((fc * SLOT->mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
   }
   else /* LFO phase modulation  = zero */
   {
@@ -1762,16 +1764,16 @@ INLINE void update_phase_lfo_channel(FM_CH *CH, unsigned int cache_line)
 
     /* apply DETUNE & MUL operator specific values */
     finc = (fc + CH->SLOT[SLOT1].DT[kc]) & DT_MASK;
-    CH->SLOT[SLOT1].phase += (finc * CH->SLOT[SLOT1].mul) >> 1;
+    CH->SLOT[SLOT1].phase += ((finc * CH->SLOT[SLOT1].mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
 
     finc = (fc + CH->SLOT[SLOT2].DT[kc]) & DT_MASK;
-    CH->SLOT[SLOT2].phase += (finc * CH->SLOT[SLOT2].mul) >> 1;
+    CH->SLOT[SLOT2].phase += ((finc * CH->SLOT[SLOT2].mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
 
     finc = (fc + CH->SLOT[SLOT3].DT[kc]) & DT_MASK;
-    CH->SLOT[SLOT3].phase += (finc * CH->SLOT[SLOT3].mul) >> 1;
+    CH->SLOT[SLOT3].phase += ((finc * CH->SLOT[SLOT3].mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
 
     finc = (fc + CH->SLOT[SLOT4].DT[kc]) & DT_MASK;
-    CH->SLOT[SLOT4].phase += (finc * CH->SLOT[SLOT4].mul) >> 1;
+    CH->SLOT[SLOT4].phase += ((finc * CH->SLOT[SLOT4].mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
   }
   else /* LFO phase modulation  = zero */
   {
@@ -1792,7 +1794,7 @@ INLINE void refresh_fc_eg_slot(FM_SLOT *SLOT, unsigned int fc, unsigned int kc)
   fc &= DT_MASK;
 
   /* (frequency) phase increment counter */
-  SLOT->Incr = (fc * SLOT->mul) >> 1;
+  SLOT->Incr = ((fc * SLOT->mul) >> 1) * GWENESIS_YM2612_SAMPLE_STEP;
 
   /* ksr */
   kc = kc >> SLOT->KSR;
@@ -2535,12 +2537,12 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
     advance_lfo();
 
     /* advance envelope generator */
-    ym2612.OPN.eg_timer++;
+    ym2612.OPN.eg_timer += GWENESIS_YM2612_SAMPLE_STEP;
 
     /* EG is updated every 3 samples */
-    if (ym2612.OPN.eg_timer >= 3)
+    while (ym2612.OPN.eg_timer >= 3)
     {
-      ym2612.OPN.eg_timer = 0;
+      ym2612.OPN.eg_timer -= 3;
       ym2612.OPN.eg_cnt++;
       advance_eg_channels(&ym2612.CH[0], ym2612.OPN.eg_cnt);
     }
@@ -2625,7 +2627,7 @@ static inline void GWENESIS_HOT YM2612Update(int16_t *buffer, int length)
   }
 
   /* timer B control */
-  INTERNAL_TIMER_B(length);
+  INTERNAL_TIMER_B(length * GWENESIS_YM2612_SAMPLE_STEP);
 }
 
 void GWENESIS_HOT ym2612_run(int target)

@@ -137,9 +137,9 @@ local APP = {
   },
   AUDIO_EQ = {
     md = {
-      low = { type = "peak", freq = 280, gain = 6.5, q = 0.65 },
-      mid = { type = "peak", freq = 1100, gain = -4.0, q = 0.65 },
-      high = { type = "peak", freq = 3000, gain = -3.6, q = 0.85 },
+      low = { type = "peak", freq = 325, gain = 6.5, q = 0.65 },
+      mid = { type = "peak", freq = 1100, gain = -3.5, q = 0.65 },
+      high = { type = "peak", freq = 3000, gain = -2.8, q = 0.85 },
     },
   },
   MODULES = {

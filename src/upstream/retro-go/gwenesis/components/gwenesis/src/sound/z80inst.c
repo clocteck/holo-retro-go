@@ -203,6 +203,13 @@ void z80_refresh_banked_rom_fast_path(void)
 
 void z80_start() {
     z80_init_fast_ram();
+    if (!initialized || !Z80_RAM)
+    {
+        z80_emulation_enabled = false;
+        printf("[error] Genesis Z80 start rejected: ZRAM is not initialized\n");
+        return;
+    }
+    z80_emulation_enabled = true;
     cpu.IPeriod = 1;
     cpu.ICount = 0;
     cpu.Trace = 0;
