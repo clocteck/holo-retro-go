@@ -22,6 +22,7 @@ __license__ = "GPLv3"
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
+#include "rg_system.h"
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #include "rg_utils.h"
 #endif
@@ -45,6 +46,8 @@ __license__ = "GPLv3"
 #endif
 
 int zclk = 0;
+static bool z80_profiler_m68k_active;
+static int64_t z80_profiler_m68k_us;
 
 unsigned char *Z80_RAM;
 
@@ -222,21 +225,34 @@ void z80_set_enabled(bool enabled)
     }
 }
 
+void z80_profiler_begin_m68k(void)
+{
+  z80_profiler_m68k_us = 0;
+  z80_profiler_m68k_active = true;
+}
+
+int64_t z80_profiler_end_m68k(void)
+{
+  z80_profiler_m68k_active = false;
+  return z80_profiler_m68k_us;
+}
+
 void z80_pulse_reset() {
   ResetZ80(&cpu);
 }
 
 void GWENESIS_HOT z80_run(int target) {
+  const int64_t profiler_start = z80_profiler_m68k_active ? rg_system_timer() : 0;
 
   // we are in advance,nothind to do
-current_timeslice = 0;
+  current_timeslice = 0;
   if (!z80_emulation_enabled) {
     zclk = target;
-    return;
+    goto done;
   }
   if (zclk >= target) {
  // z80_log("z80_skip time","%1d%1d%1d||zclk=%d,tgt=%d",reset_once,bus_ack,reset, zclk, target);
-    return;
+    goto done;
   }
 
   current_timeslice = target - zclk;
@@ -250,6 +266,10 @@ current_timeslice = 0;
   }
 
   zclk = target - rem * Z80_FREQ_DIVISOR;
+
+done:
+  if (profiler_start > 0)
+    z80_profiler_m68k_us += rg_system_timer() - profiler_start;
 }
 
 void GWENESIS_HOT z80_sync(void) {

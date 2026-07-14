@@ -20,6 +20,7 @@ __license__ = "GPLv3"
 #define _Z80_INTERFACE_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 void z80_write_ctrl(unsigned int address, unsigned int value);
 unsigned int z80_read_ctrl(unsigned int address);
@@ -30,6 +31,8 @@ void z80_execute(unsigned int target);
 void z80_run(int target);
 extern int zclk;
 void z80_set_enabled(bool enabled);
+void z80_profiler_begin_m68k(void);
+int64_t z80_profiler_end_m68k(void);
 
 void gwenesis_z80inst_save_state();
 void gwenesis_z80inst_load_state();
