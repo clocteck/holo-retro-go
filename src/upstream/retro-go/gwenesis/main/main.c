@@ -174,7 +174,7 @@ static bool gwenesis_perf_overlay_enabled;
 #endif
 // --- MAIN
 
-#define GWENESIS_FRAME_TARGET_FPS 50
+#define GWENESIS_FRAME_TARGET_FPS 51
 static const int frame_target_us = 1000000 / GWENESIS_FRAME_TARGET_FPS;
 #if defined(RG_TARGET_HOLO_DYNMOD)
 #ifndef GWENESIS_FIXED_DRAW_SKIP
@@ -720,6 +720,18 @@ static void gwenesis_profiler_reset(int64_t now)
     gwenesis_vdp_async_render_count = 0;
     gwenesis_vdp_async_render_us = 0;
 #endif
+}
+
+static void gwenesis_profiler_reset_fps_display(int64_t now)
+{
+    gwenesis_profiler_reset(now);
+    gwenesis_perf_overlay.fps100 = GWENESIS_FRAME_TARGET_FPS * 100U;
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    gwenesis_perf_overlay.draw_fps100 = GWENESIS_RENDER_TARGET_FPS * 100U;
+#else
+    gwenesis_perf_overlay.draw_fps100 = GWENESIS_FRAME_TARGET_FPS * 100U;
+#endif
+    gwenesis_perf_overlay.fps_valid = true;
 }
 
 static void gwenesis_profiler_maybe_log(void)
@@ -3385,7 +3397,7 @@ static rg_gui_event_t perf_overlay_update_cb(rg_gui_option_t *option, rg_gui_eve
         {
             gwenesis_profiler_frame_sequence = 0;
             memset(&gwenesis_perf_overlay, 0, sizeof(gwenesis_perf_overlay));
-            gwenesis_profiler_reset(rg_system_timer());
+            gwenesis_profiler_reset_fps_display(rg_system_timer());
         }
 #endif
     }
@@ -3494,7 +3506,7 @@ void app_main(void)
         gwenesis_profiler_frame_sequence = 0;
         gwenesis_profiler_sample_frame = false;
         memset(&gwenesis_perf_overlay, 0, sizeof(gwenesis_perf_overlay));
-        gwenesis_profiler_reset(rg_system_timer());
+        gwenesis_profiler_reset_fps_display(rg_system_timer());
     }
 #endif
 
@@ -3728,6 +3740,10 @@ void app_main(void)
 #endif
 #if defined(RG_TARGET_HOLO_DYNMOD) && GWENESIS_VDP_ASYNC_ENABLED
             gwenesis_vdp_async_resume_core();
+#endif
+#if GWENESIS_PROFILER_DETAILED
+            /* Menu time is paused emulation, not a run of zero-FPS frames. */
+            gwenesis_profiler_reset_fps_display(rg_system_timer());
 #endif
         }
         else if (joystick != joystick_old)
