@@ -933,15 +933,6 @@ static int16_t gwenesis_audio_clip(int32_t value)
     return (int16_t)value;
 }
 
-static inline int32_t gwenesis_audio_scale(int32_t value)
-{
-#if defined(RG_TARGET_HOLO_DYNMOD)
-    return (value * 4) / 3;
-#else
-    return value;
-#endif
-}
-
 #if GWENESIS_AUDIO_EQ_ENABLED
 #define GWENESIS_AUDIO_EQ_BANDS 3
 #define GWENESIS_AUDIO_EQ_PI 3.14159265358979323846f
@@ -1466,11 +1457,8 @@ static void gwenesis_audio_submit_frame(size_t count, bool psg_enabled)
 #if GWENESIS_SN76489_RUN_ENABLED
         if (psg_enabled && gwenesis_sn76489_buffer)
             sample += gwenesis_sn76489_buffer[i];
-        else
-            sample = gwenesis_audio_scale(sample);
 #else
         (void)psg_enabled;
-        sample = gwenesis_audio_scale(sample);
 #endif
         const int16_t clipped = gwenesis_audio_clip(sample);
         gwenesis_audio_mix_buffer[i].left = clipped;

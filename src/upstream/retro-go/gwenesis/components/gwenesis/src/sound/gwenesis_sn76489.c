@@ -190,8 +190,6 @@ static inline void GWENESIS_HOT gwenesis_SN76489_Update(INT16 *buffer, int lengt
 
         gwenesis_SN76489.Channels[3]=(short)(PSGVolumeValues[gwenesis_SN76489.Registers[7]]*(gwenesis_SN76489.NoiseShiftRegister & 0x1));
 
-        gwenesis_SN76489.Channels[3]<<=1; /* Double noise volume to make some people happy */
-
         buffer[j] = (gwenesis_SN76489.Channels[0]);
         buffer[j] += (gwenesis_SN76489.Channels[1]);
         buffer[j] += (gwenesis_SN76489.Channels[2]);
