@@ -1607,9 +1607,7 @@ typedef enum
 typedef enum
 {
     GWENESIS_VDP_EVENT_REG8 = 0,
-    GWENESIS_VDP_EVENT_VRAM_RUN,
     GWENESIS_VDP_EVENT_VRAM_SAT_RUN,
-    GWENESIS_VDP_EVENT_VRAM_FILL,
     GWENESIS_VDP_EVENT_VRAM_SAT_FILL,
     GWENESIS_VDP_EVENT_CRAM565,
     GWENESIS_VDP_EVENT_VSRAM16,
@@ -1928,17 +1926,14 @@ void gwenesis_vdp_async_record_vsram(unsigned int index, unsigned int value)
     gwenesis_vdp_async_record_scalar(GWENESIS_VDP_EVENT_VSRAM16, index, value & 0xFFFFU);
 }
 
-void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value,
-                                    bool update_sat)
+void gwenesis_vdp_async_record_sat_vram(unsigned int address, unsigned int value)
 {
     gwenesis_vdp_async_job_t *job = gwenesis_vdp_async_event_job();
     if (!job || job->event_overflow)
         return;
 
-    const uint8_t run_type = update_sat ? GWENESIS_VDP_EVENT_VRAM_SAT_RUN
-                                        : GWENESIS_VDP_EVENT_VRAM_RUN;
-    const uint8_t fill_type = update_sat ? GWENESIS_VDP_EVENT_VRAM_SAT_FILL
-                                         : GWENESIS_VDP_EVENT_VRAM_FILL;
+    const uint8_t run_type = GWENESIS_VDP_EVENT_VRAM_SAT_RUN;
+    const uint8_t fill_type = GWENESIS_VDP_EVENT_VRAM_SAT_FILL;
     const unsigned char byte_value = (unsigned char)value;
     gwenesis_vdp_event_t *last = NULL;
     if (job->event_count > 0)
@@ -2321,53 +2316,27 @@ static inline unsigned int gwenesis_vdp_async_job_sat_size(
 }
 
 static void gwenesis_vdp_async_apply_vram_event(gwenesis_vdp_async_job_t *job,
-                                                 const gwenesis_vdp_event_t *event,
-                                                 bool update_sat)
+                                                 const gwenesis_vdp_event_t *event)
 {
     if (event->stride == 1 && event->count >= GWENESIS_VDP_EVENT_MEMCPY_MIN)
     {
-        if (update_sat)
+        const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+        const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
+        const unsigned int first = event->address;
+        const unsigned int end = first + event->count;
+        if (first >= sat_address && end <= sat_address + sat_size &&
+            end <= VRAM_MAX_SIZE)
         {
-            const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
-            const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
-            const unsigned int first = event->address;
-            const unsigned int end = first + event->count;
-            if (first >= sat_address && end <= sat_address + sat_size &&
-                end <= VRAM_MAX_SIZE)
-            {
-                const unsigned int sat_offset = first - sat_address;
-                gwenesis_vdp_async_event_data_copy(
-                    job, event->data, job->sat_cache + sat_offset, event->count);
-                memcpy(job->vram + first, job->sat_cache + sat_offset, event->count);
-                return;
-            }
-        }
-        else
-        {
-            uint32_t data_offset = event->data;
-            uint32_t remaining = event->count;
-            uint32_t address = event->address;
-            while (remaining > 0)
-            {
-                size_t chunk = VRAM_MAX_SIZE - address;
-                if (chunk > remaining)
-                    chunk = remaining;
-                gwenesis_vdp_async_event_data_copy(
-                    job, data_offset, job->vram + address, chunk);
-                data_offset += (uint32_t)chunk;
-                remaining -= (uint32_t)chunk;
-                address = (address + (uint32_t)chunk) & 0xFFFFU;
-            }
+            const unsigned int sat_offset = first - sat_address;
+            gwenesis_vdp_async_event_data_copy(
+                job, event->data, job->sat_cache + sat_offset, event->count);
+            memcpy(job->vram + first, job->sat_cache + sat_offset, event->count);
             return;
         }
     }
 
-    const unsigned int sat_address = update_sat
-                                         ? gwenesis_vdp_async_job_sat_address(job)
-                                         : 0;
-    const unsigned int sat_size = update_sat
-                                      ? gwenesis_vdp_async_job_sat_size(job)
-                                      : 0;
+    const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+    const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
     for (uint32_t i = 0; i < event->count; ++i)
     {
         const uint16_t address =
@@ -2375,63 +2344,40 @@ static void gwenesis_vdp_async_apply_vram_event(gwenesis_vdp_async_job_t *job,
         const unsigned char value =
             gwenesis_vdp_async_event_data_load(job, event->data + i);
         job->vram[address] = value;
-        if (update_sat && address >= sat_address && address < sat_address + sat_size)
+        if (address >= sat_address && address < sat_address + sat_size)
             job->sat_cache[address - sat_address] = value;
     }
 }
 
 static void gwenesis_vdp_async_apply_vram_fill_event(
     gwenesis_vdp_async_job_t *job,
-    const gwenesis_vdp_event_t *event,
-    bool update_sat)
+    const gwenesis_vdp_event_t *event)
 {
     const unsigned char value = (unsigned char)event->data;
     if (event->stride == 1 && event->count >= GWENESIS_VDP_EVENT_MEMCPY_MIN)
     {
-        if (update_sat)
+        const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+        const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
+        const unsigned int first = event->address;
+        const unsigned int end = first + event->count;
+        if (first >= sat_address && end <= sat_address + sat_size &&
+            end <= VRAM_MAX_SIZE)
         {
-            const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
-            const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
-            const unsigned int first = event->address;
-            const unsigned int end = first + event->count;
-            if (first >= sat_address && end <= sat_address + sat_size &&
-                end <= VRAM_MAX_SIZE)
-            {
-                const unsigned int sat_offset = first - sat_address;
-                memset(job->sat_cache + sat_offset, value, event->count);
-                memset(job->vram + first, value, event->count);
-                return;
-            }
-        }
-        else
-        {
-            uint32_t remaining = event->count;
-            uint32_t address = event->address;
-            while (remaining > 0)
-            {
-                size_t chunk = VRAM_MAX_SIZE - address;
-                if (chunk > remaining)
-                    chunk = remaining;
-                memset(job->vram + address, value, chunk);
-                remaining -= (uint32_t)chunk;
-                address = (address + (uint32_t)chunk) & 0xFFFFU;
-            }
+            const unsigned int sat_offset = first - sat_address;
+            memset(job->sat_cache + sat_offset, value, event->count);
+            memset(job->vram + first, value, event->count);
             return;
         }
     }
 
-    const unsigned int sat_address = update_sat
-                                         ? gwenesis_vdp_async_job_sat_address(job)
-                                         : 0;
-    const unsigned int sat_size = update_sat
-                                      ? gwenesis_vdp_async_job_sat_size(job)
-                                      : 0;
+    const unsigned int sat_address = gwenesis_vdp_async_job_sat_address(job);
+    const unsigned int sat_size = gwenesis_vdp_async_job_sat_size(job);
     for (uint32_t i = 0; i < event->count; ++i)
     {
         const uint16_t address =
             (uint16_t)(event->address + (int32_t)event->stride * i);
         job->vram[address] = value;
-        if (update_sat && address >= sat_address && address < sat_address + sat_size)
+        if (address >= sat_address && address < sat_address + sat_size)
             job->sat_cache[address - sat_address] = value;
     }
 }
@@ -2453,15 +2399,11 @@ static void gwenesis_vdp_async_apply_events(gwenesis_vdp_async_job_t *job,
             if (event->address < REG_SIZE)
                 job->regs[event->address] = (unsigned char)event->data;
             break;
-        case GWENESIS_VDP_EVENT_VRAM_RUN:
         case GWENESIS_VDP_EVENT_VRAM_SAT_RUN:
-            gwenesis_vdp_async_apply_vram_event(
-                job, event, event->type == GWENESIS_VDP_EVENT_VRAM_SAT_RUN);
+            gwenesis_vdp_async_apply_vram_event(job, event);
             break;
-        case GWENESIS_VDP_EVENT_VRAM_FILL:
         case GWENESIS_VDP_EVENT_VRAM_SAT_FILL:
-            gwenesis_vdp_async_apply_vram_fill_event(
-                job, event, event->type == GWENESIS_VDP_EVENT_VRAM_SAT_FILL);
+            gwenesis_vdp_async_apply_vram_fill_event(job, event);
             break;
         case GWENESIS_VDP_EVENT_CRAM565:
             if (event->address < CRAM_MAX_SIZE)

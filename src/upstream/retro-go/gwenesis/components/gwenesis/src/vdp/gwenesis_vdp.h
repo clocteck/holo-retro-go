@@ -199,8 +199,7 @@ void gwenesis_vdp_async_mark_midframe_write(void);
 void gwenesis_vdp_snapshot_dirty_take(uint32_t dirty_words[8]);
 void gwenesis_vdp_snapshot_dirty_mark_all(void);
 void gwenesis_vdp_async_record_reg(unsigned int reg, unsigned int value);
-void gwenesis_vdp_async_record_vram(unsigned int address, unsigned int value,
-                                    bool update_sat);
+void gwenesis_vdp_async_record_sat_vram(unsigned int address, unsigned int value);
 void gwenesis_vdp_async_record_cram565(unsigned int index, unsigned int value);
 void gwenesis_vdp_async_record_vsram(unsigned int index, unsigned int value);
 #endif

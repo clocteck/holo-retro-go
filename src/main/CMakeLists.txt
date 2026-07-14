@@ -133,7 +133,9 @@ set_source_files_properties("${RG_UPSTREAM_DIR}/launcher/main/main.c"
     PROPERTIES COMPILE_DEFINITIONS app_main=retrogo_launcher_app_main)
 if(HOLO_RETRO_MAIN_GWENESIS_ONLY)
     set_source_files_properties("${RG_UPSTREAM_DIR}/gwenesis/main/main.c"
-        PROPERTIES COMPILE_DEFINITIONS app_main=gwenesis_main)
+        PROPERTIES
+            COMPILE_DEFINITIONS app_main=gwenesis_main
+            COMPILE_OPTIONS "-Ofast")
 endif()
 
 if(HOLO_RETRO_MAIN_GWENESIS_ONLY)

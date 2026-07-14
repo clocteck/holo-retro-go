@@ -34,7 +34,14 @@ static unsigned char m68ki_cycles[0x10000];
 #endif
 
 #include "m68kcpu.h"
+#if defined(RG_TARGET_HOLO_DYNMOD) && defined(__GNUC__)
+#pragma GCC push_options
+#pragma GCC optimize ("Ofast")
+#endif
 #include "m68kops.h"
+#if defined(RG_TARGET_HOLO_DYNMOD) && defined(__GNUC__)
+#pragma GCC pop_options
+#endif
 #include "gwenesis_savestate.h"
 
 #define GWENESIS_HOT
