@@ -3,4 +3,4 @@ entry = main.lua
 icon = main.png
 allow_webui = true
 description = 修复音频节奏不正确的问题，增加中文汉化，优化目录打开速度
-version = 1.27
+version = 1.28
