@@ -418,6 +418,7 @@ static int l_start(lua_State *L)
     const module_host_api_v2 *host = inst ? inst->host : s_host;
     char app[16] = "launcher";
     char rom[MODULE_PATH_MAX] = "";
+    char language[8] = "en";
     int64_t flags = 0;
 
     if (!inst || !host)
@@ -437,6 +438,7 @@ static int l_start(lua_State *L)
         (void)read_table_string(L, host, 1, "system", app, sizeof(app));
         (void)read_table_string(L, host, 1, "rom", rom, sizeof(rom));
         (void)read_table_string(L, host, 1, "path", rom, sizeof(rom));
+        (void)read_table_string(L, host, 1, "language", language, sizeof(language));
         (void)read_table_integer(L, host, 1, "flags", &flags);
     }
     else if (host->lua.gettop(L) >= 1 && host->lua.isstring(L, 1))
@@ -449,6 +451,7 @@ static int l_start(lua_State *L)
     }
 
     holo_launch_set(app, rom, (uint32_t)flags);
+    holo_launch_set_language(language);
     inst->stop_requested = 0;
 
     if (!host->task.create)

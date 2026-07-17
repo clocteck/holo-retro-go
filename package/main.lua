@@ -43,12 +43,51 @@ local ROUTE_BASE = normalize_route_base(
   "/" .. app_id_from_dir(APP_DIR)
 )
 local MODULE_DIR = APP_DIR .. "/modules"
+local SETTINGS_PATH = "/sd/apps/settings.json"
+
+local function normalize_language(value)
+  local text = tostring(value or ""):gsub("_", "-"):lower()
+  if text == "zh" or text == "zh-cn" or text == "zh-sg" or
+      text == "zh-hans" or text:match("^zh%-hans%-") then
+    return "zh-CN"
+  end
+  return "en"
+end
+
+local function read_language()
+  if not file or not file.getcontents then
+    return "en"
+  end
+  local ok, raw = pcall(function()
+    return file.getcontents(SETTINGS_PATH)
+  end)
+  if not ok or type(raw) ~= "string" or raw == "" then
+    return "en"
+  end
+  local codec = rawget(_G, "json") or rawget(_G, "sjson")
+  if codec and codec.decode then
+    local decoded, doc = pcall(function()
+      return codec.decode(raw)
+    end)
+    if decoded and type(doc) == "table" then
+      return normalize_language(doc.language or doc.locale or doc.lang)
+    end
+  end
+
+  -- The app may start before the host exposes json/sjson. Language tags are
+  -- simple JSON strings, so retain a dependency-free fallback for early boot.
+  local value = raw:match('"language"%s*:%s*"([^"]+)"') or
+      raw:match('"locale"%s*:%s*"([^"]+)"') or
+      raw:match('"lang"%s*:%s*"([^"]+)"')
+  return normalize_language(value)
+end
 
 local APP = {
   VERSION = "2026-07-13-controller-bus-v20",
   RELEASE_NOTES = "使用常驻 BLE 手柄服务的 controller 位图输入",
   APP_DIR = APP_DIR,
   MODULE_DIR = MODULE_DIR,
+  LANGUAGE = read_language(),
   ROM_ROOT = "/sd/roms",
   LEGACY_ROM_ROOT = APP_DIR .. "/roms",
   ROUTE_BASE = ROUTE_BASE,
@@ -162,7 +201,7 @@ local function log(...)
   print("[retrogo_app]", ...)
 end
 
-log("boot", APP.VERSION, APP.ROUTE_BASE, APP.APP_DIR)
+log("boot", APP.VERSION, APP.ROUTE_BASE, APP.APP_DIR, APP.LANGUAGE)
 
 local function has_bit(mask, bit)
   if type(mask) ~= "number" or type(bit) ~= "number" or bit == 0 then
@@ -2125,6 +2164,7 @@ local function start_retrogo(app_name, rom_path, flags)
     app = app_name or "launcher",
     rom = rom_path or "",
     flags = flags or 0,
+    language = APP.LANGUAGE,
   })
   if not started then
     log("start failed", tostring(start_err))

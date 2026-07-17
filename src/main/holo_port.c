@@ -11,6 +11,7 @@ static uint32_t s_input_mask;
 static holo_launch_t s_launch = {
     .config_ns = "launcher",
     .rom_path = "",
+    .language = "en",
     .boot_flags = 0,
 };
 static volatile int s_switch_requested;
@@ -149,6 +150,17 @@ void holo_launch_get(holo_launch_t *out)
     if (out) {
         *out = s_launch;
     }
+}
+
+void holo_launch_set_language(const char *language)
+{
+    const char *normalized = language && strcmp(language, "zh-CN") == 0 ? "zh-CN" : "en";
+    size_t i;
+
+    for (i = 0; i + 1 < sizeof(s_launch.language) && normalized[i]; ++i) {
+        s_launch.language[i] = normalized[i];
+    }
+    s_launch.language[i] = '\0';
 }
 
 void holo_runtime_request_switch(const char *config_ns, const char *rom_path, uint32_t boot_flags)

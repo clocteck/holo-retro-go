@@ -16,6 +16,7 @@ extern "C" {
 typedef struct holo_launch_t {
     char config_ns[16];
     char rom_path[HOLO_MODULE_PATH_MAX];
+    char language[8];
     uint32_t boot_flags;
 } holo_launch_t;
 
@@ -28,6 +29,7 @@ uint32_t holo_input_get_mask(void);
 uint32_t holo_input_get_raw_mask(void);
 
 void holo_launch_set(const char *config_ns, const char *rom_path, uint32_t boot_flags);
+void holo_launch_set_language(const char *language);
 void holo_launch_get(holo_launch_t *out);
 
 void holo_runtime_request_switch(const char *config_ns, const char *rom_path, uint32_t boot_flags);

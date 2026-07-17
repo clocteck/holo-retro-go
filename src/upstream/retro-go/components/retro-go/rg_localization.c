@@ -1,7 +1,9 @@
 #include "rg_system.h"
 #include "translations.h"
+#include "translations_zh_cn.h"
 
 static int rg_language = RG_LANG_EN;
+static bool rg_simplified_chinese;
 
 int rg_localization_get_language_id(void)
 {
@@ -17,10 +19,33 @@ bool rg_localization_set_language_id(int language_id)
     return true;
 }
 
+void rg_localization_set_simplified_chinese(bool enabled)
+{
+    rg_simplified_chinese = enabled;
+}
+
+bool rg_localization_is_simplified_chinese(void)
+{
+    return rg_simplified_chinese;
+}
+
 const char *rg_gettext(const char *text)
 {
-    if (rg_language == 0 || text == NULL)
-        return text; // If rg_language is english or text is NULL, we can return self
+    if (text == NULL)
+        return text;
+
+    if (rg_simplified_chinese)
+    {
+        for (size_t i = 0; i < RG_COUNT(translations_zh_cn); ++i)
+        {
+            if (strcmp(translations_zh_cn[i][0], text) == 0)
+                return translations_zh_cn[i][1];
+        }
+        return text;
+    }
+
+    if (rg_language == RG_LANG_EN)
+        return text; // English source strings need no lookup
 
     for (size_t i = 0; i < RG_COUNT(translations); ++i)
     {

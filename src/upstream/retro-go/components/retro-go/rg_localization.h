@@ -20,3 +20,5 @@ const char *rg_gettext(const char *msg);
 int rg_localization_get_language_id(void);
 bool rg_localization_set_language_id(int language_id);
 const char *rg_localization_get_language_name(int language_id);
+void rg_localization_set_simplified_chinese(bool enabled);
+bool rg_localization_is_simplified_chinese(void);

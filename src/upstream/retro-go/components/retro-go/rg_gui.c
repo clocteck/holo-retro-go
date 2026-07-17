@@ -55,6 +55,8 @@ static struct
 #define SETTING_WIFI_SLOT   "Slot"
 #define SETTING_LANGUAGE    "Language"
 
+static bool gui_apply_font(int index, bool save_setting);
+
 static uint16_t *get_draw_buffer(int width, int height, rg_color_t fill_color)
 {
     size_t pixels = width * height;
@@ -125,15 +127,32 @@ void rg_gui_init(void)
 {
     gui_update_geometry();
     gui.show_clock = rg_settings_get_boolean(NS_GLOBAL, SETTING_CLOCK, false);
-    if (!rg_gui_set_language_id(rg_settings_get_number(NS_GLOBAL, SETTING_LANGUAGE, RG_LANG_DEFAULT)))
+    int language_id = rg_settings_get_number(NS_GLOBAL, SETTING_LANGUAGE, RG_LANG_DEFAULT);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    holo_launch_t launch;
+    holo_launch_get(&launch);
+    rg_localization_set_simplified_chinese(strcmp(launch.language, "zh-CN") == 0);
+    language_id = RG_LANG_EN;
+#endif
+    if (!rg_gui_set_language_id(language_id))
         rg_gui_set_language_id(0);
     int font_type = rg_settings_get_number(NS_GLOBAL, SETTING_FONTTYPE, RG_FONT_DEFAULT);
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (rg_localization_is_simplified_chinese())
+        font_type = RG_FONT_CHINESE;
+#endif
 #if RG_CHINESE_SUPPORT
     if (font_type == RG_FONT_BASIC_8)
         font_type = RG_FONT_DEFAULT;
 #endif
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    bool save_font_setting = !rg_localization_is_simplified_chinese();
+    if (!gui_apply_font(font_type, save_font_setting))
+        gui_apply_font(RG_FONT_DEFAULT, save_font_setting);
+#else
     if (!rg_gui_set_font(font_type))
         rg_gui_set_font(RG_FONT_DEFAULT);
+#endif
     char *theme_name = rg_settings_get_string(NS_GLOBAL, SETTING_THEME, NULL);
     rg_gui_set_theme(theme_name);
     free(theme_name);
@@ -256,7 +275,7 @@ const char *rg_gui_get_theme_name(void)
     return gui.theme_name[0] ? gui.theme_name : NULL;
 }
 
-bool rg_gui_set_font(int index)
+static bool gui_apply_font(int index, bool save_setting)
 {
     if (index < 0 || index > RG_FONT_MAX - 1)
         return false;
@@ -265,12 +284,18 @@ bool rg_gui_set_font(int index)
     gui.font_index = index;
     gui.font_height = (index < 3) ? (8 + index * 4) : gui.font->height;
 
-    rg_settings_set_number(NS_GLOBAL, SETTING_FONTTYPE, index);
+    if (save_setting)
+        rg_settings_set_number(NS_GLOBAL, SETTING_FONTTYPE, index);
 
     RG_LOGI("Font set to: %s (height=%d, scaling=%.2f)\n", gui.font->name, gui.font_height,
             (float)gui.font_height / gui.font->height);
 
     return true;
+}
+
+bool rg_gui_set_font(int index)
+{
+    return gui_apply_font(index, true);
 }
 
 void rg_gui_set_surface(rg_surface_t *surface)
@@ -388,6 +413,12 @@ static size_t get_glyph(uint32_t *output, const rg_font_t *font, int points, int
         int xOffset = glyph->xOffset < 0x80 ? glyph->xOffset : -(0xFF - glyph->xOffset);
         int xDelta = glyph->xDelta;
         const uint8_t *data = glyph->data;
+#if RG_CHINESE_SUPPORT
+        // FusionPixel CJK glyphs normally occupy rows 1..11. Keep their last
+        // stroke away from the lower textbox edge on displays that clip it.
+        if (font == &font_FusionPixel && c >= 0x2E80 && yOffset > 0)
+            yOffset--;
+#endif
         if (output)
         {
             memset(output, 0, points * 4);
@@ -1815,6 +1846,31 @@ static rg_gui_event_t theme_cb(rg_gui_option_t *option, rg_gui_event_t event)
 
 static rg_gui_event_t language_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (rg_localization_is_simplified_chinese())
+    {
+        if (event == RG_DIALOG_ENTER)
+        {
+            rg_gui_option_t options[RG_LANG_MAX + 2];
+            for (int i = 0; i < RG_LANG_MAX; i++)
+                options[i] = (rg_gui_option_t){i, rg_localization_get_language_name(i), NULL,
+                                               RG_DIALOG_FLAG_NORMAL, NULL};
+            options[RG_LANG_MAX] = (rg_gui_option_t){RG_LANG_MAX, "简体中文", NULL,
+                                                     RG_DIALOG_FLAG_NORMAL, NULL};
+            options[RG_LANG_MAX + 1] = (rg_gui_option_t)RG_DIALOG_END;
+
+            int sel = rg_gui_dialog(option->label, options, RG_LANG_MAX);
+            if (sel != RG_DIALOG_CANCELLED && sel != RG_LANG_MAX)
+            {
+                rg_localization_set_simplified_chinese(false);
+                rg_gui_set_language_id(sel);
+            }
+            return RG_DIALOG_REDRAW;
+        }
+        strcpy(option->value, "简体中文");
+        return RG_DIALOG_VOID;
+    }
+#endif
     int language_id = rg_localization_get_language_id();
 
     if (event == RG_DIALOG_ENTER)
@@ -2133,7 +2189,7 @@ void rg_gui_options_menu(void)
         {0, _("Audio out"),  "-", RG_DIALOG_FLAG_NORMAL, &audio_update_cb     },
         RG_DIALOG_END,
     };
-    const rg_gui_option_t misc_options[] = {
+    rg_gui_option_t misc_options[] = {
         {0, _("Font type"),        "-",  RG_DIALOG_FLAG_NORMAL, &font_type_cb    },
         {0, _("Theme"),            "-",  RG_DIALOG_FLAG_NORMAL, &theme_cb        },
         {0, _("Show clock"),       "-",  RG_DIALOG_FLAG_NORMAL, &show_clock_cb   },
@@ -2148,6 +2204,12 @@ void rg_gui_options_menu(void)
         {0, _("Launcher options"), NULL, RG_DIALOG_FLAG_NORMAL, &app_options_cb  },
         RG_DIALOG_END,
     };
+#if defined(RG_TARGET_HOLO_DYNMOD)
+    if (rg_localization_is_simplified_chinese())
+    {
+        misc_options[0].flags = RG_DIALOG_FLAG_HIDDEN;
+    }
+#endif
     const rg_gui_option_t game_options[] = {
         {0, _("Scaling"),          "-",  RG_DIALOG_FLAG_NORMAL, &scaling_update_cb},
         {0, _("Factor"),           "-",  RG_DIALOG_FLAG_HIDDEN, &custom_zoom_cb   },

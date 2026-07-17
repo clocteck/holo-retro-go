@@ -24,6 +24,16 @@ file(WRITE "${CMAKE_BINARY_DIR}/holo_retro_profile.cmake"
     "set(HOLO_RETRO_MAIN_GWENESIS_ONLY ${HOLO_RETRO_GWENESIS_ONLY})\n"
 )
 
+# ESP-IDF's component-manager pre-scan may evaluate main/CMakeLists.txt with a
+# different CMAKE_BINARY_DIR. Mirror the generated profile into the cache so
+# both the pre-scan and the normal component configure see the same profile.
+set(HOLO_RETRO_MAIN_PROFILE "${HOLO_RETRO_MODULE_PROFILE_CANONICAL}" CACHE INTERNAL "Main component profile" FORCE)
+set(HOLO_RETRO_MAIN_MODULE_NAME "${HOLO_RETRO_MODULE_NAME}" CACHE INTERNAL "Main component module name" FORCE)
+set(HOLO_RETRO_MAIN_GWENESIS_ONLY ${HOLO_RETRO_GWENESIS_ONLY} CACHE INTERNAL "Main component gwenesis-only mode" FORCE)
+set(ENV{HOLO_RETRO_MAIN_PROFILE} "${HOLO_RETRO_MODULE_PROFILE_CANONICAL}")
+set(ENV{HOLO_RETRO_MAIN_MODULE_NAME} "${HOLO_RETRO_MODULE_NAME}")
+set(ENV{HOLO_RETRO_MAIN_GWENESIS_ONLY} "${HOLO_RETRO_GWENESIS_ONLY}")
+
 set(EXTRA_COMPONENT_DIRS
     "${RG_UPSTREAM_DIR}/components"
 )
