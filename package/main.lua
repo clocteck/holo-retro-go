@@ -1,3 +1,4 @@
+-- [HoloCubic platform](https://clocteck.com/pages/holocubic) | [ClocTeck website](https://clocteck.com/)
 local FALLBACK_APP_ID = "holo-retro-go"
 
 local function app_id_from_dir(dir)

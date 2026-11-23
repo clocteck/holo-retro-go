@@ -5,3 +5,5 @@
 ```text
 /sd/apps/holo-retro-go/modules/retrogo.so
 ```
+
+设备资料：[HoloCubic 平台介绍](https://clocteck.com/pages/holocubic) · [ClocTeck 官网](https://clocteck.com/)

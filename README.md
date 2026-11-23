@@ -2,6 +2,8 @@
 
 这是一个把 [retro-go](https://github.com/ducalex/retro-go) 移植到 Clocteck Holocubic / cubic Lua 固件动态模块环境的项目。它是在 Retro-Go 源码基础上增加 Holocubic 宿主 ABI、ESP-ELFLoader 模块入口和少量适配层，最终构建为可由 Lua 加载的 `retrogo.so`。
 
+设备资料：[HoloCubic 平台介绍](https://clocteck.com/pages/holocubic) · [ClocTeck 官网](https://clocteck.com/)
+
 ## 项目用途
 
 本项目用于在支持 cubic Lua 动态模块 ABI 的 Holocubic 固件中运行 Retro-Go launcher 和部分 Retro-Go 模拟器核心。
